@@ -10,6 +10,8 @@ const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 const USER_MESSAGE_PATCH_KEY = "__benPiHarnessRoundedUserMessagePatch";
+const SENT_PROMPT_MAX_TEXT_WIDTH = 88;
+const SENT_PROMPT_BORDER_FG = "\x1b[38;2;137;180;250m";
 
 interface ThemeLike {
 	fg(color: string, text: string): string;
@@ -65,21 +67,21 @@ function getMessageMarkdown(component: unknown): RenderableMarkdown | undefined 
 function renderSentPromptBox(markdown: RenderableMarkdown, width: number, theme?: ThemeLike): string[] | undefined {
 	if (width < 8) return undefined;
 
-	const maxTextWidth = Math.max(1, Math.min(width - 4, 96));
+	const maxTextWidth = Math.max(1, Math.min(width - 4, SENT_PROMPT_MAX_TEXT_WIDTH));
 	const contentLines = markdown.render(maxTextWidth).map(trimAnsiRight);
 	if (contentLines.length === 0) return [];
 
 	const textWidth = Math.max(1, ...contentLines.map((line) => visibleWidth(line)));
 	const paddingX = 1;
 	const innerWidth = textWidth + paddingX * 2;
-	const border = (text: string) => theme?.fg("borderAccent", text) ?? text;
+	const border = (text: string) => `${SENT_PROMPT_BORDER_FG}${text}\x1b[39m`;
 	const fill = (text: string) => theme?.bg("userMessageBg", text) ?? text;
 	const padContent = (line: string) => fill(` ${fitAnsi(line, textWidth)} `);
 
 	return [
-		border(`╭${"─".repeat(innerWidth)}╮`),
-		...contentLines.map((line) => `${border("│")}${padContent(line)}${border("│")}`),
-		border(`╰${"─".repeat(innerWidth)}╯`),
+		border(`+${"-".repeat(innerWidth)}+`),
+		...contentLines.map((line) => `${border("|")}${padContent(line)}${border("|")}`),
+		border(`+${"-".repeat(innerWidth)}+`),
 	];
 }
 

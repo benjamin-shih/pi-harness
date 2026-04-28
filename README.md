@@ -15,7 +15,7 @@ Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and ses
 
 ```text
 extensions/
-  aesthetic-polish.ts   Blue-forward Catppuccin accents and rounded prompt boxes
+  aesthetic-polish.ts   Blue-forward Catppuccin accents and prompt card styling
   catppuccin-footer.ts  Responsive Catppuccin footer
   harness-commands.ts   /mode, /status, /checkpoint, and skill-routing reminders
   latex-preview.ts      Hardened transient LaTeX previews with Unicode inline math
