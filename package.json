@@ -1,0 +1,17 @@
+{
+  "name": "ben-pi-harness",
+  "version": "0.1.0",
+  "private": true,
+  "keywords": ["pi-package"],
+  "description": "Benjamin's personal pi harness package: extensions, prompts, and themes.",
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"],
+    "prompts": ["./prompts"],
+    "themes": ["./themes"]
+  }
+}
