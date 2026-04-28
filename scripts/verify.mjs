@@ -185,6 +185,11 @@ function runLatexPreviewBehaviorTests() {
 		"latex-preview should prettify common inline math",
 	);
 	assert(
+		prettify("Use \\(\\mathcal F\\), \\(\\mathcal L\\), and \\(\\mathcal{X}\\) inline.") ===
+			"Use F, L, and X inline.",
+		"latex-preview should render inline mathcal as plain ASCII generally",
+	);
+	assert(
 		prettify("Keep `\\(X_1\\)` code literal.") === "Keep `\\(X_1\\)` code literal.",
 		"latex-preview should not prettify inline code",
 	);
