@@ -12,7 +12,12 @@ const execFileAsync = promisify(execFile);
 const CUSTOM_TYPE = "latex-preview";
 const MAX_RENDERED_SNIPPETS = 10;
 const LATEX_TIMEOUT_MS = 12_000;
+const MAX_MATH_WIDTH_CELLS = 72;
+const MIN_MATH_WIDTH_CELLS = 8;
+const PREVIEW_PX_PER_CELL = 18;
+const RENDER_INLINE_MATH_IN_CONTEXT = false;
 const DISPLAY_ENVIRONMENT = /^(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)$/;
+const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\4\})|\\\(([\s\S]+?)\\\)|(?<!\\)\$([^\n$]{1,220}?)(?<!\\)\$/g;
 
 export type LatexSnippet = {
 	tex: string;
@@ -20,13 +25,24 @@ export type LatexSnippet = {
 	delimiter: string;
 };
 
+type PngDimensions = {
+	widthPx: number;
+	heightPx: number;
+};
+
 type RenderedSnippet = LatexSnippet & {
 	pngBase64?: string;
+	dimensions?: PngDimensions;
 	error?: string;
 };
 
+type PreviewBlock =
+	| { type: "markdown"; text: string }
+	| { type: "math"; snippet: RenderedSnippet };
+
 type PreviewDetails = {
-	snippets: RenderedSnippet[];
+	blocks?: PreviewBlock[];
+	snippets?: RenderedSnippet[];
 	truncated: boolean;
 };
 
@@ -58,6 +74,19 @@ function isUsefulInlineMath(tex: string): boolean {
 	if (tex.length > 220) return false;
 	if (/^\d+(?:\.\d{2})?$/.test(tex.trim())) return false;
 	return /[\\_^{}=<>]|\b(?:frac|sum|int|prod|lim|sqrt|mathbb|operatorname|exp|log|Pr|Var|Cov)\b/.test(tex) || tex.length > 2;
+}
+
+function snippetFromRegexMatch(match: RegExpMatchArray): LatexSnippet | undefined {
+	if (match[1]) return { tex: match[1].trim(), display: true, delimiter: "$$" };
+	if (match[2]) return { tex: match[2].trim(), display: true, delimiter: "\\[" };
+	if (match[3]) return { tex: match[3].trim(), display: true, delimiter: "environment" };
+	if (match[5]?.trim() && isUsefulInlineMath(match[5].trim())) {
+		return { tex: match[5].trim(), display: false, delimiter: "\\(" };
+	}
+	if (match[6]?.trim() && isUsefulInlineMath(match[6].trim())) {
+		return { tex: match[6].trim(), display: false, delimiter: "$" };
+	}
+	return undefined;
 }
 
 export function extractLatexSnippets(text: string, maxSnippets = MAX_RENDERED_SNIPPETS): { snippets: LatexSnippet[]; truncated: boolean } {
@@ -141,9 +170,15 @@ function errorSummary(error: unknown): string {
 	return (latexError ?? output.split(/\r?\n/).find((line) => line.trim()) ?? "LaTeX render failed").slice(0, 240);
 }
 
-const renderCache = new Map<string, Promise<Pick<RenderedSnippet, "pngBase64" | "error">>>();
+function pngDimensions(buffer: Buffer): PngDimensions | undefined {
+	if (buffer.length < 24) return undefined;
+	if (buffer[0] !== 0x89 || buffer[1] !== 0x50 || buffer[2] !== 0x4e || buffer[3] !== 0x47) return undefined;
+	return { widthPx: buffer.readUInt32BE(16), heightPx: buffer.readUInt32BE(20) };
+}
 
-export async function renderLatexSnippet(snippet: LatexSnippet): Promise<Pick<RenderedSnippet, "pngBase64" | "error">> {
+const renderCache = new Map<string, Promise<Pick<RenderedSnippet, "pngBase64" | "dimensions" | "error">>>();
+
+export async function renderLatexSnippet(snippet: LatexSnippet): Promise<Pick<RenderedSnippet, "pngBase64" | "dimensions" | "error">> {
 	const key = createHash("sha256").update(JSON.stringify(snippet)).digest("hex");
 	const cached = renderCache.get(key);
 	if (cached) return cached;
@@ -163,7 +198,7 @@ export async function renderLatexSnippet(snippet: LatexSnippet): Promise<Pick<Re
 				maxBuffer: 1024 * 1024,
 			});
 			const png = await readFile(join(workdir, "formula.png"));
-			return { pngBase64: png.toString("base64") };
+			return { pngBase64: png.toString("base64"), dimensions: pngDimensions(png) };
 		} catch (error) {
 			return { error: errorSummary(error) };
 		} finally {
@@ -186,16 +221,122 @@ function assistantText(message: AssistantLike | undefined): string | undefined {
 	return text || undefined;
 }
 
-async function buildPreviewDetails(text: string): Promise<PreviewDetails | undefined> {
-	const { snippets, truncated } = extractLatexSnippets(text);
-	if (snippets.length === 0) return undefined;
-
-	const rendered: RenderedSnippet[] = [];
-	for (const snippet of snippets) {
-		const result = await renderLatexSnippet(snippet);
-		rendered.push({ ...snippet, ...result });
+function pushMarkdown(blocks: PreviewBlock[], text: string): void {
+	if (!text.trim()) return;
+	const previous = blocks.at(-1);
+	if (previous?.type === "markdown") {
+		previous.text += text;
+	} else {
+		blocks.push({ type: "markdown", text });
 	}
-	return { snippets: rendered, truncated };
+}
+
+async function buildPreviewDetails(text: string): Promise<PreviewDetails | undefined> {
+	const blocks: PreviewBlock[] = [];
+	let cursor = 0;
+	let renderedCount = 0;
+	let truncated = false;
+
+	for (const match of text.matchAll(MATH_PATTERN)) {
+		const start = match.index ?? 0;
+		const raw = match[0];
+		const snippet = snippetFromRegexMatch(match);
+		if (!snippet) continue;
+		if (!snippet.display && !RENDER_INLINE_MATH_IN_CONTEXT) continue;
+		if (renderedCount >= MAX_RENDERED_SNIPPETS) {
+			truncated = true;
+			break;
+		}
+
+		pushMarkdown(blocks, text.slice(cursor, start));
+		const result = await renderLatexSnippet(snippet);
+		blocks.push({ type: "math", snippet: { ...snippet, ...result } });
+		cursor = start + raw.length;
+		renderedCount++;
+	}
+
+	if (renderedCount === 0) return undefined;
+	pushMarkdown(blocks, text.slice(cursor));
+	return { blocks, truncated };
+}
+
+function targetWidthCells(snippet: RenderedSnippet): number {
+	const widthPx = snippet.dimensions?.widthPx;
+	if (!widthPx) return 48;
+	return Math.max(MIN_MATH_WIDTH_CELLS, Math.min(MAX_MATH_WIDTH_CELLS, Math.ceil(widthPx / PREVIEW_PX_PER_CELL)));
+}
+
+function addMathImage(container: Container, snippet: RenderedSnippet, index: number, expanded: boolean, theme: Theme): void {
+	const mdTheme = getMarkdownTheme();
+	if (snippet.pngBase64) {
+		container.addChild(
+			new Image(
+				snippet.pngBase64,
+				"image/png",
+				{ fallbackColor: (text: string) => theme.fg("muted", text) },
+				{ maxWidthCells: targetWidthCells(snippet), filename: `latex-${index + 1}.png` },
+				snippet.dimensions,
+			),
+		);
+	} else {
+		container.addChild(new Text(theme.fg("warning", snippet.error ?? "LaTeX render failed"), 1, 0));
+	}
+	if (expanded) {
+		container.addChild(new Markdown(`\`\`\`latex\n${snippet.tex}\n\`\`\``, 1, 0, mdTheme));
+	}
+}
+
+function latexPreviewComponent(details: PreviewDetails, expanded: boolean, theme: Theme): Container {
+	const container = new Container();
+	const mdTheme = getMarkdownTheme();
+	container.addChild(new Spacer(1));
+	container.addChild(new Text(theme.fg("accent", theme.bold("Rendered LaTeX preview")), 1, 0));
+	if (!RENDER_INLINE_MATH_IN_CONTEXT) {
+		container.addChild(new Text(theme.fg("dim", "Display equations are rendered in context; inline math stays in prose."), 1, 0));
+	}
+	if (details.truncated) {
+		container.addChild(new Text(theme.fg("dim", `Showing first ${MAX_RENDERED_SNIPPETS} display equations.`), 1, 0));
+	}
+
+	let mathIndex = 0;
+	if (details.blocks) {
+		for (const block of details.blocks) {
+			if (block.type === "markdown") {
+				container.addChild(new Markdown(block.text.trim(), 1, 0, mdTheme));
+			} else {
+				container.addChild(new Spacer(1));
+				addMathImage(container, block.snippet, mathIndex, expanded, theme);
+				container.addChild(new Spacer(1));
+				mathIndex++;
+			}
+		}
+		return container;
+	}
+
+	for (const snippet of details.snippets ?? []) {
+		container.addChild(new Spacer(1));
+		addMathImage(container, snippet, mathIndex, expanded, theme);
+		mathIndex++;
+	}
+	return container;
+}
+
+export default function latexPreview(pi: ExtensionAPI) {
+	pi.registerMessageRenderer<PreviewDetails>(CUSTOM_TYPE, (message, { expanded }, theme) => {
+		const details = message.details;
+		if (!details || (!Array.isArray(details.blocks) && !Array.isArray(details.snippets))) return undefined;
+		return latexPreviewComponent(details, expanded, theme);
+	});
+
+	pi.on("agent_end", async (event, ctx) => {
+		if (!ctx.hasUI) return;
+		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant") as AssistantLike | undefined;
+		const text = assistantText(lastAssistant);
+		if (!text) return;
+		const details = await buildPreviewDetails(text);
+		if (!details) return;
+		sendWhenIdle(pi, ctx, details);
+	});
 }
 
 function sendWhenIdle(pi: ExtensionAPI, ctx: ExtensionContext, details: PreviewDetails, attempts = 30): void {
@@ -211,55 +352,4 @@ function sendWhenIdle(pi: ExtensionAPI, ctx: ExtensionContext, details: PreviewD
 	}
 	if (attempts <= 0) return;
 	setTimeout(() => sendWhenIdle(pi, ctx, details, attempts - 1), 50);
-}
-
-function latexPreviewComponent(details: PreviewDetails, expanded: boolean, theme: Theme): Container {
-	const container = new Container();
-	const mdTheme = getMarkdownTheme();
-	container.addChild(new Spacer(1));
-	container.addChild(new Text(theme.fg("accent", theme.bold("Rendered LaTeX")), 1, 0));
-
-	if (details.truncated) {
-		container.addChild(new Text(theme.fg("dim", `Showing first ${details.snippets.length} math snippets.`), 1, 0));
-	}
-
-	for (let i = 0; i < details.snippets.length; i++) {
-		const snippet = details.snippets[i];
-		container.addChild(new Spacer(1));
-		container.addChild(new Text(theme.fg("dim", `${i + 1}. ${snippet.display ? "display" : "inline"} math`), 1, 0));
-		if (expanded) {
-			container.addChild(new Markdown(`\`\`\`latex\n${snippet.tex}\n\`\`\``, 1, 0, mdTheme));
-		}
-		if (snippet.pngBase64) {
-			container.addChild(
-				new Image(
-					snippet.pngBase64,
-					"image/png",
-					{ fallbackColor: (text: string) => theme.fg("muted", text) },
-					{ maxWidthCells: 88, filename: `latex-${i + 1}.png` },
-				),
-			);
-		} else {
-			container.addChild(new Text(theme.fg("warning", snippet.error ?? "LaTeX render failed"), 1, 0));
-		}
-	}
-	return container;
-}
-
-export default function latexPreview(pi: ExtensionAPI) {
-	pi.registerMessageRenderer<PreviewDetails>(CUSTOM_TYPE, (message, { expanded }, theme) => {
-		const details = message.details;
-		if (!details || !Array.isArray(details.snippets)) return undefined;
-		return latexPreviewComponent(details, expanded, theme);
-	});
-
-	pi.on("agent_end", async (event, ctx) => {
-		if (!ctx.hasUI) return;
-		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant") as AssistantLike | undefined;
-		const text = assistantText(lastAssistant);
-		if (!text) return;
-		const details = await buildPreviewDetails(text);
-		if (!details) return;
-		sendWhenIdle(pi, ctx, details);
-	});
 }
