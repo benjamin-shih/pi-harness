@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -160,6 +161,19 @@ async function runSafetyGateBehaviorTests() {
 }
 
 await runSafetyGateBehaviorTests();
+
+const localSkillsRoot = "/Users/benjaminshih/.agents/skills";
+if (existsSync(localSkillsRoot)) {
+	try {
+		const stdout = execFileSync(process.execPath, [join(root, "scripts", "skills-audit.mjs"), "--root", localSkillsRoot, "--json"], {
+			encoding: "utf8",
+		});
+		const audit = JSON.parse(stdout);
+		assert(audit.issues.length === 0, `local skills audit has ${audit.issues.length} issue(s)`);
+	} catch (error) {
+		fail(`local skills audit failed: ${error.message}`);
+	}
+}
 
 if (process.exitCode) process.exit(process.exitCode);
 console.log("verify ok");

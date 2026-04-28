@@ -18,6 +18,7 @@ extensions/
   catppuccin-footer.ts  Responsive Catppuccin footer
   harness-commands.ts   /mode, /status, /checkpoint, and skill-routing reminders
   safety-gate.ts        Secret/private-file and risky-command guardrails
+  skills-audit.ts       /skills-audit command for the shared skill graph
 prompts/
   handoff.md            Session/task handoff prompt
   review.md             Review prompt
@@ -26,6 +27,7 @@ themes/
   catppuccin-mocha.json Catppuccin Mocha theme
 scripts/
   verify.mjs            Local/CI package verification
+  skills-audit.mjs      Shared skill graph validator and bloat summary
   changelog.mjs         Draft release notes from git commits
 ```
 
@@ -37,6 +39,7 @@ After loading this package in pi:
 /mode [fast|default|deep|readonly|full]
 /status
 /checkpoint [note]
+/skills-audit [skills-root]
 /simplify [scope]
 /review [scope]
 /handoff [audience or focus]
@@ -72,6 +75,7 @@ After editing package files, reload pi:
 ```bash
 npm ci
 npm run verify
+npm run skills:audit
 npm run hooks:install
 ```
 
