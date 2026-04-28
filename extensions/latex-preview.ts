@@ -16,6 +16,7 @@ const MAX_MATH_WIDTH_CELLS = 72;
 const MIN_MATH_WIDTH_CELLS = 8;
 const PREVIEW_PX_PER_CELL = 18;
 const RENDER_INLINE_MATH_IN_CONTEXT = false;
+const DEFAULT_TEXT_RGB: Rgb = { r: 205, g: 214, b: 244 };
 const DISPLAY_ENVIRONMENT = /^(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)$/;
 const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\4\})|\\\(([\s\S]+?)\\\)|(?<!\\)\$([^\n$]{1,220}?)(?<!\\)\$/g;
 
@@ -28,6 +29,16 @@ export type LatexSnippet = {
 type PngDimensions = {
 	widthPx: number;
 	heightPx: number;
+};
+
+type Rgb = {
+	r: number;
+	g: number;
+	b: number;
+};
+
+type RenderOptions = {
+	textRgb: Rgb;
 };
 
 type RenderResult = {
@@ -133,13 +144,19 @@ function displayBody(tex: string): string {
 	return `\\[\n${tex}\n\\]`;
 }
 
-function latexDocument(snippet: LatexSnippet): string {
+function clampColorChannel(value: number): number {
+	return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function latexDocument(snippet: LatexSnippet, options: RenderOptions): string {
 	const body = snippet.display ? displayBody(snippet.tex) : `$\\displaystyle ${snippet.tex}$`;
+	const rgb = options.textRgb;
 	return String.raw`\documentclass{article}
 \usepackage{amsmath,amssymb,mathtools,bm,bbm,dsfont,braket,cancel,physics}
 \usepackage[active,tightpage,displaymath,textmath]{preview}
 \PreviewBorder=3pt
 \usepackage{xcolor}
+\definecolor{PiMathText}{RGB}{${clampColorChannel(rgb.r)},${clampColorChannel(rgb.g)},${clampColorChannel(rgb.b)}}
 \providecommand{\Var}{\operatorname{Var}}
 \providecommand{\Cov}{\operatorname{Cov}}
 \providecommand{\Corr}{\operatorname{Corr}}
@@ -155,10 +172,9 @@ function latexDocument(snippet: LatexSnippet): string {
 \def\Z{\mathbb{Z}}
 \def\C{\mathbb{C}}
 \def\1{\mathbf{1}}
-\pagecolor{white}
 \pagestyle{empty}
 \begin{document}
-\color{black}
+\color{PiMathText}
 ${body}
 \end{document}
 `;
@@ -180,16 +196,16 @@ function pngDimensions(buffer: Buffer): PngDimensions | undefined {
 	return { widthPx: buffer.readUInt32BE(16), heightPx: buffer.readUInt32BE(20) };
 }
 
-export async function renderLatexSnippet(snippet: LatexSnippet): Promise<RenderResult> {
+export async function renderLatexSnippet(snippet: LatexSnippet, options: RenderOptions = { textRgb: DEFAULT_TEXT_RGB }): Promise<RenderResult> {
 	const workdir = await mkdtemp(join(tmpdir(), "pi-latex-preview-"));
 	try {
-		await writeFile(join(workdir, "formula.tex"), latexDocument(snippet), "utf8");
+		await writeFile(join(workdir, "formula.tex"), latexDocument(snippet, options), "utf8");
 		await execFileAsync("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "formula.tex"], {
 			cwd: workdir,
 			timeout: LATEX_TIMEOUT_MS,
 			maxBuffer: 1024 * 1024,
 		});
-		await execFileAsync("pdftocairo", ["-png", "-singlefile", "-r", "220", "formula.pdf", "formula"], {
+		await execFileAsync("pdftocairo", ["-png", "-transp", "-singlefile", "-r", "220", "formula.pdf", "formula"], {
 			cwd: workdir,
 			timeout: LATEX_TIMEOUT_MS,
 			maxBuffer: 1024 * 1024,
@@ -224,7 +240,62 @@ function pushMarkdown(blocks: PreviewBlock[], text: string): void {
 	}
 }
 
-async function buildPreviewPayload(text: string): Promise<PreviewPayload | undefined> {
+const ANSI_BASIC_RGB: Rgb[] = [
+	{ r: 0, g: 0, b: 0 },
+	{ r: 128, g: 0, b: 0 },
+	{ r: 0, g: 128, b: 0 },
+	{ r: 128, g: 128, b: 0 },
+	{ r: 0, g: 0, b: 128 },
+	{ r: 128, g: 0, b: 128 },
+	{ r: 0, g: 128, b: 128 },
+	{ r: 192, g: 192, b: 192 },
+	{ r: 128, g: 128, b: 128 },
+	{ r: 255, g: 0, b: 0 },
+	{ r: 0, g: 255, b: 0 },
+	{ r: 255, g: 255, b: 0 },
+	{ r: 0, g: 0, b: 255 },
+	{ r: 255, g: 0, b: 255 },
+	{ r: 0, g: 255, b: 255 },
+	{ r: 255, g: 255, b: 255 },
+];
+
+function rgbFromAnsi(ansi: string): Rgb | undefined {
+	const trueColor = ansi.match(/38;2;(\d{1,3});(\d{1,3});(\d{1,3})/);
+	if (trueColor) {
+		return { r: Number(trueColor[1]), g: Number(trueColor[2]), b: Number(trueColor[3]) };
+	}
+
+	const color256 = ansi.match(/38;5;(\d{1,3})/);
+	if (color256) return xterm256ToRgb(Number(color256[1]));
+
+	const basic = ansi.match(/\[(3[0-7]|9[0-7])m/);
+	if (!basic) return undefined;
+	const code = Number(basic[1]);
+	return ANSI_BASIC_RGB[code >= 90 ? code - 82 : code - 30];
+}
+
+function xterm256ToRgb(index: number): Rgb | undefined {
+	if (index < 0 || index > 255) return undefined;
+	if (index < 16) return ANSI_BASIC_RGB[index];
+	if (index >= 232) {
+		const level = 8 + (index - 232) * 10;
+		return { r: level, g: level, b: level };
+	}
+	const steps = [0, 95, 135, 175, 215, 255];
+	const n = index - 16;
+	return { r: steps[Math.floor(n / 36)], g: steps[Math.floor((n % 36) / 6)], b: steps[n % 6] };
+}
+
+function renderOptionsFromTheme(theme: Theme | undefined): RenderOptions {
+	try {
+		const textRgb = theme ? rgbFromAnsi(theme.getFgAnsi("text")) : undefined;
+		return { textRgb: textRgb ?? DEFAULT_TEXT_RGB };
+	} catch {
+		return { textRgb: DEFAULT_TEXT_RGB };
+	}
+}
+
+async function buildPreviewPayload(text: string, renderOptions: RenderOptions): Promise<PreviewPayload | undefined> {
 	const blocks: PreviewBlock[] = [];
 	let cursor = 0;
 	let renderedCount = 0;
@@ -242,7 +313,7 @@ async function buildPreviewPayload(text: string): Promise<PreviewPayload | undef
 		}
 
 		pushMarkdown(blocks, text.slice(cursor, start));
-		const result = await renderLatexSnippet(snippet);
+		const result = await renderLatexSnippet(snippet, renderOptions);
 		blocks.push({ type: "math", math: { display: snippet.display, delimiter: snippet.delimiter, ...result } });
 		cursor = start + raw.length;
 		renderedCount++;
@@ -345,7 +416,7 @@ export default function latexPreview(pi: ExtensionAPI) {
 		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant") as AssistantLike | undefined;
 		const text = assistantText(lastAssistant);
 		if (!text) return;
-		const payload = await buildPreviewPayload(text);
+		const payload = await buildPreviewPayload(text, renderOptionsFromTheme(ctx.ui.theme));
 		if (!payload) return;
 		showPreview(ctx, payload);
 	});
