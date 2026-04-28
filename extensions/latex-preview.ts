@@ -469,17 +469,19 @@ async function buildPreviewPayload(text: string, renderOptions: RenderOptions): 
 	return { blocks, truncated };
 }
 
-function targetWidthCells(math: RenderedMath): number {
+function targetWidthCells(math: RenderedMath, availableWidthCells = MAX_MATH_WIDTH_CELLS): number {
 	const widthPx = math.dimensions?.widthPx;
 	const heightPx = math.dimensions?.heightPx;
-	if (!widthPx || !heightPx) return 48;
+	const limit = Math.max(1, Math.min(MAX_MATH_WIDTH_CELLS, Math.floor(availableWidthCells)));
+	if (!widthPx || !heightPx) return Math.min(48, limit);
 
-	let bestCells = Math.max(MIN_MATH_WIDTH_CELLS, Math.min(MAX_MATH_WIDTH_CELLS, Math.ceil(widthPx / PREVIEW_PX_PER_CELL)));
+	const lower = Math.min(MIN_MATH_WIDTH_CELLS, limit);
+	let bestCells = Math.max(lower, Math.min(limit, Math.ceil(widthPx / PREVIEW_PX_PER_CELL)));
 	let bestScore = Number.POSITIVE_INFINITY;
 	const cellDimensions = getCellDimensions();
 	const originalAspect = widthPx / heightPx;
 
-	for (let cells = MIN_MATH_WIDTH_CELLS; cells <= MAX_MATH_WIDTH_CELLS; cells++) {
+	for (let cells = lower; cells <= limit; cells++) {
 		const rows = calculateImageRows({ widthPx, heightPx }, cells, cellDimensions);
 		const renderedAspect = (cells * cellDimensions.widthPx) / (rows * cellDimensions.heightPx);
 		const aspectError = Math.abs(Math.log(renderedAspect / originalAspect));
@@ -494,20 +496,46 @@ function targetWidthCells(math: RenderedMath): number {
 	return bestCells;
 }
 
-function addMathImage(container: Container, math: RenderedMath, index: number, theme: Theme): void {
-	if (math.pngBase64) {
-		container.addChild(
-			new Image(
-				math.pngBase64,
-				"image/png",
-				{ fallbackColor: (text: string) => theme.fg("muted", text) },
-				{ maxWidthCells: targetWidthCells(math), filename: `latex-${index + 1}.png` },
-				math.dimensions,
-			),
+class ResponsiveMathImage {
+	private cachedWidth?: number;
+	private cachedLines?: string[];
+
+	constructor(
+		private readonly math: RenderedMath,
+		private readonly index: number,
+		private readonly theme: Theme,
+	) {}
+
+	render(width: number): string[] {
+		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
+		if (!this.math.pngBase64) {
+			const text = new Text(this.theme.fg("warning", this.math.error ?? "LaTeX render failed"), 1, 0);
+			this.cachedLines = text.render(width);
+			this.cachedWidth = width;
+			return this.cachedLines;
+		}
+
+		const maxWidthCells = targetWidthCells(this.math, Math.max(1, width - 2));
+		const image = new Image(
+			this.math.pngBase64,
+			"image/png",
+			{ fallbackColor: (text: string) => this.theme.fg("muted", text) },
+			{ maxWidthCells, filename: `latex-${this.index + 1}.png` },
+			this.math.dimensions,
 		);
-	} else {
-		container.addChild(new Text(theme.fg("warning", math.error ?? "LaTeX render failed"), 1, 0));
+		this.cachedLines = image.render(width);
+		this.cachedWidth = width;
+		return this.cachedLines;
 	}
+
+	invalidate(): void {
+		this.cachedWidth = undefined;
+		this.cachedLines = undefined;
+	}
+}
+
+function addMathImage(container: Container, math: RenderedMath, index: number, theme: Theme): void {
+	container.addChild(new ResponsiveMathImage(math, index, theme));
 }
 
 function latexPreviewComponent(payload: PreviewPayload, theme: Theme): Container {
