@@ -1,11 +1,12 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Image, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { calculateImageRows, Container, getCellDimensions, Image, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { deflateSync, inflateSync } from "node:zlib";
 
 const execFileAsync = promisify(execFile);
 const WIDGET_KEY = "latex-preview";
@@ -140,10 +141,8 @@ export function extractLatexSnippets(text: string, maxSnippets = MAX_RENDERED_SN
 
 function displayBody(tex: string): string {
 	const env = tex.match(/^\\begin\{([^}]+)\}/)?.[1];
-	if (env && DISPLAY_ENVIRONMENT.test(env)) {
-		return tex.replace(/^\\begin\{([^}]+)\}/, "\\\\begin{$1}\n\\\\color{PiMathText}");
-	}
-	return `\\[\n\\color{PiMathText}\n${tex}\n\\]`;
+	if (env && DISPLAY_ENVIRONMENT.test(env)) return tex;
+	return `\\[\n${tex}\n\\]`;
 }
 
 function clampColorChannel(value: number): number {
@@ -151,7 +150,7 @@ function clampColorChannel(value: number): number {
 }
 
 function latexDocument(snippet: LatexSnippet, options: RenderOptions): string {
-	const body = snippet.display ? displayBody(snippet.tex) : `$\\displaystyle \\color{PiMathText} ${snippet.tex}$`;
+	const body = snippet.display ? displayBody(snippet.tex) : `$\\displaystyle ${snippet.tex}$`;
 	const rgb = options.textRgb;
 	return String.raw`\documentclass{article}
 \usepackage{amsmath,amssymb,mathtools,bm,bbm,dsfont,braket,cancel,physics}
@@ -197,6 +196,150 @@ function pngDimensions(buffer: Buffer): PngDimensions | undefined {
 	return { widthPx: buffer.readUInt32BE(16), heightPx: buffer.readUInt32BE(20) };
 }
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const CRC32_TABLE = new Uint32Array(256).map((_, index) => {
+	let c = index;
+	for (let bit = 0; bit < 8; bit++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+	return c >>> 0;
+});
+
+type PngChunk = {
+	type: string;
+	data: Buffer;
+};
+
+function crc32(parts: Buffer[]): number {
+	let crc = 0xffffffff;
+	for (const part of parts) {
+		for (const byte of part) crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+	}
+	return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+	const typeBuffer = Buffer.from(type, "ascii");
+	const chunk = Buffer.alloc(12 + data.length);
+	chunk.writeUInt32BE(data.length, 0);
+	typeBuffer.copy(chunk, 4);
+	data.copy(chunk, 8);
+	chunk.writeUInt32BE(crc32([typeBuffer, data]), 8 + data.length);
+	return chunk;
+}
+
+function paethPredictor(left: number, up: number, upperLeft: number): number {
+	const p = left + up - upperLeft;
+	const pa = Math.abs(p - left);
+	const pb = Math.abs(p - up);
+	const pc = Math.abs(p - upperLeft);
+	if (pa <= pb && pa <= pc) return left;
+	return pb <= pc ? up : upperLeft;
+}
+
+function parsePngChunks(buffer: Buffer): PngChunk[] | undefined {
+	if (buffer.length < PNG_SIGNATURE.length || !buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return undefined;
+	const chunks: PngChunk[] = [];
+	let offset = PNG_SIGNATURE.length;
+	while (offset + 12 <= buffer.length) {
+		const length = buffer.readUInt32BE(offset);
+		const type = buffer.subarray(offset + 4, offset + 8).toString("ascii");
+		const dataStart = offset + 8;
+		const dataEnd = dataStart + length;
+		if (dataEnd + 4 > buffer.length) return undefined;
+		chunks.push({ type, data: buffer.subarray(dataStart, dataEnd) });
+		offset = dataEnd + 4;
+		if (type === "IEND") break;
+	}
+	return chunks;
+}
+
+function tintRgbaPng(buffer: Buffer, rgb: Rgb): Buffer {
+	const chunks = parsePngChunks(buffer);
+	const ihdr = chunks?.find((chunk) => chunk.type === "IHDR")?.data;
+	if (!chunks || !ihdr || ihdr.length !== 13) return buffer;
+
+	const width = ihdr.readUInt32BE(0);
+	const height = ihdr.readUInt32BE(4);
+	const bitDepth = ihdr[8];
+	const colorType = ihdr[9];
+	const interlace = ihdr[12];
+	if (bitDepth !== 8 || colorType !== 6 || interlace !== 0) return buffer;
+
+	const idat = Buffer.concat(chunks.filter((chunk) => chunk.type === "IDAT").map((chunk) => chunk.data));
+	const inflated = inflateSync(idat);
+	const bytesPerPixel = 4;
+	const stride = width * bytesPerPixel;
+	if (inflated.length < (stride + 1) * height) return buffer;
+
+	const pixels = Buffer.alloc(stride * height);
+	let inputOffset = 0;
+	for (let y = 0; y < height; y++) {
+		const filter = inflated[inputOffset++];
+		const rowStart = y * stride;
+		const prevRowStart = (y - 1) * stride;
+		for (let x = 0; x < stride; x++) {
+			const raw = inflated[inputOffset++];
+			const left = x >= bytesPerPixel ? pixels[rowStart + x - bytesPerPixel] : 0;
+			const up = y > 0 ? pixels[prevRowStart + x] : 0;
+			const upperLeft = y > 0 && x >= bytesPerPixel ? pixels[prevRowStart + x - bytesPerPixel] : 0;
+			let value: number;
+			switch (filter) {
+				case 0:
+					value = raw;
+					break;
+				case 1:
+					value = raw + left;
+					break;
+				case 2:
+					value = raw + up;
+					break;
+				case 3:
+					value = raw + Math.floor((left + up) / 2);
+					break;
+				case 4:
+					value = raw + paethPredictor(left, up, upperLeft);
+					break;
+				default:
+					return buffer;
+			}
+			pixels[rowStart + x] = value & 0xff;
+		}
+	}
+
+	for (let offset = 0; offset < pixels.length; offset += bytesPerPixel) {
+		if (pixels[offset + 3] === 0) continue;
+		pixels[offset] = clampColorChannel(rgb.r);
+		pixels[offset + 1] = clampColorChannel(rgb.g);
+		pixels[offset + 2] = clampColorChannel(rgb.b);
+	}
+
+	const refiltered = Buffer.alloc((stride + 1) * height);
+	let outputOffset = 0;
+	for (let y = 0; y < height; y++) {
+		refiltered[outputOffset++] = 0;
+		pixels.copy(refiltered, outputOffset, y * stride, (y + 1) * stride);
+		outputOffset += stride;
+	}
+
+	const outputChunks: Buffer[] = [PNG_SIGNATURE];
+	let wroteIdat = false;
+	for (const chunk of chunks) {
+		if (chunk.type === "IDAT") {
+			if (!wroteIdat) {
+				outputChunks.push(pngChunk("IDAT", deflateSync(refiltered, { level: 9 })));
+				wroteIdat = true;
+			}
+			continue;
+		}
+		if (chunk.type === "IEND") {
+			if (!wroteIdat) outputChunks.push(pngChunk("IDAT", deflateSync(refiltered, { level: 9 })));
+			outputChunks.push(pngChunk("IEND", Buffer.alloc(0)));
+			break;
+		}
+		outputChunks.push(pngChunk(chunk.type, chunk.data));
+	}
+	return Buffer.concat(outputChunks);
+}
+
 export async function renderLatexSnippet(snippet: LatexSnippet, options: RenderOptions = { textRgb: DEFAULT_TEXT_RGB }): Promise<RenderResult> {
 	const workdir = await mkdtemp(join(tmpdir(), "pi-latex-preview-"));
 	try {
@@ -212,7 +355,8 @@ export async function renderLatexSnippet(snippet: LatexSnippet, options: RenderO
 			maxBuffer: 1024 * 1024,
 		});
 		const png = await readFile(join(workdir, "formula.png"));
-		return { pngBase64: png.toString("base64"), dimensions: pngDimensions(png) };
+		const tintedPng = tintRgbaPng(png, options.textRgb);
+		return { pngBase64: tintedPng.toString("base64"), dimensions: pngDimensions(png) };
 	} catch (error) {
 		return { error: errorSummary(error) };
 	} finally {
@@ -327,8 +471,27 @@ async function buildPreviewPayload(text: string, renderOptions: RenderOptions): 
 
 function targetWidthCells(math: RenderedMath): number {
 	const widthPx = math.dimensions?.widthPx;
-	if (!widthPx) return 48;
-	return Math.max(MIN_MATH_WIDTH_CELLS, Math.min(MAX_MATH_WIDTH_CELLS, Math.ceil(widthPx / PREVIEW_PX_PER_CELL)));
+	const heightPx = math.dimensions?.heightPx;
+	if (!widthPx || !heightPx) return 48;
+
+	let bestCells = Math.max(MIN_MATH_WIDTH_CELLS, Math.min(MAX_MATH_WIDTH_CELLS, Math.ceil(widthPx / PREVIEW_PX_PER_CELL)));
+	let bestScore = Number.POSITIVE_INFINITY;
+	const cellDimensions = getCellDimensions();
+	const originalAspect = widthPx / heightPx;
+
+	for (let cells = MIN_MATH_WIDTH_CELLS; cells <= MAX_MATH_WIDTH_CELLS; cells++) {
+		const rows = calculateImageRows({ widthPx, heightPx }, cells, cellDimensions);
+		const renderedAspect = (cells * cellDimensions.widthPx) / (rows * cellDimensions.heightPx);
+		const aspectError = Math.abs(Math.log(renderedAspect / originalAspect));
+		const sizePenalty = cells < 28 ? (28 - cells) * 0.01 : 0;
+		const score = aspectError + sizePenalty;
+		if (score < bestScore) {
+			bestScore = score;
+			bestCells = cells;
+		}
+	}
+
+	return bestCells;
 }
 
 function addMathImage(container: Container, math: RenderedMath, index: number, theme: Theme): void {
