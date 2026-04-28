@@ -10,8 +10,7 @@ const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 const USER_MESSAGE_PATCH_KEY = "__benPiHarnessRoundedUserMessagePatch";
-const SENT_PROMPT_MAX_TEXT_WIDTH = 88;
-const SENT_PROMPT_BORDER_FG = "\x1b[38;2;137;180;250m";
+const SENT_PROMPT_MAX_TEXT_WIDTH = 96;
 
 interface ThemeLike {
 	fg(color: string, text: string): string;
@@ -74,14 +73,14 @@ function renderSentPromptBox(markdown: RenderableMarkdown, width: number, theme?
 	const textWidth = Math.max(1, ...contentLines.map((line) => visibleWidth(line)));
 	const paddingX = 1;
 	const innerWidth = textWidth + paddingX * 2;
-	const border = (text: string) => `${SENT_PROMPT_BORDER_FG}${text}\x1b[39m`;
+	const border = (text: string) => theme?.fg("borderAccent", text) ?? text;
 	const fill = (text: string) => theme?.bg("userMessageBg", text) ?? text;
 	const padContent = (line: string) => fill(` ${fitAnsi(line, textWidth)} `);
 
 	return [
-		border(`+${"-".repeat(innerWidth)}+`),
-		...contentLines.map((line) => `${border("|")}${padContent(line)}${border("|")}`),
-		border(`+${"-".repeat(innerWidth)}+`),
+		border(`╭${"─".repeat(innerWidth)}╮`),
+		...contentLines.map((line) => `${border("│")}${padContent(line)}${border("│")}`),
+		border(`╰${"─".repeat(innerWidth)}╯`),
 	];
 }
 
@@ -96,7 +95,8 @@ function patchUserMessageComponent(getTheme: UserMessagePatchState["getTheme"]):
 	}
 	state.getTheme = getTheme;
 
-	if (state.patched) return;
+	// Always replace the wrapper on reload. The original pi renderer is kept in
+	// global state, but the wrapper implementation may have changed.
 	state.patched = true;
 
 	proto.render = function patchedUserMessageRender(this: unknown, width: number): string[] {
