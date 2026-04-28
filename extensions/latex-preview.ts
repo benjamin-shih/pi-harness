@@ -478,11 +478,26 @@ function targetWidthCells(math: RenderedMath, availableWidthCells = MAX_MATH_WID
 	return Math.max(1, Math.min(limit, naturalWidth));
 }
 
+function centerImageLine(line: string, padding: string): string {
+	const imageStart = Math.min(
+		...[
+			line.indexOf("\x1b_G"),
+			line.indexOf("\x1b]1337;File="),
+		].filter((index) => index >= 0),
+	);
+	if (!Number.isFinite(imageStart)) return line;
+
+	// Multi-row images begin with a cursor-up escape. Move vertically first,
+	// then indent on the target row. Prefixing spaces before cursor-up relies on
+	// terminal-specific column preservation and is visibly off in some Kitty panes.
+	return line.slice(0, imageStart) + padding + line.slice(imageStart);
+}
+
 function centerImageLines(lines: string[], width: number, imageWidthCells: number): string[] {
 	const indent = Math.max(0, Math.floor((width - imageWidthCells) / 2));
 	if (indent === 0) return lines;
 	const padding = " ".repeat(indent);
-	return lines.map((line) => (line.includes("\x1b_G") || line.includes("\x1b]1337;File=") ? padding + line : line));
+	return lines.map((line) => centerImageLine(line, padding));
 }
 
 class ResponsiveMathImage {
