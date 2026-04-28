@@ -140,8 +140,10 @@ export function extractLatexSnippets(text: string, maxSnippets = MAX_RENDERED_SN
 
 function displayBody(tex: string): string {
 	const env = tex.match(/^\\begin\{([^}]+)\}/)?.[1];
-	if (env && DISPLAY_ENVIRONMENT.test(env)) return tex;
-	return `\\[\n${tex}\n\\]`;
+	if (env && DISPLAY_ENVIRONMENT.test(env)) {
+		return tex.replace(/^\\begin\{([^}]+)\}/, "\\\\begin{$1}\n\\\\color{PiMathText}");
+	}
+	return `\\[\n\\color{PiMathText}\n${tex}\n\\]`;
 }
 
 function clampColorChannel(value: number): number {
@@ -149,7 +151,7 @@ function clampColorChannel(value: number): number {
 }
 
 function latexDocument(snippet: LatexSnippet, options: RenderOptions): string {
-	const body = snippet.display ? displayBody(snippet.tex) : `$\\displaystyle ${snippet.tex}$`;
+	const body = snippet.display ? displayBody(snippet.tex) : `$\\displaystyle \\color{PiMathText} ${snippet.tex}$`;
 	const rgb = options.textRgb;
 	return String.raw`\documentclass{article}
 \usepackage{amsmath,amssymb,mathtools,bm,bbm,dsfont,braket,cancel,physics}
@@ -174,7 +176,6 @@ function latexDocument(snippet: LatexSnippet, options: RenderOptions): string {
 \def\1{\mathbf{1}}
 \pagestyle{empty}
 \begin{document}
-\color{PiMathText}
 ${body}
 \end{document}
 `;
