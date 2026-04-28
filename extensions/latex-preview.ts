@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { calculateImageRows, Container, getCellDimensions, Image, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, Image, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -471,29 +471,18 @@ async function buildPreviewPayload(text: string, renderOptions: RenderOptions): 
 
 function targetWidthCells(math: RenderedMath, availableWidthCells = MAX_MATH_WIDTH_CELLS): number {
 	const widthPx = math.dimensions?.widthPx;
-	const heightPx = math.dimensions?.heightPx;
 	const limit = Math.max(1, Math.min(MAX_MATH_WIDTH_CELLS, Math.floor(availableWidthCells)));
-	if (!widthPx || !heightPx) return Math.min(48, limit);
+	if (!widthPx) return Math.min(48, limit);
 
-	const lower = Math.min(MIN_MATH_WIDTH_CELLS, limit);
-	let bestCells = Math.max(lower, Math.min(limit, Math.ceil(widthPx / PREVIEW_PX_PER_CELL)));
-	let bestScore = Number.POSITIVE_INFINITY;
-	const cellDimensions = getCellDimensions();
-	const originalAspect = widthPx / heightPx;
+	const naturalWidth = Math.max(MIN_MATH_WIDTH_CELLS, Math.ceil(widthPx / PREVIEW_PX_PER_CELL));
+	return Math.max(1, Math.min(limit, naturalWidth));
+}
 
-	for (let cells = lower; cells <= limit; cells++) {
-		const rows = calculateImageRows({ widthPx, heightPx }, cells, cellDimensions);
-		const renderedAspect = (cells * cellDimensions.widthPx) / (rows * cellDimensions.heightPx);
-		const aspectError = Math.abs(Math.log(renderedAspect / originalAspect));
-		const sizePenalty = cells < 28 ? (28 - cells) * 0.01 : 0;
-		const score = aspectError + sizePenalty;
-		if (score < bestScore) {
-			bestScore = score;
-			bestCells = cells;
-		}
-	}
-
-	return bestCells;
+function centerImageLines(lines: string[], width: number, imageWidthCells: number): string[] {
+	const indent = Math.max(0, Math.floor((width - imageWidthCells) / 2));
+	if (indent === 0) return lines;
+	const padding = " ".repeat(indent);
+	return lines.map((line) => (line.includes("\x1b_G") || line.includes("\x1b]1337;File=") ? padding + line : line));
 }
 
 class ResponsiveMathImage {
@@ -523,7 +512,7 @@ class ResponsiveMathImage {
 			{ maxWidthCells, filename: `latex-${this.index + 1}.png` },
 			this.math.dimensions,
 		);
-		this.cachedLines = image.render(width);
+		this.cachedLines = centerImageLines(image.render(width), width, maxWidthCells);
 		this.cachedWidth = width;
 		return this.cachedLines;
 	}
