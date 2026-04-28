@@ -574,7 +574,8 @@ const CALLIGRAPHIC: Record<string, string> = {
 	K: "𝒦",
 	L: "ℒ",
 	M: "ℳ",
-	N: "𝒩",
+	// Plain N is more legible than Unicode script N in common terminal fonts.
+	N: "N",
 	O: "𝒪",
 	P: "𝒫",
 	Q: "𝒬",

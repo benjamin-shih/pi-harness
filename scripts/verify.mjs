@@ -181,7 +181,7 @@ function runLatexPreviewBehaviorTests() {
 	assert(typeof prettify === "function", "latex-preview should export prettifyInlineMathInMarkdown");
 	assert(
 		prettify("For \\(Y_1\\), \\(y\\ge 0\\), and \\(Z\\sim \\mathcal N(0,1)\\).") ===
-			"For Y₁, y ≥ 0, and Z ∼ 𝒩(0,1).",
+			"For Y₁, y ≥ 0, and Z ∼ N(0,1).",
 		"latex-preview should prettify common inline math",
 	);
 	assert(
