@@ -31,6 +31,51 @@ const RENDER_INLINE_MATH_IN_CONTEXT = false;
 const DEFAULT_TEXT_RGB: Rgb = { r: 205, g: 214, b: 244 };
 const DISPLAY_ENVIRONMENT = /^(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)$/;
 const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\4\})|\\\(([\s\S]+?)\\\)|(?<!\\)\$(?![\s\d])([^\n$]{1,220}?)(?<![\\\s])\$/g;
+const INLINE_DOLLAR_PATTERN = /(?<!\\)\$(?![\s\d])([^\n$]{1,220}?)(?<![\\\s])\$/g;
+const MAX_TEX_SNIPPET_CHARS = 5_000;
+const BLOCKED_LATEX_COMMANDS = [
+	"addbibresource",
+	"bibliography",
+	"catcode",
+	"csname",
+	"directlua",
+	"documentclass",
+	"edef",
+	"endinput",
+	"everyjob",
+	"expandafter",
+	"gdef",
+	"graphicspath",
+	"IfFileExists",
+	"include",
+	"includegraphics",
+	"includeonly",
+	"input",
+	"InputIfFileExists",
+	"latelua",
+	"let",
+	"luaexec",
+	"newcommand",
+	"newread",
+	"newwrite",
+	"openin",
+	"openout",
+	"pdfobj",
+	"pdfshellescape",
+	"pdfximage",
+	"read",
+	"renewcommand",
+	"RequirePackage",
+	"special",
+	"usepackage",
+	"write",
+	"write18",
+	"xdef",
+];
+const BLOCKED_LATEX_COMMAND_PATTERN = new RegExp(
+	`(^|[^\\\\])\\\\(?:${[...BLOCKED_LATEX_COMMANDS].sort((a, b) => b.length - a.length).join("|")})(?:\\b|\\d)`,
+	"i",
+);
 
 export type LatexSnippet = {
 	tex: string;
@@ -60,6 +105,7 @@ type RenderResult = {
 };
 
 type RenderedMath = RenderResult & {
+	tex: string;
 	display: boolean;
 	delimiter: string;
 };
@@ -132,11 +178,7 @@ export function extractLatexSnippets(text: string, maxSnippets = MAX_RENDERED_SN
 	}
 
 	collected.push(...collectMatches(inlineSource, /\\\(([\s\S]+?)\\\)/g, false, "\\("));
-	collected.push(
-		...collectMatches(inlineSource, /(?<!\\)\$([^\n$]{1,220}?)(?<!\\)\$/g, false, "$").filter((snippet) =>
-			isUsefulInlineMath(snippet.tex),
-		),
-	);
+	collected.push(...collectMatches(inlineSource, INLINE_DOLLAR_PATTERN, false, "$").filter((snippet) => isUsefulInlineMath(snippet.tex)));
 
 	const seen = new Set<string>();
 	const unique: LatexSnippet[] = [];
@@ -351,12 +393,53 @@ function tintRgbaPng(buffer: Buffer, rgb: Rgb): Buffer {
 	return Buffer.concat(outputChunks);
 }
 
+function stripLatexComments(tex: string): string {
+	return tex
+		.split(/\r?\n/)
+		.map((line) => {
+			for (let index = 0; index < line.length; index++) {
+				if (line[index] !== "%") continue;
+				let backslashes = 0;
+				for (let cursor = index - 1; cursor >= 0 && line[cursor] === "\\"; cursor--) backslashes++;
+				if (backslashes % 2 === 0) return line.slice(0, index);
+			}
+			return line;
+		})
+		.join("\n");
+}
+
+export function validateLatexSnippet(snippet: LatexSnippet): string | undefined {
+	if (snippet.tex.length > MAX_TEX_SNIPPET_CHARS) {
+		return `LaTeX preview blocked: snippet exceeds ${MAX_TEX_SNIPPET_CHARS} characters.`;
+	}
+	const source = stripLatexComments(snippet.tex);
+	const match = source.match(BLOCKED_LATEX_COMMAND_PATTERN);
+	if (match) {
+		const command = match[0].match(/\\[A-Za-z]+\d*/)?.[0] ?? "blocked command";
+		return `LaTeX preview blocked: disallowed command ${command}.`;
+	}
+	return undefined;
+}
+
+function latexProcessEnv(workdir: string): NodeJS.ProcessEnv {
+	return {
+		...process.env,
+		TEXMFOUTPUT: workdir,
+		openin_any: "p",
+		openout_any: "p",
+	};
+}
+
 export async function renderLatexSnippet(snippet: LatexSnippet, options: RenderOptions = { textRgb: DEFAULT_TEXT_RGB }): Promise<RenderResult> {
+	const validationError = validateLatexSnippet(snippet);
+	if (validationError) return { error: validationError };
+
 	const workdir = await mkdtemp(join(tmpdir(), "pi-latex-preview-"));
 	try {
 		await writeFile(join(workdir, "formula.tex"), latexDocument(snippet, options), "utf8");
-		await execFileAsync("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "formula.tex"], {
+		await execFileAsync("pdflatex", ["-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error", "formula.tex"], {
 			cwd: workdir,
+			env: latexProcessEnv(workdir),
 			timeout: LATEX_TIMEOUT_MS,
 			maxBuffer: 1024 * 1024,
 		});
@@ -677,8 +760,59 @@ function replaceAlphabetCommand(text: string, command: string, alphabet: Record<
 }
 
 function prettifySimpleFraction(text: string): string {
-	return text.replace(/\\frac\s*\{([^{}]{1,16})\}\s*\{([^{}]{1,16})\}/g, (_raw, numerator: string, denominator: string) => {
-		return `${numerator}/${denominator}`;
+	return text
+		.replace(/\\frac\s*\{([^{}]{1,16})\}\s*\{([^{}]{1,16})\}/g, (_raw, numerator: string, denominator: string) => {
+			return `${numerator}/${denominator}`;
+		})
+		.replace(/\\frac\s*([A-Za-z0-9])\s*([A-Za-z0-9])/g, (_raw, numerator: string, denominator: string) => {
+			return `${numerator}/${denominator}`;
+		});
+}
+
+const COMBINING_ACCENTS: Record<string, string> = {
+	hat: "̂",
+	widehat: "̂",
+	bar: "̄",
+	overline: "̄",
+	tilde: "̃",
+	widetilde: "̃",
+	vec: "⃗",
+	dot: "̇",
+	ddot: "̈",
+};
+
+function prettifyInlineAtom(tex: string): string | undefined {
+	let output = tex.trim();
+	if (!output || output.length > 40) return undefined;
+	output = replaceAlphabetCommand(output, "mathbb", DOUBLE_STRUCK);
+	output = replaceAlphabetCommand(output, "mathcal", CALLIGRAPHIC);
+	output = output.replace(/\\(?:operatorname|mathrm|text|textnormal|mathbf)\s*\{([^{}]{1,24})\}/g, "$1");
+	output = output.replace(/\\([A-Za-z]+)/g, (raw, command: string) => COMMAND_SYMBOLS[command] ?? raw);
+	output = replaceScripts(output, "_", SUBSCRIPT);
+	output = replaceScripts(output, "^", SUPERSCRIPT);
+	output = output.replace(/[{}]/g, "").trim();
+	if (!output || /\\|[_^{}]/.test(output)) return undefined;
+	return output;
+}
+
+function replaceAccentCommands(text: string): string {
+	const names = Object.keys(COMBINING_ACCENTS).join("|");
+	return text
+		.replace(new RegExp(`\\\\(${names})\\s*\\{([^{}]{1,24})\\}`, "g"), (raw, command: string, body: string) => {
+			const atom = prettifyInlineAtom(body);
+			return atom ? `${atom}${COMBINING_ACCENTS[command]}` : raw;
+		})
+		.replace(new RegExp(`\\\\(${names})\\s*(\\\\[A-Za-z]+|[A-Za-z0-9])`, "g"), (raw, command: string, body: string) => {
+			const atom = prettifyInlineAtom(body);
+			return atom ? `${atom}${COMBINING_ACCENTS[command]}` : raw;
+		});
+}
+
+function replaceSimpleSqrt(text: string): string {
+	return text.replace(/\\sqrt\s*\{([^{}]{1,32})\}/g, (raw, body: string) => {
+		const prettyBody = prettifyInlineExpression(body);
+		if (!prettyBody) return raw;
+		return /\s|[+\-*/=<>≤≥≠≈]/.test(prettyBody) ? `√(${prettyBody})` : `√${prettyBody}`;
 	});
 }
 
@@ -693,13 +827,15 @@ function prettifyInlineExpression(tex: string): string | undefined {
 	output = replaceAlphabetCommand(output, "mathcal", CALLIGRAPHIC);
 	output = output.replace(/\\mathbf\s*\{1\}/g, "𝟙");
 	output = output.replace(/\\(?:operatorname|mathrm|text|textnormal|mathbf)\s*\{([^{}]{1,40})\}/g, "$1");
+	output = replaceAccentCommands(output);
+	output = replaceSimpleSqrt(output);
 	output = output.replace(/\\(?:,|;|:|!)/g, " ");
 	output = output.replace(/\\qquad\b/g, "  ").replace(/\\quad\b/g, " ");
 	output = output.replace(/\\([A-Za-z]+)/g, (raw, command: string) => COMMAND_SYMBOLS[command] ?? raw);
 	output = replaceScripts(output, "_", SUBSCRIPT);
 	output = replaceScripts(output, "^", SUPERSCRIPT);
 	output = output.replace(/[{}]/g, "");
-	output = output.replace(/\s*([=<>≤≥≠≈≃∼→←↦⇒⇐⇔∈∉⊂⊆⊃⊇∪∩±×·])\s*/g, " $1 ");
+	output = output.replace(/\s*([=<>+\-≤≥≠≈≃∼→←↦⇒⇐⇔∈∉⊂⊆⊃⊇∪∩±×·])\s*/g, " $1 ");
 	output = output.replace(/\s+/g, " ").replace(/\s+([,.;:)\]])/g, "$1").replace(/([([{])\s+/g, "$1").trim();
 
 	if (!output || /\\|[_^{}]/.test(output)) return undefined;
@@ -749,7 +885,7 @@ async function buildPreviewPayload(text: string, renderOptions: RenderOptions): 
 
 		pushMarkdown(blocks, text.slice(cursor, start));
 		const result = await renderLatexSnippet(snippet, renderOptions);
-		blocks.push({ type: "math", math: { display: snippet.display, delimiter: snippet.delimiter, ...result } });
+		blocks.push({ type: "math", math: { tex: snippet.tex, display: snippet.display, delimiter: snippet.delimiter, ...result } });
 		cursor = start + raw.length;
 		renderedCount++;
 	}
@@ -809,6 +945,11 @@ function terminalImageLines(
 	return lines;
 }
 
+function compactTexSource(tex: string, maxLength = 240): string {
+	const compact = tex.replace(/\s+/g, " ").trim();
+	return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 1)}…`;
+}
+
 class ResponsiveMathImage {
 	private cachedWidth?: number;
 	private cachedLines?: string[];
@@ -822,8 +963,9 @@ class ResponsiveMathImage {
 	render(width: number): string[] {
 		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
 		if (!this.math.pngBase64) {
-			const text = new Text(this.theme.fg("warning", this.math.error ?? "LaTeX render failed"), 1, 0);
-			this.cachedLines = text.render(width);
+			const error = new Text(this.theme.fg("warning", this.math.error ?? "LaTeX render failed"), 1, 0);
+			const source = new Text(this.theme.fg("muted", `TeX: ${compactTexSource(this.math.tex)}`), 1, 0);
+			this.cachedLines = [...error.render(width), ...source.render(width)];
 			this.cachedWidth = width;
 			return this.cachedLines;
 		}

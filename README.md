@@ -17,7 +17,7 @@ Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and ses
 extensions/
   catppuccin-footer.ts  Responsive Catppuccin footer
   harness-commands.ts   /mode, /status, /checkpoint, and skill-routing reminders
-  latex-preview.ts      Theme-aware transient LaTeX previews with Unicode inline math
+  latex-preview.ts      Hardened transient LaTeX previews with Unicode inline math
   safety-gate.ts        Secret/private-file egress guardrails
   skills-audit.ts       /skills-audit command for the shared skill graph
 prompts/

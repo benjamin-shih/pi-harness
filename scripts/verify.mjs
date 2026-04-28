@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import Module from "node:module";
 
@@ -175,10 +176,28 @@ async function runSafetyGateBehaviorTests() {
 
 await runSafetyGateBehaviorTests();
 
-function runLatexPreviewBehaviorTests() {
+function commandExists(command) {
+	try {
+		execFileSync("command", ["-v", command], { stdio: "ignore" });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function latexPreviewTempDirs() {
+	return readdirSync(tmpdir()).filter((name) => name.startsWith("pi-latex-preview-"));
+}
+
+async function runLatexPreviewBehaviorTests() {
 	const latexPreview = loadExtensionModule("extensions/latex-preview.ts");
 	const prettify = latexPreview.prettifyInlineMathInMarkdown;
+	const validate = latexPreview.validateLatexSnippet;
+	const render = latexPreview.renderLatexSnippet;
 	assert(typeof prettify === "function", "latex-preview should export prettifyInlineMathInMarkdown");
+	assert(typeof validate === "function", "latex-preview should export validateLatexSnippet");
+	assert(typeof render === "function", "latex-preview should export renderLatexSnippet");
+
 	assert(
 		prettify("For \\(Y_1\\), \\(y\\ge 0\\), and \\(Z\\sim \\mathcal N(0,1)\\).") ===
 			"For Y₁, y ≥ 0, and Z ∼ N(0,1).",
@@ -190,6 +209,11 @@ function runLatexPreviewBehaviorTests() {
 		"latex-preview should render inline mathcal as plain ASCII generally",
 	);
 	assert(
+		prettify("Use \\(\\hat\\theta\\), \\(\\bar X\\), \\(\\sqrt{x^2+1}\\), and \\(\\frac12\\).") ===
+			"Use θ̂, X̄, √(x² + 1), and 1/2.",
+		"latex-preview should prettify common accents, roots, and compact fractions",
+	);
+	assert(
 		prettify("Keep `\\(X_1\\)` code literal.") === "Keep `\\(X_1\\)` code literal.",
 		"latex-preview should not prettify inline code",
 	);
@@ -197,9 +221,51 @@ function runLatexPreviewBehaviorTests() {
 		prettify("Cost is $12.50, but math $X_n\\to X$ is useful.") === "Cost is $12.50, but math Xₙ → X is useful.",
 		"latex-preview should avoid currency-like dollars and prettify useful dollar math",
 	);
+
+	for (const command of ["input", "include", "openin", "read", "write18", "includegraphics", "usepackage", "directlua", "catcode"]) {
+		const error = validate({ tex: `x + \\${command}{secret}`, display: true, delimiter: "\\\\[" });
+		assert(error?.includes("blocked"), `latex-preview should block \\${command}`);
+	}
+	assert(!validate({ tex: "x^2 + y^2 = z^2", display: true, delimiter: "\\\\[" }), "latex-preview should allow simple display math");
+	assert(
+		(await render({ tex: "\\input{/etc/passwd}", display: true, delimiter: "\\\\[" })).error?.includes("blocked"),
+		"latex-preview render should fail closed for dangerous snippets before compiling",
+	);
+
+	const factory = latexPreview.default ?? latexPreview;
+	const handlers = new Map();
+	let widgetFactory;
+	factory({ on: (event, handler) => handlers.set(event, handler) });
+	const theme = {
+		getFgAnsi: () => "\u001b[38;2;205;214;244m",
+		fg: (_color, text) => text,
+		bold: (text) => text,
+	};
+	const ctx = { hasUI: true, ui: { theme, setWidget: (_key, widget) => (widgetFactory = widget) } };
+	await handlers.get("agent_end")(
+		{ messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: String.raw`Bad:
+\[\input{x}\]` }] }] },
+		ctx,
+	);
+	const fallbackLines = widgetFactory({}, theme).render(80).join("\n");
+	handlers.get("session_shutdown")?.({}, ctx);
+	assert(fallbackLines.includes("LaTeX preview blocked"), "latex-preview should show blocked render errors in the widget");
+	assert(fallbackLines.includes("TeX: \\input{x}"), "latex-preview should include original TeX in render fallbacks");
+
+	const source = readFileSync(join(root, "extensions", "latex-preview.ts"), "utf8");
+	assert(source.includes('"-no-shell-escape"'), "latex-preview should run pdflatex with -no-shell-escape");
+	assert(!source.includes("sendMessage"), "latex-preview should not persist preview messages");
+	assert(source.includes("encodeKitty(base64Data, { columns: imageWidthCells })"), "latex-preview should not force Kitty image rows");
+
+	if (commandExists("pdflatex") && commandExists("pdftocairo")) {
+		const before = latexPreviewTempDirs().length;
+		const rendered = await render({ tex: "x^2 + y^2 = z^2", display: true, delimiter: "\\\\[" });
+		assert(Boolean(rendered.pngBase64), `latex-preview should render simple math locally: ${rendered.error ?? "no PNG"}`);
+		assert(latexPreviewTempDirs().length === before, "latex-preview should clean temporary render directories");
+	}
 }
 
-runLatexPreviewBehaviorTests();
+await runLatexPreviewBehaviorTests();
 
 const localSkillsRoot = "/Users/benjaminshih/.agents/skills";
 if (existsSync(localSkillsRoot)) {
