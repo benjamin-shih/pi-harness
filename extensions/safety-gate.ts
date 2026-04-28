@@ -16,9 +16,6 @@ const SENSITIVE_FILE_RE = /^(?:\.npmrc|\.pypirc|\.netrc|auth\.json|id_(?:rsa|ed2
 
 const OUTPUT_COMMAND_RE = /\b(?:cat|bat|less|more|head|tail|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl)\b/i;
 const UPLOAD_COMMAND_RE = /\b(?:curl|wget|scp|sftp|rsync|rclone|aws\s+s3\s+cp|aws\s+s3\s+sync|gh\s+release\s+upload)\b/i;
-const DESTRUCTIVE_COMMAND_RE = /\b(?:rm\s+(?:-[^\s]*[rR][^\s]*[fF]?|-[^\s]*[fF][^\s]*[rR])|sudo\b|chmod\b|chown\b)\b/i;
-const FORCE_PUSH_RE = /\bgit\b[\s\S]*?\bpush\b[\s\S]*(?:--force(?:-with-lease)?|-f)\b/i;
-const PACKAGE_INSTALL_RE = /\b(?:brew\s+(?:install|upgrade|remove|uninstall)|npm\s+(?:install|i|add)\b|npm\s+install\s+-g\b|pnpm\s+(?:add|install)\b|yarn\s+(?:add|install)\b|bun\s+(?:add|install)\b|pipx?\s+install\b|python3?\s+-m\s+pip\s+install\b|uv\s+(?:add|pip\s+install)\b|cargo\s+install\b)\b/i;
 
 const GIT_ADD_RE = /\bgit\b[\s\S]*?\badd\b/i;
 const GIT_COMMIT_RE = /\bgit\b[\s\S]*?\bcommit\b/i;
@@ -46,11 +43,6 @@ function normalizePath(rawPath: string, cwd: string): string {
 	else if (p.startsWith("~/")) p = path.join(HOME, p.slice(2));
 	else if (!path.isAbsolute(p)) p = path.resolve(cwd, p);
 	return path.normalize(p);
-}
-
-function isInside(parent: string, child: string): boolean {
-	const relative = path.relative(parent, child);
-	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function sensitiveReason(rawPath: string | undefined, cwd: string): string | undefined {
@@ -128,23 +120,6 @@ async function gitLines(pi: ExtensionAPI, cwd: string, args: string[]): Promise<
 	}
 }
 
-async function repoRoot(pi: ExtensionAPI, cwd: string): Promise<string | undefined> {
-	try {
-		const result = await pi.exec("git", ["rev-parse", "--show-toplevel"], { cwd, timeout: 5_000 });
-		if (result.code !== 0) return undefined;
-		return path.normalize(result.stdout.trim());
-	} catch {
-		return undefined;
-	}
-}
-
-async function isOutsideRepo(pi: ExtensionAPI, cwd: string, rawPath: string | undefined): Promise<boolean> {
-	if (!rawPath) return false;
-	const root = await repoRoot(pi, cwd);
-	if (!root) return false;
-	return !isInside(root, normalizePath(rawPath, cwd));
-}
-
 async function changedSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<string[]> {
 	try {
 		const result = await pi.exec("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
@@ -197,11 +172,6 @@ async function gitBlockReason(pi: ExtensionAPI, cwd: string, command: string): P
 	return undefined;
 }
 
-async function confirmAction(ctx: any, title: string, message: string): Promise<boolean> {
-	if (!ctx.hasUI) return false;
-	return ctx.ui.confirm(title, message);
-}
-
 function blockedTool(reason: string) {
 	return { block: true, reason };
 }
@@ -226,40 +196,12 @@ function redactToolContent(content: unknown): { content: unknown; changed: boole
 	return { content: next, changed };
 }
 
-function riskyCommandReason(command: string): string | undefined {
-	if (FORCE_PUSH_RE.test(command)) return "Force push requires confirmation.";
-	if (DESTRUCTIVE_COMMAND_RE.test(command)) return "Destructive or privileged shell command requires confirmation.";
-	if (PACKAGE_INSTALL_RE.test(command)) return "Package-manager install/remove/upgrade requires confirmation.";
-	return undefined;
-}
-
-async function guardShellCommand(pi: ExtensionAPI, cwd: string, command: string, ctx: any, forUserBash = false) {
+async function guardShellCommand(pi: ExtensionAPI, cwd: string, command: string, forUserBash = false) {
 	const gitReason = await gitBlockReason(pi, cwd, command);
 	if (gitReason) return forUserBash ? blockedUserBash(gitReason) : blockedTool(gitReason);
 
-	if (commandMentionsSensitivePath(command, cwd)) {
-		if (OUTPUT_COMMAND_RE.test(command) || UPLOAD_COMMAND_RE.test(command)) {
-			return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
-		}
-
-		const ok = await confirmAction(
-			ctx,
-			"Sensitive path command",
-			`Allow this command that references a protected private path?\n\n${command}`,
-		);
-		if (!ok) {
-			const reason = "[safety-gate] Sensitive path command cancelled.";
-			return forUserBash ? blockedUserBash(reason) : blockedTool(reason);
-		}
-	}
-
-	const riskyReason = riskyCommandReason(command);
-	if (riskyReason) {
-		const ok = await confirmAction(ctx, "Risky shell command", `${riskyReason}\n\n${command}`);
-		if (!ok) {
-			const reason = "[safety-gate] Risky shell command cancelled.";
-			return forUserBash ? blockedUserBash(reason) : blockedTool(reason);
-		}
+	if (commandMentionsSensitivePath(command, cwd) && (OUTPUT_COMMAND_RE.test(command) || UPLOAD_COMMAND_RE.test(command))) {
+		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
 	}
 
 	return undefined;
@@ -282,30 +224,8 @@ export default function safetyGate(pi: ExtensionAPI) {
 			}
 		}
 
-		if (event.toolName === "write" || event.toolName === "edit") {
-			const target = input.path as string | undefined;
-			const reason = sensitiveReason(target, ctx.cwd);
-			if (reason) {
-				const ok = await confirmAction(
-					ctx,
-					"Sensitive file edit",
-					`Allow ${event.toolName} on this protected path?\n\n${target ?? "(unknown path)"}\n\nReason: ${reason}`,
-				);
-				if (!ok) return blockedTool("[safety-gate] Sensitive edit cancelled.");
-			}
-
-			if (await isOutsideRepo(pi, ctx.cwd, target)) {
-				const ok = await confirmAction(
-					ctx,
-					"Edit outside repository",
-					`Allow ${event.toolName} outside the current git repository?\n\n${target}`,
-				);
-				if (!ok) return blockedTool("[safety-gate] Edit outside repository cancelled.");
-			}
-		}
-
 		if (event.toolName === "bash") {
-			return guardShellCommand(pi, ctx.cwd, String(input.command ?? ""), ctx, false);
+			return guardShellCommand(pi, ctx.cwd, String(input.command ?? ""), false);
 		}
 
 		return undefined;
@@ -326,5 +246,5 @@ export default function safetyGate(pi: ExtensionAPI) {
 		return { content, isError: true };
 	});
 
-	pi.on("user_bash", async (event, ctx) => guardShellCommand(pi, event.cwd, event.command, ctx, true));
+	pi.on("user_bash", async (event) => guardShellCommand(pi, event.cwd, event.command, true));
 }

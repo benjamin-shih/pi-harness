@@ -18,7 +18,7 @@ extensions/
   catppuccin-footer.ts  Responsive Catppuccin footer
   harness-commands.ts   /mode, /status, /checkpoint, and skill-routing reminders
   latex-preview.ts      Theme-aware transient LaTeX previews after math-heavy replies
-  safety-gate.ts        Secret/private-file and risky-command guardrails
+  safety-gate.ts        Secret/private-file egress guardrails
   skills-audit.ts       /skills-audit command for the shared skill graph
 prompts/
   handoff.md            Session/task handoff prompt
@@ -103,3 +103,5 @@ See `RELEASING.md` for the release checklist.
 ## Safety notes
 
 Keep this repository scoped to reusable harness code and UI assets only. Do not commit pi auth files, session logs, private keys, environment files, or machine-local secrets.
+
+The safety gate is intentionally egress-focused: it blocks reading/uploading/outputting protected private files and blocks git operations that would include them, but it does not ask for broad filesystem permissions for normal destructive or package-manager commands.

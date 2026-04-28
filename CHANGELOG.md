@@ -13,6 +13,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Release-note drafting script and tracked pre-push validation hook.
 
 ### Changed
+- Safety gate is now egress-focused: it blocks secret/private-file output, upload, and sensitive git inclusion, but no longer prompts for ordinary filesystem, package-manager, or destructive commands.
 - CI and local validation now exercise extension loading, prompt/theme metadata, safety-gate behavior, and local skill graph health when present.
 
 ### Fixed
