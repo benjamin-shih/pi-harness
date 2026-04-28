@@ -7,6 +7,7 @@ This package bundles the reusable parts of the local pi setup:
 - extensions
 - prompt templates
 - themes
+- package verification/release helpers
 
 Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and session history intentionally stays outside this package.
 
@@ -15,6 +16,7 @@ Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and ses
 ```text
 extensions/
   catppuccin-footer.ts  Responsive Catppuccin footer
+  harness-commands.ts   /mode, /status, /checkpoint, and skill-routing reminders
   safety-gate.ts        Secret/private-file and risky-command guardrails
 prompts/
   handoff.md            Session/task handoff prompt
@@ -22,7 +24,31 @@ prompts/
   simplify.md           Simplification prompt
 themes/
   catppuccin-mocha.json Catppuccin Mocha theme
+scripts/
+  verify.mjs            Local/CI package verification
+  changelog.mjs         Draft release notes from git commits
 ```
+
+## Commands
+
+After loading this package in pi:
+
+```text
+/mode [fast|default|deep|readonly|full]
+/status
+/checkpoint [note]
+/simplify [scope]
+/review [scope]
+/handoff [audience or focus]
+```
+
+Modes:
+
+- `fast`: smaller/faster GPT, low thinking, all tools
+- `default`: latest GPT, high thinking, all tools
+- `deep`: latest GPT, xhigh thinking, all tools
+- `readonly`: latest GPT, high thinking, read-only tools
+- `full`: latest GPT, xhigh thinking, all tools
 
 ## Local install
 
@@ -41,15 +67,33 @@ After editing package files, reload pi:
 /reload
 ```
 
+## Development
+
+```bash
+npm ci
+npm run verify
+npm run hooks:install
+```
+
+The tracked pre-push hook runs `npm run verify`.
+
 ## Remote install later
 
-Once the private GitHub remote is ready, this can be installed on another machine with:
+This can be installed on another machine with:
 
 ```bash
 pi install git:https://github.com/benjamin-shih/pi-harness.git
 ```
 
 or referenced as a local checkout from `settings.json`.
+
+## Release notes
+
+```bash
+npm run changelog -- v0.2.0
+```
+
+See `RELEASING.md` for the release checklist.
 
 ## Safety notes
 

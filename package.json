@@ -5,7 +5,9 @@
   "keywords": ["pi-package"],
   "description": "Benjamin's personal pi harness package: extensions, prompts, and themes.",
   "scripts": {
-    "verify": "node scripts/verify.mjs"
+    "verify": "node scripts/verify.mjs",
+    "changelog": "node scripts/changelog.mjs",
+    "hooks:install": "git config core.hooksPath .githooks"
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",

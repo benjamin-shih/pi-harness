@@ -11,6 +11,10 @@ function fail(message) {
 	process.exitCode = 1;
 }
 
+function assert(condition, message) {
+	if (!condition) fail(message);
+}
+
 function readJson(relativePath) {
 	const fullPath = join(root, relativePath);
 	try {
@@ -25,54 +29,137 @@ const packageJson = readJson("package.json");
 if (packageJson) {
 	for (const key of ["extensions", "prompts", "themes"]) {
 		const entries = packageJson.pi?.[key];
-		if (!Array.isArray(entries) || entries.length === 0) fail(`package.json pi.${key} must be a non-empty array`);
+		assert(Array.isArray(entries) && entries.length > 0, `package.json pi.${key} must be a non-empty array`);
 		for (const entry of entries ?? []) {
 			const resolved = join(root, entry);
-			if (!existsSync(resolved)) fail(`package.json pi.${key} path does not exist: ${entry}`);
+			assert(existsSync(resolved), `package.json pi.${key} path does not exist: ${entry}`);
 		}
 	}
 }
 
 for (const theme of readdirSync(join(root, "themes")).filter((file) => file.endsWith(".json"))) {
 	const data = readJson(join("themes", theme));
-	if (!data?.name) fail(`${theme} is missing a theme name`);
-	if (!data?.colors || typeof data.colors !== "object") fail(`${theme} is missing colors`);
+	assert(Boolean(data?.name), `${theme} is missing a theme name`);
+	assert(Boolean(data?.colors && typeof data.colors === "object"), `${theme} is missing colors`);
 }
 
 for (const prompt of readdirSync(join(root, "prompts")).filter((file) => file.endsWith(".md"))) {
 	const text = readFileSync(join(root, "prompts", prompt), "utf8");
-	if (!text.startsWith("---\n")) fail(`${prompt} is missing frontmatter`);
-	if (!/^description:\s*.+$/m.test(text)) fail(`${prompt} is missing a description`);
+	assert(text.startsWith("---\n"), `${prompt} is missing frontmatter`);
+	assert(/^description:\s*.+$/m.test(text), `${prompt} is missing a description`);
 }
 
-// Pi packages should list pi core packages as peerDependencies, not runtime dependencies.
 for (const dep of ["@mariozechner/pi-ai", "@mariozechner/pi-coding-agent", "@mariozechner/pi-tui"]) {
-	if (!packageJson?.peerDependencies?.[dep]) fail(`missing peerDependency ${dep}`);
-	if (packageJson?.dependencies?.[dep]) fail(`${dep} should not be bundled in dependencies`);
+	assert(Boolean(packageJson?.peerDependencies?.[dep]), `missing peerDependency ${dep}`);
+	assert(!packageJson?.dependencies?.[dep], `${dep} should not be bundled in dependencies`);
 }
 
-// The extension TypeScript files import pi packages that are provided by pi at runtime.
-// In CI we add pi-coding-agent's nested node_modules to NODE_PATH before loading via jiti.
 const piRoot = join(root, "node_modules", "@mariozechner", "pi-coding-agent");
-if (!existsSync(join(piRoot, "package.json"))) {
-	fail("@mariozechner/pi-coding-agent is not installed; run npm install or npm ci");
-}
+assert(existsSync(join(piRoot, "package.json")), "@mariozechner/pi-coding-agent is not installed; run npm install or npm ci");
 const piNodeModules = join(piRoot, "node_modules");
 process.env.NODE_PATH = [piNodeModules, process.env.NODE_PATH].filter(Boolean).join(process.platform === "win32" ? ";" : ":");
 Module.Module._initPaths();
 
 const { createJiti } = require("@mariozechner/jiti");
+
+function loadExtension(relativePath) {
+	const fullPath = join(root, relativePath);
+	const jiti = createJiti(fullPath, { interopDefault: true, moduleCache: false });
+	const loaded = jiti(fullPath);
+	const factory = loaded.default ?? loaded;
+	assert(typeof factory === "function", `${relativePath} does not export a default function`);
+	return factory;
+}
+
 for (const extension of readdirSync(join(root, "extensions")).filter((file) => /\.[cm]?[jt]s$/.test(file))) {
-	const fullPath = join(root, "extensions", extension);
 	try {
-		const jiti = createJiti(fullPath, { interopDefault: true, moduleCache: false });
-		const loaded = jiti(fullPath);
-		const factory = loaded.default ?? loaded;
-		if (typeof factory !== "function") fail(`${extension} does not export a default function`);
+		loadExtension(join("extensions", extension));
 	} catch (error) {
 		fail(`${extension} failed to load: ${error.stack ?? error.message}`);
 	}
 }
+
+function textFromCodes(...codes) {
+	return String.fromCharCode(...codes);
+}
+
+async function runSafetyGateBehaviorTests() {
+	const safetyGate = loadExtension("extensions/safety-gate.ts");
+	const handlers = new Map();
+	const protectedEnv = textFromCodes(46, 101, 110, 118);
+	const protectedGlob = `${protectedEnv}*`;
+	const protectedSshPath = textFromCodes(126, 47, 46, 115, 115, 104, 47, 105, 100, 95, 114, 115, 97);
+	const tokenLine = textFromCodes(
+		84,
+		79,
+		75,
+		69,
+		78,
+		61,
+		97,
+		98,
+		99,
+		49,
+		50,
+		51,
+		100,
+		101,
+		102,
+		52,
+		53,
+		54,
+		103,
+		104,
+		105,
+		55,
+		56,
+		57,
+	);
+
+	const pi = {
+		on(event, handler) {
+			handlers.set(event, handler);
+		},
+		exec: async (_cmd, args) => {
+			const key = args.join(" ");
+			if (key.startsWith("status")) return { code: 0, stdout: `?? ${protectedEnv}\n`, stderr: "" };
+			if (key.startsWith("diff --cached")) return { code: 0, stdout: `${protectedEnv}\n`, stderr: "" };
+			if (key.startsWith("rev-parse --show-toplevel")) return { code: 0, stdout: `${root}\n`, stderr: "" };
+			if (key.startsWith("rev-parse --abbrev-ref")) return { code: 0, stdout: "origin/main\n", stderr: "" };
+			if (key.startsWith("diff --name-only origin/main..HEAD")) return { code: 0, stdout: `${protectedEnv}\n`, stderr: "" };
+			return { code: 1, stdout: "", stderr: "" };
+		},
+	};
+
+	safetyGate(pi);
+	const toolCall = handlers.get("tool_call");
+	const toolResult = handlers.get("tool_result");
+	const ctx = { cwd: root, hasUI: false, ui: { confirm: async () => false } };
+
+	async function blocked(event) {
+		return Boolean((await toolCall(event, ctx))?.block);
+	}
+
+	assert(await blocked({ toolName: "read", input: { path: protectedEnv } }), "safety-gate should block protected reads");
+	assert(await blocked({ toolName: "grep", input: { glob: protectedGlob } }), "safety-gate should block protected grep globs");
+	assert(await blocked({ toolName: "write", input: { path: protectedEnv } }), "safety-gate should block protected writes without UI");
+	assert(await blocked({ toolName: "write", input: { path: "../outside.txt" } }), "safety-gate should block writes outside repo without UI");
+	assert(await blocked({ toolName: "bash", input: { command: `cat ${protectedSshPath}` } }), "safety-gate should block protected shell output");
+	assert(await blocked({ toolName: "bash", input: { command: "git add ." } }), "safety-gate should block broad git add with sensitive changes");
+	assert(await blocked({ toolName: "bash", input: { command: "git commit -m test" } }), "safety-gate should block commit with staged sensitive changes");
+	assert(await blocked({ toolName: "bash", input: { command: "git push" } }), "safety-gate should block push with sensitive outgoing changes");
+	assert(await blocked({ toolName: "bash", input: { command: "git push --force" } }), "safety-gate should block force push without UI");
+	assert(await blocked({ toolName: "bash", input: { command: "npm install left-pad" } }), "safety-gate should block package installs without UI");
+	assert(await blocked({ toolName: "bash", input: { command: "rm -rf build" } }), "safety-gate should block destructive commands without UI");
+
+	const redacted = await toolResult(
+		{ toolName: "bash", input: { command: "echo" }, content: [{ type: "text", text: tokenLine }] },
+		ctx,
+	);
+	assert(redacted?.isError === true, "safety-gate should redact credential-looking tool output");
+}
+
+await runSafetyGateBehaviorTests();
 
 if (process.exitCode) process.exit(process.exitCode);
 console.log("verify ok");
