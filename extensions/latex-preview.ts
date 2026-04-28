@@ -2,16 +2,16 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-cod
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Image, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const CUSTOM_TYPE = "latex-preview";
+const WIDGET_KEY = "latex-preview";
 const MAX_RENDERED_SNIPPETS = 10;
 const LATEX_TIMEOUT_MS = 12_000;
+const PREVIEW_AUTO_CLEAR_MS = 5 * 60_000;
 const MAX_MATH_WIDTH_CELLS = 72;
 const MIN_MATH_WIDTH_CELLS = 8;
 const PREVIEW_PX_PER_CELL = 18;
@@ -30,19 +30,23 @@ type PngDimensions = {
 	heightPx: number;
 };
 
-type RenderedSnippet = LatexSnippet & {
+type RenderResult = {
 	pngBase64?: string;
 	dimensions?: PngDimensions;
 	error?: string;
 };
 
+type RenderedMath = RenderResult & {
+	display: boolean;
+	delimiter: string;
+};
+
 type PreviewBlock =
 	| { type: "markdown"; text: string }
-	| { type: "math"; snippet: RenderedSnippet };
+	| { type: "math"; math: RenderedMath };
 
-type PreviewDetails = {
-	blocks?: PreviewBlock[];
-	snippets?: RenderedSnippet[];
+type PreviewPayload = {
+	blocks: PreviewBlock[];
 	truncated: boolean;
 };
 
@@ -176,38 +180,27 @@ function pngDimensions(buffer: Buffer): PngDimensions | undefined {
 	return { widthPx: buffer.readUInt32BE(16), heightPx: buffer.readUInt32BE(20) };
 }
 
-const renderCache = new Map<string, Promise<Pick<RenderedSnippet, "pngBase64" | "dimensions" | "error">>>();
-
-export async function renderLatexSnippet(snippet: LatexSnippet): Promise<Pick<RenderedSnippet, "pngBase64" | "dimensions" | "error">> {
-	const key = createHash("sha256").update(JSON.stringify(snippet)).digest("hex");
-	const cached = renderCache.get(key);
-	if (cached) return cached;
-
-	const renderPromise = (async () => {
-		const workdir = await mkdtemp(join(tmpdir(), "pi-latex-preview-"));
-		try {
-			await writeFile(join(workdir, "formula.tex"), latexDocument(snippet), "utf8");
-			await execFileAsync("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "formula.tex"], {
-				cwd: workdir,
-				timeout: LATEX_TIMEOUT_MS,
-				maxBuffer: 1024 * 1024,
-			});
-			await execFileAsync("pdftocairo", ["-png", "-singlefile", "-r", "220", "formula.pdf", "formula"], {
-				cwd: workdir,
-				timeout: LATEX_TIMEOUT_MS,
-				maxBuffer: 1024 * 1024,
-			});
-			const png = await readFile(join(workdir, "formula.png"));
-			return { pngBase64: png.toString("base64"), dimensions: pngDimensions(png) };
-		} catch (error) {
-			return { error: errorSummary(error) };
-		} finally {
-			await rm(workdir, { recursive: true, force: true });
-		}
-	})();
-
-	renderCache.set(key, renderPromise);
-	return renderPromise;
+export async function renderLatexSnippet(snippet: LatexSnippet): Promise<RenderResult> {
+	const workdir = await mkdtemp(join(tmpdir(), "pi-latex-preview-"));
+	try {
+		await writeFile(join(workdir, "formula.tex"), latexDocument(snippet), "utf8");
+		await execFileAsync("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "formula.tex"], {
+			cwd: workdir,
+			timeout: LATEX_TIMEOUT_MS,
+			maxBuffer: 1024 * 1024,
+		});
+		await execFileAsync("pdftocairo", ["-png", "-singlefile", "-r", "220", "formula.pdf", "formula"], {
+			cwd: workdir,
+			timeout: LATEX_TIMEOUT_MS,
+			maxBuffer: 1024 * 1024,
+		});
+		const png = await readFile(join(workdir, "formula.png"));
+		return { pngBase64: png.toString("base64"), dimensions: pngDimensions(png) };
+	} catch (error) {
+		return { error: errorSummary(error) };
+	} finally {
+		await rm(workdir, { recursive: true, force: true });
+	}
 }
 
 function assistantText(message: AssistantLike | undefined): string | undefined {
@@ -231,7 +224,7 @@ function pushMarkdown(blocks: PreviewBlock[], text: string): void {
 	}
 }
 
-async function buildPreviewDetails(text: string): Promise<PreviewDetails | undefined> {
+async function buildPreviewPayload(text: string): Promise<PreviewPayload | undefined> {
 	const blocks: PreviewBlock[] = [];
 	let cursor = 0;
 	let renderedCount = 0;
@@ -250,7 +243,7 @@ async function buildPreviewDetails(text: string): Promise<PreviewDetails | undef
 
 		pushMarkdown(blocks, text.slice(cursor, start));
 		const result = await renderLatexSnippet(snippet);
-		blocks.push({ type: "math", snippet: { ...snippet, ...result } });
+		blocks.push({ type: "math", math: { display: snippet.display, delimiter: snippet.delimiter, ...result } });
 		cursor = start + raw.length;
 		renderedCount++;
 	}
@@ -260,72 +253,91 @@ async function buildPreviewDetails(text: string): Promise<PreviewDetails | undef
 	return { blocks, truncated };
 }
 
-function targetWidthCells(snippet: RenderedSnippet): number {
-	const widthPx = snippet.dimensions?.widthPx;
+function targetWidthCells(math: RenderedMath): number {
+	const widthPx = math.dimensions?.widthPx;
 	if (!widthPx) return 48;
 	return Math.max(MIN_MATH_WIDTH_CELLS, Math.min(MAX_MATH_WIDTH_CELLS, Math.ceil(widthPx / PREVIEW_PX_PER_CELL)));
 }
 
-function addMathImage(container: Container, snippet: RenderedSnippet, index: number, expanded: boolean, theme: Theme): void {
-	const mdTheme = getMarkdownTheme();
-	if (snippet.pngBase64) {
+function addMathImage(container: Container, math: RenderedMath, index: number, theme: Theme): void {
+	if (math.pngBase64) {
 		container.addChild(
 			new Image(
-				snippet.pngBase64,
+				math.pngBase64,
 				"image/png",
 				{ fallbackColor: (text: string) => theme.fg("muted", text) },
-				{ maxWidthCells: targetWidthCells(snippet), filename: `latex-${index + 1}.png` },
-				snippet.dimensions,
+				{ maxWidthCells: targetWidthCells(math), filename: `latex-${index + 1}.png` },
+				math.dimensions,
 			),
 		);
 	} else {
-		container.addChild(new Text(theme.fg("warning", snippet.error ?? "LaTeX render failed"), 1, 0));
-	}
-	if (expanded) {
-		container.addChild(new Markdown(`\`\`\`latex\n${snippet.tex}\n\`\`\``, 1, 0, mdTheme));
+		container.addChild(new Text(theme.fg("warning", math.error ?? "LaTeX render failed"), 1, 0));
 	}
 }
 
-function latexPreviewComponent(details: PreviewDetails, expanded: boolean, theme: Theme): Container {
+function latexPreviewComponent(payload: PreviewPayload, theme: Theme): Container {
 	const container = new Container();
 	const mdTheme = getMarkdownTheme();
 	container.addChild(new Spacer(1));
-	container.addChild(new Text(theme.fg("accent", theme.bold("Rendered LaTeX preview")), 1, 0));
+	container.addChild(new Text(theme.fg("accent", theme.bold("Rendered LaTeX preview (transient)")), 1, 0));
+	container.addChild(new Text(theme.fg("dim", "Not saved to session; clears on next prompt, reload, or timeout."), 1, 0));
 	if (!RENDER_INLINE_MATH_IN_CONTEXT) {
 		container.addChild(new Text(theme.fg("dim", "Display equations are rendered in context; inline math stays in prose."), 1, 0));
 	}
-	if (details.truncated) {
+	if (payload.truncated) {
 		container.addChild(new Text(theme.fg("dim", `Showing first ${MAX_RENDERED_SNIPPETS} display equations.`), 1, 0));
 	}
 
 	let mathIndex = 0;
-	if (details.blocks) {
-		for (const block of details.blocks) {
-			if (block.type === "markdown") {
-				container.addChild(new Markdown(block.text.trim(), 1, 0, mdTheme));
-			} else {
-				container.addChild(new Spacer(1));
-				addMathImage(container, block.snippet, mathIndex, expanded, theme);
-				container.addChild(new Spacer(1));
-				mathIndex++;
-			}
+	for (const block of payload.blocks) {
+		if (block.type === "markdown") {
+			container.addChild(new Markdown(block.text.trim(), 1, 0, mdTheme));
+		} else {
+			container.addChild(new Spacer(1));
+			addMathImage(container, block.math, mathIndex, theme);
+			container.addChild(new Spacer(1));
+			mathIndex++;
 		}
-		return container;
-	}
-
-	for (const snippet of details.snippets ?? []) {
-		container.addChild(new Spacer(1));
-		addMathImage(container, snippet, mathIndex, expanded, theme);
-		mathIndex++;
 	}
 	return container;
 }
 
 export default function latexPreview(pi: ExtensionAPI) {
-	pi.registerMessageRenderer<PreviewDetails>(CUSTOM_TYPE, (message, { expanded }, theme) => {
-		const details = message.details;
-		if (!details || (!Array.isArray(details.blocks) && !Array.isArray(details.snippets))) return undefined;
-		return latexPreviewComponent(details, expanded, theme);
+	let clearTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function clearPreview(ctx?: ExtensionContext): void {
+		if (clearTimer) {
+			clearTimeout(clearTimer);
+			clearTimer = undefined;
+		}
+		if (!ctx?.hasUI) return;
+		ctx.ui.setWidget(WIDGET_KEY, undefined);
+	}
+
+	function showPreview(ctx: ExtensionContext, payload: PreviewPayload): void {
+		clearPreview(ctx);
+		ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => latexPreviewComponent(payload, theme), { placement: "aboveEditor" });
+		clearTimer = setTimeout(() => {
+			try {
+				ctx.ui.setWidget(WIDGET_KEY, undefined);
+			} catch {
+				// The extension context may be stale after reload/session switch.
+			} finally {
+				clearTimer = undefined;
+			}
+		}, PREVIEW_AUTO_CLEAR_MS);
+	}
+
+	pi.on("input", (_event, ctx) => {
+		clearPreview(ctx);
+	});
+
+	pi.on("agent_start", (_event, ctx) => {
+		clearPreview(ctx);
+	});
+
+	pi.on("session_shutdown", () => {
+		clearPreview();
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
@@ -333,23 +345,8 @@ export default function latexPreview(pi: ExtensionAPI) {
 		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant") as AssistantLike | undefined;
 		const text = assistantText(lastAssistant);
 		if (!text) return;
-		const details = await buildPreviewDetails(text);
-		if (!details) return;
-		sendWhenIdle(pi, ctx, details);
+		const payload = await buildPreviewPayload(text);
+		if (!payload) return;
+		showPreview(ctx, payload);
 	});
-}
-
-function sendWhenIdle(pi: ExtensionAPI, ctx: ExtensionContext, details: PreviewDetails, attempts = 30): void {
-	if (!ctx.hasUI) return;
-	if (ctx.isIdle()) {
-		pi.sendMessage({
-			customType: CUSTOM_TYPE,
-			content: "Rendered LaTeX preview for the previous assistant response.",
-			display: true,
-			details,
-		});
-		return;
-	}
-	if (attempts <= 0) return;
-	setTimeout(() => sendWhenIdle(pi, ctx, details, attempts - 1), 50);
 }
