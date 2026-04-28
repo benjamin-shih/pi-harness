@@ -15,6 +15,7 @@ Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and ses
 
 ```text
 extensions/
+  aesthetic-polish.ts   Blue-forward Catppuccin accents and rounded prompt boxes
   catppuccin-footer.ts  Responsive Catppuccin footer
   harness-commands.ts   /mode, /status, /checkpoint, and skill-routing reminders
   latex-preview.ts      Hardened transient LaTeX previews with Unicode inline math
@@ -25,7 +26,7 @@ prompts/
   review.md             Review prompt
   simplify.md           Simplification prompt
 themes/
-  catppuccin-mocha.json Catppuccin Mocha theme
+  catppuccin-mocha.json Catppuccin Mocha theme with blue-forward accents
 scripts/
   verify.mjs            Local/CI package verification
   skills-audit.mjs      Shared skill graph validator and bloat summary

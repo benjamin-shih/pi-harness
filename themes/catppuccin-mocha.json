@@ -30,9 +30,9 @@
     "crust": "#11111b"
   },
   "colors": {
-    "accent": "mauve",
+    "accent": "blue",
     "border": "surface2",
-    "borderAccent": "mauve",
+    "borderAccent": "blue",
     "borderMuted": "surface1",
     "success": "green",
     "error": "red",
@@ -47,14 +47,14 @@
     "userMessageText": "text",
     "customMessageBg": "surface0",
     "customMessageText": "text",
-    "customMessageLabel": "pink",
+    "customMessageLabel": "sapphire",
     "toolPendingBg": "mantle",
     "toolSuccessBg": "#1f3329",
     "toolErrorBg": "#3a1f2a",
-    "toolTitle": "mauve",
+    "toolTitle": "sapphire",
     "toolOutput": "subtext1",
 
-    "mdHeading": "mauve",
+    "mdHeading": "blue",
     "mdLink": "blue",
     "mdLinkUrl": "overlay2",
     "mdCode": "teal",
@@ -63,14 +63,14 @@
     "mdQuote": "subtext0",
     "mdQuoteBorder": "surface2",
     "mdHr": "surface2",
-    "mdListBullet": "mauve",
+    "mdListBullet": "sapphire",
 
     "toolDiffAdded": "green",
     "toolDiffRemoved": "red",
     "toolDiffContext": "overlay2",
 
     "syntaxComment": "overlay1",
-    "syntaxKeyword": "mauve",
+    "syntaxKeyword": "sapphire",
     "syntaxFunction": "blue",
     "syntaxVariable": "text",
     "syntaxString": "green",
@@ -83,8 +83,8 @@
     "thinkingMinimal": "overlay1",
     "thinkingLow": "blue",
     "thinkingMedium": "teal",
-    "thinkingHigh": "mauve",
-    "thinkingXhigh": "pink",
+    "thinkingHigh": "lavender",
+    "thinkingXhigh": "blue",
 
     "bashMode": "green"
   },
