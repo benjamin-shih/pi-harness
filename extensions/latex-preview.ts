@@ -1,6 +1,17 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Image, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import {
+	calculateImageRows,
+	Container,
+	encodeITerm2,
+	encodeKitty,
+	getCapabilities,
+	getCellDimensions,
+	imageFallback,
+	Markdown,
+	Spacer,
+	Text,
+} from "@mariozechner/pi-tui";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -478,26 +489,45 @@ function targetWidthCells(math: RenderedMath, availableWidthCells = MAX_MATH_WID
 	return Math.max(1, Math.min(limit, naturalWidth));
 }
 
-function centerImageLine(line: string, padding: string): string {
-	const imageStart = Math.min(
-		...[
-			line.indexOf("\x1b_G"),
-			line.indexOf("\x1b]1337;File="),
-		].filter((index) => index >= 0),
-	);
-	if (!Number.isFinite(imageStart)) return line;
-
-	// Multi-row images begin with a cursor-up escape. Move vertically first,
-	// then indent on the target row. Prefixing spaces before cursor-up relies on
-	// terminal-specific column preservation and is visibly off in some Kitty panes.
-	return line.slice(0, imageStart) + padding + line.slice(imageStart);
+function centeredImageLine(sequence: string, width: number, imageWidthCells: number, rows: number): string {
+	const indent = Math.max(0, Math.floor((width - imageWidthCells) / 2));
+	const moveUp = rows > 1 ? `\x1b[${rows - 1}A` : "";
+	return moveUp + " ".repeat(indent) + sequence;
 }
 
-function centerImageLines(lines: string[], width: number, imageWidthCells: number): string[] {
-	const indent = Math.max(0, Math.floor((width - imageWidthCells) / 2));
-	if (indent === 0) return lines;
-	const padding = " ".repeat(indent);
-	return lines.map((line) => centerImageLine(line, padding));
+function terminalImageLines(
+	base64Data: string,
+	dimensions: PngDimensions | undefined,
+	width: number,
+	imageWidthCells: number,
+	filename: string,
+	theme: Theme,
+): string[] {
+	const resolvedDimensions = dimensions ?? { widthPx: 800, heightPx: 600 };
+	const rows = calculateImageRows(resolvedDimensions, imageWidthCells, getCellDimensions());
+	const caps = getCapabilities();
+	let sequence: string | undefined;
+
+	if (caps.images === "kitty") {
+		// Deliberately omit `rows`: Kitty then preserves the PNG's native aspect
+		// ratio instead of stretching it to a quantized terminal-cell rectangle.
+		sequence = encodeKitty(base64Data, { columns: imageWidthCells });
+	} else if (caps.images === "iterm2") {
+		sequence = encodeITerm2(base64Data, {
+			width: imageWidthCells,
+			height: "auto",
+			name: filename,
+			preserveAspectRatio: true,
+		});
+	}
+
+	if (!sequence) {
+		return [theme.fg("muted", imageFallback("image/png", resolvedDimensions, filename))];
+	}
+
+	const lines = Array.from({ length: Math.max(0, rows - 1) }, () => "");
+	lines.push(centeredImageLine(sequence, width, imageWidthCells, rows));
+	return lines;
 }
 
 class ResponsiveMathImage {
@@ -520,14 +550,14 @@ class ResponsiveMathImage {
 		}
 
 		const maxWidthCells = targetWidthCells(this.math, Math.max(1, width - 2));
-		const image = new Image(
+		this.cachedLines = terminalImageLines(
 			this.math.pngBase64,
-			"image/png",
-			{ fallbackColor: (text: string) => this.theme.fg("muted", text) },
-			{ maxWidthCells, filename: `latex-${this.index + 1}.png` },
 			this.math.dimensions,
+			width,
+			maxWidthCells,
+			`latex-${this.index + 1}.png`,
+			this.theme,
 		);
-		this.cachedLines = centerImageLines(image.render(width), width, maxWidthCells);
 		this.cachedWidth = width;
 		return this.cachedLines;
 	}
