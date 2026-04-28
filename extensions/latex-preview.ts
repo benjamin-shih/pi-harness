@@ -30,7 +30,7 @@ const PREVIEW_PX_PER_CELL = 18;
 const RENDER_INLINE_MATH_IN_CONTEXT = false;
 const DEFAULT_TEXT_RGB: Rgb = { r: 205, g: 214, b: 244 };
 const DISPLAY_ENVIRONMENT = /^(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)$/;
-const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\4\})|\\\(([\s\S]+?)\\\)|(?<!\\)\$([^\n$]{1,220}?)(?<!\\)\$/g;
+const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\4\})|\\\(([\s\S]+?)\\\)|(?<!\\)\$(?![\s\d])([^\n$]{1,220}?)(?<![\\\s])\$/g;
 
 export type LatexSnippet = {
 	tex: string;
@@ -100,7 +100,7 @@ function normalizeSnippetKey(snippet: LatexSnippet): string {
 function isUsefulInlineMath(tex: string): boolean {
 	if (tex.length > 220) return false;
 	if (/^\d+(?:\.\d{2})?$/.test(tex.trim())) return false;
-	return /[\\_^{}=<>]|\b(?:frac|sum|int|prod|lim|sqrt|mathbb|operatorname|exp|log|Pr|Var|Cov)\b/.test(tex) || tex.length > 2;
+	return /[\\_^{}=<>+\-*/]|\b(?:frac|sum|int|prod|lim|sqrt|mathbb|mathcal|operatorname|exp|log|Pr|Var|Cov|sim|geq?|leq?|to)\b/.test(tex);
 }
 
 function snippetFromRegexMatch(match: RegExpMatchArray): LatexSnippet | undefined {
@@ -451,6 +451,283 @@ function renderOptionsFromTheme(theme: Theme | undefined): RenderOptions {
 	}
 }
 
+const COMMAND_SYMBOLS: Record<string, string> = {
+	alpha: "α",
+	beta: "β",
+	gamma: "γ",
+	delta: "δ",
+	epsilon: "ε",
+	varepsilon: "ε",
+	zeta: "ζ",
+	eta: "η",
+	theta: "θ",
+	vartheta: "ϑ",
+	iota: "ι",
+	kappa: "κ",
+	lambda: "λ",
+	mu: "μ",
+	nu: "ν",
+	xi: "ξ",
+	pi: "π",
+	varpi: "ϖ",
+	rho: "ρ",
+	varrho: "ϱ",
+	sigma: "σ",
+	varsigma: "ς",
+	tau: "τ",
+	upsilon: "υ",
+	phi: "φ",
+	varphi: "φ",
+	chi: "χ",
+	psi: "ψ",
+	omega: "ω",
+	Gamma: "Γ",
+	Delta: "Δ",
+	Theta: "Θ",
+	Lambda: "Λ",
+	Xi: "Ξ",
+	Pi: "Π",
+	Sigma: "Σ",
+	Upsilon: "Υ",
+	Phi: "Φ",
+	Psi: "Ψ",
+	Omega: "Ω",
+	ge: "≥",
+	geq: "≥",
+	le: "≤",
+	leq: "≤",
+	ne: "≠",
+	neq: "≠",
+	approx: "≈",
+	simeq: "≃",
+	sim: "∼",
+	to: "→",
+	rightarrow: "→",
+	leftarrow: "←",
+	mapsto: "↦",
+	Rightarrow: "⇒",
+	Leftarrow: "⇐",
+	Leftrightarrow: "⇔",
+	iff: "⇔",
+	in: "∈",
+	notin: "∉",
+	subset: "⊂",
+	subseteq: "⊆",
+	supset: "⊃",
+	supseteq: "⊇",
+	cup: "∪",
+	cap: "∩",
+	forall: "∀",
+	exists: "∃",
+	nabla: "∇",
+	partial: "∂",
+	infty: "∞",
+	pm: "±",
+	times: "×",
+	cdot: "·",
+	ldots: "…",
+	dots: "…",
+	mid: "|",
+	vert: "|",
+	lvert: "|",
+	rvert: "|",
+	parallel: "∥",
+	perp: "⟂",
+	propto: "∝",
+	emptyset: "∅",
+	varnothing: "∅",
+	angle: "∠",
+	Pr: "ℙ",
+	P: "ℙ",
+	E: "𝔼",
+	R: "ℝ",
+	N: "ℕ",
+	Z: "ℤ",
+	C: "ℂ",
+	Q: "ℚ",
+};
+
+const DOUBLE_STRUCK: Record<string, string> = {
+	A: "𝔸",
+	C: "ℂ",
+	E: "𝔼",
+	H: "ℍ",
+	N: "ℕ",
+	P: "ℙ",
+	Q: "ℚ",
+	R: "ℝ",
+	Z: "ℤ",
+	1: "𝟙",
+};
+
+const CALLIGRAPHIC: Record<string, string> = {
+	A: "𝒜",
+	B: "ℬ",
+	C: "𝒞",
+	D: "𝒟",
+	E: "ℰ",
+	F: "ℱ",
+	G: "𝒢",
+	H: "ℋ",
+	I: "ℐ",
+	J: "𝒥",
+	K: "𝒦",
+	L: "ℒ",
+	M: "ℳ",
+	N: "𝒩",
+	O: "𝒪",
+	P: "𝒫",
+	Q: "𝒬",
+	R: "ℛ",
+	S: "𝒮",
+	T: "𝒯",
+	U: "𝒰",
+	V: "𝒱",
+	W: "𝒲",
+	X: "𝒳",
+	Y: "𝒴",
+	Z: "𝒵",
+};
+
+const SUPERSCRIPT: Record<string, string> = {
+	"0": "⁰",
+	"1": "¹",
+	"2": "²",
+	"3": "³",
+	"4": "⁴",
+	"5": "⁵",
+	"6": "⁶",
+	"7": "⁷",
+	"8": "⁸",
+	"9": "⁹",
+	"+": "⁺",
+	"-": "⁻",
+	"=": "⁼",
+	"(": "⁽",
+	")": "⁾",
+	i: "ⁱ",
+	n: "ⁿ",
+};
+
+const SUBSCRIPT: Record<string, string> = {
+	"0": "₀",
+	"1": "₁",
+	"2": "₂",
+	"3": "₃",
+	"4": "₄",
+	"5": "₅",
+	"6": "₆",
+	"7": "₇",
+	"8": "₈",
+	"9": "₉",
+	"+": "₊",
+	"-": "₋",
+	"=": "₌",
+	"(": "₍",
+	")": "₎",
+	a: "ₐ",
+	e: "ₑ",
+	h: "ₕ",
+	i: "ᵢ",
+	j: "ⱼ",
+	k: "ₖ",
+	l: "ₗ",
+	m: "ₘ",
+	n: "ₙ",
+	o: "ₒ",
+	p: "ₚ",
+	r: "ᵣ",
+	s: "ₛ",
+	t: "ₜ",
+	u: "ᵤ",
+	v: "ᵥ",
+	x: "ₓ",
+};
+
+function scriptText(text: string, alphabet: Record<string, string>): string | undefined {
+	let output = "";
+	for (const char of text.replace(/\s+/g, "")) {
+		const replacement = alphabet[char];
+		if (!replacement) return undefined;
+		output += replacement;
+	}
+	return output;
+}
+
+function replaceScripts(text: string, marker: "_" | "^", alphabet: Record<string, string>): string {
+	let output = text.replace(new RegExp(`\\${marker}\\{([^{}]{1,16})\\}`, "g"), (raw, body: string) => {
+		return scriptText(body, alphabet) ?? raw;
+	});
+	output = output.replace(new RegExp(`\\${marker}([A-Za-z0-9+\\-=()])`, "g"), (raw, body: string) => {
+		return scriptText(body, alphabet) ?? raw;
+	});
+	return output;
+}
+
+function replaceAlphabetCommand(text: string, command: string, alphabet: Record<string, string>): string {
+	const braced = new RegExp(`\\\\${command}\\s*\\{([^{}]{1,4})\\}`, "g");
+	const unbraced = new RegExp(`\\\\${command}\\s+([A-Za-z0-9])`, "g");
+	return text
+		.replace(braced, (raw, body: string) => {
+			return body.length === 1 ? alphabet[body] ?? raw : raw;
+		})
+		.replace(unbraced, (raw, body: string) => alphabet[body] ?? raw);
+}
+
+function prettifySimpleFraction(text: string): string {
+	return text.replace(/\\frac\s*\{([^{}]{1,16})\}\s*\{([^{}]{1,16})\}/g, (_raw, numerator: string, denominator: string) => {
+		return `${numerator}/${denominator}`;
+	});
+}
+
+function prettifyInlineExpression(tex: string): string | undefined {
+	if (tex.length > 180 || /\n|\\begin\b|\\end\b/.test(tex)) return undefined;
+	let output = tex.trim();
+	if (!output) return undefined;
+
+	output = output.replace(/\\(?:left|right)\b/g, "");
+	output = prettifySimpleFraction(output);
+	output = replaceAlphabetCommand(output, "mathbb", DOUBLE_STRUCK);
+	output = replaceAlphabetCommand(output, "mathcal", CALLIGRAPHIC);
+	output = output.replace(/\\mathbf\s*\{1\}/g, "𝟙");
+	output = output.replace(/\\(?:operatorname|mathrm|text|textnormal|mathbf)\s*\{([^{}]{1,40})\}/g, "$1");
+	output = output.replace(/\\(?:,|;|:|!)/g, " ");
+	output = output.replace(/\\qquad\b/g, "  ").replace(/\\quad\b/g, " ");
+	output = output.replace(/\\([A-Za-z]+)/g, (raw, command: string) => COMMAND_SYMBOLS[command] ?? raw);
+	output = replaceScripts(output, "_", SUBSCRIPT);
+	output = replaceScripts(output, "^", SUPERSCRIPT);
+	output = output.replace(/[{}]/g, "");
+	output = output.replace(/\s*([=<>≤≥≠≈≃∼→←↦⇒⇐⇔∈∉⊂⊆⊃⊇∪∩±×·])\s*/g, " $1 ");
+	output = output.replace(/\s+/g, " ").replace(/\s+([,.;:)\]])/g, "$1").replace(/([([{])\s+/g, "$1").trim();
+
+	if (!output || /\\|[_^{}]/.test(output)) return undefined;
+	return output;
+}
+
+function prettifyInlineMathInPlainText(text: string): string {
+	const inlineMath = /\\\(([\s\S]+?)\\\)|(?<!\\)\$(?![\s\d])([^\n$]{1,220}?)(?<![\\\s])\$/g;
+	return text.replace(inlineMath, (raw, parenTex: string | undefined, dollarTex: string | undefined) => {
+		const tex = (parenTex ?? dollarTex ?? "").trim();
+		if (!tex) return raw;
+		if (dollarTex !== undefined && !isUsefulInlineMath(tex)) return raw;
+		return prettifyInlineExpression(tex) ?? raw;
+	});
+}
+
+export function prettifyInlineMathInMarkdown(text: string): string {
+	let output = "";
+	let cursor = 0;
+	const codePattern = /```[\s\S]*?```|`[^`\n]*`/g;
+	for (const match of text.matchAll(codePattern)) {
+		const start = match.index ?? 0;
+		output += prettifyInlineMathInPlainText(text.slice(cursor, start));
+		output += match[0];
+		cursor = start + match[0].length;
+	}
+	output += prettifyInlineMathInPlainText(text.slice(cursor));
+	return output;
+}
+
 async function buildPreviewPayload(text: string, renderOptions: RenderOptions): Promise<PreviewPayload | undefined> {
 	const blocks: PreviewBlock[] = [];
 	let cursor = 0;
@@ -588,7 +865,7 @@ function latexPreviewComponent(payload: PreviewPayload, theme: Theme): Container
 	let mathIndex = 0;
 	for (const block of payload.blocks) {
 		if (block.type === "markdown") {
-			container.addChild(new Markdown(block.text.trim(), 1, 0, mdTheme));
+			container.addChild(new Markdown(prettifyInlineMathInMarkdown(block.text.trim()), 1, 0, mdTheme));
 		} else {
 			container.addChild(new Spacer(1));
 			addMathImage(container, block.math, mathIndex, theme);

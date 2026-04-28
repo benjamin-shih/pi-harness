@@ -63,10 +63,14 @@ Module.Module._initPaths();
 
 const { createJiti } = require("@mariozechner/jiti");
 
-function loadExtension(relativePath) {
+function loadExtensionModule(relativePath) {
 	const fullPath = join(root, relativePath);
 	const jiti = createJiti(fullPath, { interopDefault: true, moduleCache: false });
-	const loaded = jiti(fullPath);
+	return jiti(fullPath);
+}
+
+function loadExtension(relativePath) {
+	const loaded = loadExtensionModule(relativePath);
 	const factory = loaded.default ?? loaded;
 	assert(typeof factory === "function", `${relativePath} does not export a default function`);
 	return factory;
@@ -170,6 +174,27 @@ async function runSafetyGateBehaviorTests() {
 }
 
 await runSafetyGateBehaviorTests();
+
+function runLatexPreviewBehaviorTests() {
+	const latexPreview = loadExtensionModule("extensions/latex-preview.ts");
+	const prettify = latexPreview.prettifyInlineMathInMarkdown;
+	assert(typeof prettify === "function", "latex-preview should export prettifyInlineMathInMarkdown");
+	assert(
+		prettify("For \\(Y_1\\), \\(y\\ge 0\\), and \\(Z\\sim \\mathcal N(0,1)\\).") ===
+			"For Y₁, y ≥ 0, and Z ∼ 𝒩(0,1).",
+		"latex-preview should prettify common inline math",
+	);
+	assert(
+		prettify("Keep `\\(X_1\\)` code literal.") === "Keep `\\(X_1\\)` code literal.",
+		"latex-preview should not prettify inline code",
+	);
+	assert(
+		prettify("Cost is $12.50, but math $X_n\\to X$ is useful.") === "Cost is $12.50, but math Xₙ → X is useful.",
+		"latex-preview should avoid currency-like dollars and prettify useful dollar math",
+	);
+}
+
+runLatexPreviewBehaviorTests();
 
 const localSkillsRoot = "/Users/benjaminshih/.agents/skills";
 if (existsSync(localSkillsRoot)) {
