@@ -9,6 +9,22 @@ function formatCount(n: number): string {
 }
 
 const SEGMENT_BG = "customMessageBg";
+const OLD_FOOTER_MAUVE = "\x1b[38;2;203;166;247m";
+const OLD_FOOTER_PINK = "\x1b[38;2;245;194;231m";
+
+type FooterColor = string | ((text: string) => string);
+
+function mauve(text: string): string {
+	return `${OLD_FOOTER_MAUVE}${text}\x1b[39m`;
+}
+
+function pink(text: string): string {
+	return `${OLD_FOOTER_PINK}${text}\x1b[39m`;
+}
+
+function applyFooterColor(theme: any, color: FooterColor, text: string): string {
+	return typeof color === "function" ? color(text) : theme.fg(color, text);
+}
 
 function fgFromBg(theme: any, bgColor: string, text: string): string {
 	const bgAnsi = theme.getBgAnsi(bgColor) as string;
@@ -16,13 +32,10 @@ function fgFromBg(theme: any, bgColor: string, text: string): string {
 	return `${fgAnsi}${text}\x1b[39m`;
 }
 
-function segment(theme: any, label: string, value: string, color = "text"): string {
+function segment(theme: any, label: string, value: string, color: FooterColor = "text"): string {
 	return (
 		fgFromBg(theme, SEGMENT_BG, "") +
-		theme.bg(
-			SEGMENT_BG,
-			theme.fg("customMessageLabel", ` ${label} `) + theme.fg(color, ` ${value} `),
-		) +
+		theme.bg(SEGMENT_BG, pink(` ${label} `) + applyFooterColor(theme, color, ` ${value} `)) +
 		fgFromBg(theme, SEGMENT_BG, "")
 	);
 }
@@ -88,7 +101,7 @@ export default function catppuccinFooter(pi: ExtensionAPI) {
 					const thinkingLevel = pi.getThinkingLevel();
 					const sep = theme.fg("dim", " ");
 
-					const piMark = theme.fg("accent", " π ");
+					const piMark = mauve(" π ");
 					const fullLeft = [
 						piMark,
 						segment(theme, "tok", formatCount(total), "text"),
@@ -117,7 +130,7 @@ export default function catppuccinFooter(pi: ExtensionAPI) {
 					].join(sep);
 
 					const modelAndThinking = [
-						segment(theme, "model", model, "borderAccent"),
+						segment(theme, "model", model, mauve),
 						segment(theme, "think", thinkingLevel, thinkingLevel === "off" ? "dim" : "warning"),
 					].join(sep);
 					const branchSegment = branch ? segment(theme, "git", ` ${branch}`, "muted") : undefined;

@@ -51,7 +51,7 @@
     "toolPendingBg": "mantle",
     "toolSuccessBg": "#1f3329",
     "toolErrorBg": "#3a1f2a",
-    "toolTitle": "sapphire",
+    "toolTitle": "blue",
     "toolOutput": "subtext1",
 
     "mdHeading": "blue",
@@ -86,7 +86,7 @@
     "thinkingHigh": "lavender",
     "thinkingXhigh": "blue",
 
-    "bashMode": "green"
+    "bashMode": "blue"
   },
   "export": {
     "pageBg": "crust",

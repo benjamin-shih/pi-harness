@@ -15,6 +15,9 @@ All notable changes to this personal pi harness package are tracked here.
 
 ### Changed
 - Catppuccin theme now uses blue/sapphire-forward UI accents instead of mauve-heavy defaults.
+- Footer keeps its original mauve/pink segment colors while the rest of the theme stays blue-forward.
+- Bash command titles now use the same blue as startup resource headings.
+- Sent prompt boxes are tighter, content-sized rounded cards with blue borders.
 - Safety gate is now egress-focused: it blocks secret/private-file output, upload, and sensitive git inclusion, but no longer prompts for ordinary filesystem, package-manager, or destructive commands.
 - CI and local validation now exercise extension loading, prompt/theme metadata, safety-gate behavior, and local skill graph health when present.
 

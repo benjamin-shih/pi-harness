@@ -11,15 +11,28 @@ const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 const USER_MESSAGE_PATCH_KEY = "__benPiHarnessRoundedUserMessagePatch";
 
+interface ThemeLike {
+	fg(color: string, text: string): string;
+	bg(color: string, text: string): string;
+}
+
+interface RenderableMarkdown {
+	render(width: number): string[];
+}
+
 interface UserMessagePatchState {
 	originalRender: (width: number) => string[];
-	getTheme: () => { fg(color: string, text: string): string } | undefined;
+	getTheme: () => ThemeLike | undefined;
 	patched: boolean;
 }
 
 function fitAnsi(line: string, width: number): string {
 	const fitted = truncateToWidth(line, Math.max(0, width), "");
 	return fitted + " ".repeat(Math.max(0, width - visibleWidth(fitted)));
+}
+
+function trimAnsiRight(line: string): string {
+	return line.replace(/[ \t]+((?:\x1b\[[0-?]*[ -/]*[@-~])*)$/u, "$1");
 }
 
 function stripControl(line: string): string {
@@ -45,6 +58,31 @@ function renderRoundedLine(
 	return `${border("│")}${body}${border("│")}`;
 }
 
+function getMessageMarkdown(component: unknown): RenderableMarkdown | undefined {
+	return (component as { contentBox?: { children?: RenderableMarkdown[] } }).contentBox?.children?.[0];
+}
+
+function renderSentPromptBox(markdown: RenderableMarkdown, width: number, theme?: ThemeLike): string[] | undefined {
+	if (width < 8) return undefined;
+
+	const maxTextWidth = Math.max(1, Math.min(width - 4, 96));
+	const contentLines = markdown.render(maxTextWidth).map(trimAnsiRight);
+	if (contentLines.length === 0) return [];
+
+	const textWidth = Math.max(1, ...contentLines.map((line) => visibleWidth(line)));
+	const paddingX = 1;
+	const innerWidth = textWidth + paddingX * 2;
+	const border = (text: string) => theme?.fg("borderAccent", text) ?? text;
+	const fill = (text: string) => theme?.bg("userMessageBg", text) ?? text;
+	const padContent = (line: string) => fill(` ${fitAnsi(line, textWidth)} `);
+
+	return [
+		border(`╭${"─".repeat(innerWidth)}╮`),
+		...contentLines.map((line) => `${border("│")}${padContent(line)}${border("│")}`),
+		border(`╰${"─".repeat(innerWidth)}╯`),
+	];
+}
+
 function patchUserMessageComponent(getTheme: UserMessagePatchState["getTheme"]): void {
 	const globalStore = globalThis as Record<string, unknown>;
 	const proto = UserMessageComponent.prototype as unknown as { render(width: number): string[] };
@@ -60,29 +98,13 @@ function patchUserMessageComponent(getTheme: UserMessagePatchState["getTheme"]):
 	state.patched = true;
 
 	proto.render = function patchedUserMessageRender(this: unknown, width: number): string[] {
-		if (width < 4) return state!.originalRender.call(this, width);
+		const markdown = getMessageMarkdown(this);
+		const rendered = markdown ? renderSentPromptBox(markdown, width, state!.getTheme()) : undefined;
+		if (rendered === undefined) return state!.originalRender.call(this, width);
+		if (rendered.length === 0) return rendered;
 
-		const innerWidth = Math.max(1, width - 2);
-		const lines = state!.originalRender.call(this, innerWidth);
-		if (lines.length === 0) return lines;
-
-		const first = lines[0] ?? "";
-		const last = lines[lines.length - 1] ?? "";
-		const hasStart = first.startsWith(OSC133_ZONE_START);
-		const hasEnd = last.startsWith(OSC133_ZONE_END + OSC133_ZONE_FINAL);
-		if (hasStart) lines[0] = first.slice(OSC133_ZONE_START.length);
-		if (hasEnd) lines[lines.length - 1] = last.slice((OSC133_ZONE_END + OSC133_ZONE_FINAL).length);
-
-		const theme = state!.getTheme();
-		const border = (text: string) => theme?.fg("borderMuted", text) ?? text;
-		const rendered = [
-			renderRoundedLine("─".repeat(innerWidth), innerWidth, border, "top"),
-			...lines.map((line) => renderRoundedLine(line, innerWidth, border, "middle")),
-			renderRoundedLine("─".repeat(innerWidth), innerWidth, border, "bottom"),
-		];
-
-		if (hasStart) rendered[0] = OSC133_ZONE_START + rendered[0];
-		if (hasEnd) rendered[rendered.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + rendered[rendered.length - 1];
+		rendered[0] = OSC133_ZONE_START + rendered[0];
+		rendered[rendered.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + rendered[rendered.length - 1];
 		return rendered;
 	};
 }
