@@ -17,10 +17,9 @@ Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and ses
 extensions/
   aesthetic-polish.ts   Blue-forward Catppuccin accents and rounded prompt boxes
   catppuccin-footer.ts  Responsive Catppuccin footer
-  harness-commands.ts   /mode, /status, /checkpoint, and skill-routing reminders
-  safety-gate.ts        Secret/private-file egress guardrails
+  harness-commands.ts   /mode, /status, /checkpoint, /skills-audit, and skill-routing reminders
+  safety-gate.ts        Secret/private-file egress guardrails and git finalization checks
   session-continuity.ts Automatic checkpoints and custom compaction summaries
-  skills-audit.ts       /skills-audit command for the shared skill graph
 prompts/
   handoff.md            Session/task handoff prompt
   review.md             Review prompt

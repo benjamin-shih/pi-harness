@@ -16,6 +16,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Optional `ben-pi-latex-preview` package with lazy TeX/math-context activation.
 
 ### Changed
+- Folded `/skills-audit` into `harness-commands.ts` and git-finalization checks into `safety-gate.ts` to reduce core extension count.
 - Catppuccin theme now uses blue/sapphire-forward UI accents instead of mauve-heavy defaults.
 - Footer keeps its original mauve/pink segment colors while the rest of the theme stays blue-forward.
 - Bash command titles now use the same blue as startup resource headings.
