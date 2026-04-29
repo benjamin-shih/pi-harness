@@ -10,7 +10,6 @@ const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 const USER_MESSAGE_PATCH_KEY = "__benPiHarnessRoundedUserMessagePatch";
-const SENT_PROMPT_MAX_TEXT_WIDTH = 96;
 
 interface ThemeLike {
 	fg(color: string, text: string): string;
@@ -65,7 +64,7 @@ function getMessageMarkdown(component: unknown): RenderableMarkdown | undefined 
 function renderSentPromptBox(markdown: RenderableMarkdown, width: number, theme?: ThemeLike): string[] | undefined {
 	if (width < 8) return undefined;
 
-	const maxTextWidth = Math.max(1, Math.min(width - 4, SENT_PROMPT_MAX_TEXT_WIDTH));
+	const maxTextWidth = Math.max(1, width - 4);
 	const contentLines = markdown.render(maxTextWidth).map(trimAnsiRight);
 	if (contentLines.length === 0) return [];
 
