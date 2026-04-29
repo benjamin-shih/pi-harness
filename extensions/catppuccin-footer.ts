@@ -33,6 +33,12 @@ type UsageLike = {
 	cost?: number | { total?: number };
 };
 
+type StatusItem = {
+	label: string;
+	value: string;
+	color: string;
+};
+
 function mauve(text: string): string {
 	return `${OLD_FOOTER_MAUVE}${text}\x1b[39m`;
 }
@@ -77,6 +83,64 @@ function footerLine(width: number, left: string, right: string): string {
 	const safeLeft = truncateToWidth(left, maxLeftWidth, "");
 	const padding = " ".repeat(Math.max(minGap, width - visibleWidth(safeLeft) - rightWidth));
 	return truncateToWidth(safeLeft + padding + right, width, "");
+}
+
+function stripAnsi(text: string): string {
+	return text
+		.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function cleanStatusValue(value: unknown): string {
+	return stripAnsi(String(value ?? "")).replace(/\s+/g, " ").trim();
+}
+
+function memoryStatusColor(value: string): string {
+	if (/\b(?:fallback|default|aborted|error|fail)\b/i.test(value)) return "warning";
+	if (/\bcompact\b/i.test(value)) return "warning";
+	if (/\b(?:saved|compacted)\b/i.test(value)) return "success";
+	return "muted";
+}
+
+function compactMemoryValue(value: string): string {
+	const clean = value.replace(/^memory:/i, "");
+	const match = clean.match(/^([^:]+):?(\d+)?$/);
+	if (!match) return truncateToWidth(clean, 12, "…");
+	const label = match[1] ?? clean;
+	const count = match[2] ?? "";
+	const shortLabel: Record<string, string> = {
+		ready: "r",
+		saved: "s",
+		compact: "c",
+		compacted: "ok",
+		fallback: "fb",
+		default: "def",
+		aborted: "abort",
+	};
+	return `${shortLabel[label] ?? truncateToWidth(label, 6, "…")}${count}`;
+}
+
+export function compactExtensionStatusItems(statuses: ReadonlyMap<string, unknown> | Iterable<[string, unknown]>): StatusItem[] {
+	const entries = statuses instanceof Map ? [...statuses.entries()] : [...statuses];
+	const items: StatusItem[] = [];
+	for (const [key, rawValue] of entries) {
+		const value = cleanStatusValue(rawValue);
+		if (!value) continue;
+		if (key === "memory" || value.startsWith("memory:")) {
+			items.push({ label: "mem", value: compactMemoryValue(value), color: memoryStatusColor(value) });
+			continue;
+		}
+		if (key === "latex-preview" || value.startsWith("latex:") || value.startsWith("tex:")) {
+			items.push({ label: "tex", value: truncateToWidth(value.replace(/^(?:latex|tex):/i, ""), 8, "…"), color: "customMessageLabel" });
+			continue;
+		}
+		if (key === "mode" || value.startsWith("mode:")) {
+			items.push({ label: "mode", value: truncateToWidth(value.replace(/^mode:/i, ""), 8, "…"), color: "accent" });
+			continue;
+		}
+		items.push({ label: truncateToWidth(key, 6, "…"), value: truncateToWidth(value, 10, "…"), color: "muted" });
+	}
+	return items;
 }
 
 function emptyUsageTotals(): UsageTotals {
@@ -188,7 +252,7 @@ export default function catppuccinFooter(pi: ExtensionAPI) {
 					const subagentTotal = usage.subagentInput + usage.subagentOutput + usage.subagentCacheRead + usage.subagentCacheWrite;
 					const cost = usage.cost;
 					const branch = footerData.getGitBranch();
-					const statuses = [...footerData.getExtensionStatuses().values()].filter(Boolean).join(" ");
+					const statusItems = compactExtensionStatusItems(footerData.getExtensionStatuses());
 					const model = ctx.model?.id ?? "no-model";
 					const thinkingLevel = pi.getThinkingLevel();
 					const sep = theme.fg("dim", " ");
@@ -226,27 +290,31 @@ export default function catppuccinFooter(pi: ExtensionAPI) {
 						theme.fg("dim", `$${cost.toFixed(3)}`),
 					].join(sep);
 
-					const statusSegment = statuses ? segment(theme, "state", statuses, (text: string) => text) : undefined;
-					const modelAndThinking = [
-						statusSegment,
-						segment(theme, "model", model, mauve),
-						segment(theme, "think", thinkingLevel, thinkingLevel === "off" ? "dim" : "warning"),
-					]
-						.filter(Boolean)
-						.join(sep);
+					const statusSegments = statusItems.map((item) => segment(theme, item.label, item.value, item.color)).join(sep);
+					const modelSegment = segment(theme, "model", model, mauve);
+					const thinkSegment = segment(theme, "think", thinkingLevel, thinkingLevel === "off" ? "dim" : "warning");
+					const modelAndThinking = [modelSegment, thinkSegment].join(sep);
+					const statusesModelAndThinking = [statusSegments, modelAndThinking].filter(Boolean).join(sep);
 					const branchSegment = branch ? segment(theme, "git", ` ${branch}`, "muted") : undefined;
 					const fullRight = branchSegment
-						? [modelAndThinking, branchSegment].join(theme.fg("dim", "  │  "))
-						: modelAndThinking;
+						? [statusesModelAndThinking, branchSegment].filter(Boolean).join(theme.fg("dim", "  │  "))
+						: statusesModelAndThinking;
+					const compactRight = theme.fg("muted", `${model} ${thinkingLevel === "off" ? "" : thinkingLevel}`.trim());
 
 					const variants = [
 						{ left: fullLeft, right: fullRight },
+						{ left: fullLeft, right: statusesModelAndThinking },
 						{ left: fullLeft, right: modelAndThinking },
 						{ left: mediumLeft, right: fullRight },
+						{ left: mediumLeft, right: statusesModelAndThinking },
 						{ left: mediumLeft, right: modelAndThinking },
+						{ left: compactLeft, right: statusesModelAndThinking },
 						{ left: compactLeft, right: modelAndThinking },
+						{ left: compactLeft, right: compactRight },
 						{ left: piMark, right: modelAndThinking },
-						{ left: "", right: modelAndThinking },
+						{ left: piMark, right: compactRight },
+						{ left: "", right: compactRight },
+						{ left: piMark, right: "" },
 					];
 					const selected = variants.find((variant) => fits(width, variant.left, variant.right)) ?? variants.at(-1)!;
 					return [footerLine(width, selected.left, selected.right)];

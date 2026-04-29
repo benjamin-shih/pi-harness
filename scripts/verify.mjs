@@ -98,6 +98,7 @@ for (const extension of readdirSync(join(root, "extensions")).filter((file) => /
 function runFooterUsageTests() {
 	const footer = loadExtensionModule("extensions/catppuccin-footer.ts");
 	assert(typeof footer.calculateFooterUsage === "function", "catppuccin-footer should export calculateFooterUsage");
+	assert(typeof footer.compactExtensionStatusItems === "function", "catppuccin-footer should export compactExtensionStatusItems");
 	const usage = footer.calculateFooterUsage([
 		{
 			type: "message",
@@ -128,6 +129,15 @@ function runFooterUsageTests() {
 	assert(usage.cacheRead + usage.cacheWrite === 20, "footer usage should include parent and subagent cache tokens");
 	assert(Math.abs(usage.cost - 0.25) < 1e-9, "footer usage should include parent and subagent cost");
 	assert(usage.subagentInput === 107 && usage.subagentOutput === 53, "footer usage should expose subagent token contribution");
+
+	const statuses = footer.compactExtensionStatusItems(new Map([
+		["memory", "\u001b[2mmemory:ready:12\u001b[22m"],
+		["latex-preview", "latex:auto"],
+	]));
+	assert(statuses.length === 2, "footer should keep memory and latex statuses as separate compact chips");
+	assert(statuses[0].label === "mem" && statuses[0].value === "r12", "footer should compact memory status values");
+	assert(statuses[1].label === "tex" && statuses[1].value === "auto", "footer should compact latex status values");
+	assert(!statuses.some((status) => status.label === "state"), "footer should not collapse extension statuses into a long state segment");
 }
 
 runFooterUsageTests();

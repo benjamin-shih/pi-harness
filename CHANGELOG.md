@@ -27,6 +27,7 @@ All notable changes to this personal pi harness package are tracked here.
 - LaTeX preview moved out of the core harness extension set into the optional lazy package.
 
 ### Fixed
+- Footer extension statuses are now compact colored chips, and narrow terminal layouts drop state/model detail more aggressively instead of overflowing.
 - Memory-spine custom compaction now strips bulky tool-result/thinking bodies, uses model-aware prompt/output budgets, persists fallback diagnostics, detects default compaction, and returns deterministic harness fallback summaries when model summarization fails.
 
 ### Breaking
