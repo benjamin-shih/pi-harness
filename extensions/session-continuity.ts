@@ -5,11 +5,15 @@ import {
 	type ExtensionAPI,
 	type ExtensionContext,
 	type SessionBeforeCompactEvent,
+	type SessionCompactEvent,
 	type SessionEntry,
 	type ToolResultEvent,
 } from "@mariozechner/pi-coding-agent";
 
+type CompleteFn = typeof complete;
+
 const CHECKPOINT_TYPE = "ben-continuity-checkpoint";
+const COMPACTION_DIAGNOSTIC_TYPE = "ben-continuity-compaction-diagnostic";
 const CONTINUITY_VERSION = 1;
 const MAX_PROMPT_CHARS = 600;
 const MAX_ITEMS_PER_CHECKPOINT = 24;
@@ -24,6 +28,8 @@ const MAX_TURN_PREFIX_CHARS = 20_000;
 const MAX_CONVERSATION_CHARS = 70_000;
 const MAX_CUSTOM_INSTRUCTIONS_CHARS = 4_000;
 const MAX_GIT_STATUS_CHARS = 4_000;
+const MIN_COMPACTION_PROMPT_CHARS = 2_000;
+const MODEL_PROMPT_CHARS_PER_TOKEN = 3;
 
 export type ContinuityCommand = {
 	command: string;
@@ -62,6 +68,38 @@ type ContinuityLedger = {
 	toolErrors: string[];
 };
 
+type PromptSizing = {
+	promptChars: number;
+	conversationChars: number;
+	turnPrefixChars: number;
+	previousSummaryChars: number;
+	customInstructionsChars: number;
+	gitStatusChars: number;
+	messagesToSummarize: number;
+	turnPrefixMessages: number;
+	tokensBefore: number;
+	promptBudgetChars: number;
+	maxSummaryTokens: number;
+	isSplitTurn: boolean;
+	firstKeptEntryId: string;
+};
+
+type CompactionDiagnosticReason = "no_model" | "no_api_key" | "aborted" | "empty_summary" | "exception" | "default_compaction";
+
+export type ContinuityCompactionDiagnostic = {
+	version: number;
+	timestamp: string;
+	reason: CompactionDiagnosticReason;
+	cwd: string;
+	model?: string;
+	thinking?: string;
+	error?: string;
+	fallbackReturned: boolean;
+	promptSizing?: PromptSizing;
+	compactionId?: string;
+	fromExtension?: boolean;
+};
+
 function emptyTurnState(): TurnState {
 	return {
 		filesRead: new Set(),
@@ -85,7 +123,7 @@ export function redactSensitiveText(text: string): string {
 		.replace(/-----BEGIN [^-]*(?:PRIVATE KEY|SECRET)[\s\S]*?-----END [^-]*(?:PRIVATE KEY|SECRET)-----/gi, "[REDACTED_PRIVATE_BLOCK]")
 		.replace(/(https?:\/\/[^:\s/@]+:)[^@\s]+(@)/gi, "$1[REDACTED]$2")
 		.replace(/(Authorization:\s*Bearer\s+)[^\s'\"]+/gi, "$1[REDACTED]")
-		.replace(/\b([A-Za-z0-9_]{0,80}(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY)[A-Za-z0-9_]{0,80}\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s'\"]+)/g, "$1[REDACTED]")
+		.replace(/\b([A-Za-z0-9_]{0,80}(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY)[A-Za-z0-9_]{0,80}\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s'\"]+)/gi, "$1[REDACTED]")
 		.replace(/(--(?:api-key|token|password|secret)\s+)[^\s'\"]+/gi, "$1[REDACTED]")
 		.replace(/\b(?:sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16})\b/g, "[REDACTED_TOKEN]");
 }
@@ -294,7 +332,9 @@ export function buildContinuitySummaryPrompt(args: {
 	fileOps?: { readFiles?: string[]; modifiedFiles?: string[] };
 	customInstructions?: string;
 	gitStatus?: string;
+	maxPromptChars?: number;
 }): string {
+	const maxPromptChars = Math.max(MIN_COMPACTION_PROMPT_CHARS, Math.min(args.maxPromptChars ?? MAX_COMPACTION_PROMPT_CHARS, MAX_COMPACTION_PROMPT_CHARS));
 	const previous = truncateMiddle(redactSensitiveText(args.previousSummary?.trim() || "None."), MAX_PREVIOUS_SUMMARY_CHARS, "previous summary");
 	const conversationText = truncateMiddle(compactSerializedConversation(args.conversationText || "None."), MAX_CONVERSATION_CHARS, "conversation");
 	const turnPrefix = truncateMiddle(compactSerializedConversation(args.turnPrefixText?.trim() || "None."), MAX_TURN_PREFIX_CHARS, "turn prefix");
@@ -372,9 +412,9 @@ Conversation being compacted:
 ${conversationText}
 </conversation>`;
 
-	return prompt.length <= MAX_COMPACTION_PROMPT_CHARS
+	return prompt.length <= maxPromptChars
 		? prompt
-		: truncateMiddle(prompt, MAX_COMPACTION_PROMPT_CHARS, "continuity compaction prompt");
+		: truncateMiddle(prompt, maxPromptChars, "continuity compaction prompt");
 }
 
 function extractSummaryText(response: { content?: Array<{ type: string; text?: string }> }): string {
@@ -408,7 +448,193 @@ function updateMemoryStatus(ctx: ExtensionContext, checkpoints: number, label = 
 	ctx.ui.setStatus("memory", theme?.fg ? theme.fg("muted", text) : text);
 }
 
-export default function sessionContinuity(pi: ExtensionAPI) {
+function notify(ctx: ExtensionContext, message: string, level: "info" | "warning"): void {
+	if (!ctx.hasUI) return;
+	ctx.ui.notify(message, level);
+}
+
+function modelContextWindow(model: ExtensionContext["model"]): number {
+	return model && Number.isFinite(model.contextWindow) && model.contextWindow > 0 ? model.contextWindow : 272_000;
+}
+
+function summaryTokenBudget(model: ExtensionContext["model"]): number {
+	if (!model) return MAX_SUMMARY_TOKENS;
+	const contextWindow = modelContextWindow(model);
+	const modelMax = Number.isFinite(model.maxTokens) && model.maxTokens > 0 ? model.maxTokens : MAX_SUMMARY_TOKENS;
+	const contextShare = Math.max(512, Math.floor(contextWindow * 0.2));
+	return Math.max(512, Math.min(MAX_SUMMARY_TOKENS, modelMax, contextShare));
+}
+
+function compactionPromptBudgetChars(model: ExtensionContext["model"], maxSummaryTokens: number): number {
+	if (!model) return MAX_COMPACTION_PROMPT_CHARS;
+	const contextWindow = modelContextWindow(model);
+	const reserveTokens = Math.max(1_024, Math.min(4_096, Math.floor(contextWindow * 0.05)));
+	const inputTokens = Math.max(512, contextWindow - maxSummaryTokens - reserveTokens);
+	return Math.max(MIN_COMPACTION_PROMPT_CHARS, Math.min(MAX_COMPACTION_PROMPT_CHARS, inputTokens * MODEL_PROMPT_CHARS_PER_TOKEN));
+}
+
+function buildPromptSizing(args: {
+	prompt: string;
+	conversationText: string;
+	turnPrefixText?: string;
+	previousSummary?: string;
+	customInstructions?: string;
+	gitStatus?: string;
+	preparation: SessionBeforeCompactEvent["preparation"];
+	promptBudgetChars: number;
+	maxSummaryTokens: number;
+}): PromptSizing {
+	return {
+		promptChars: args.prompt.length,
+		conversationChars: args.conversationText.length,
+		turnPrefixChars: args.turnPrefixText?.length ?? 0,
+		previousSummaryChars: args.previousSummary?.length ?? 0,
+		customInstructionsChars: args.customInstructions?.length ?? 0,
+		gitStatusChars: args.gitStatus?.length ?? 0,
+		messagesToSummarize: args.preparation.messagesToSummarize.length,
+		turnPrefixMessages: args.preparation.turnPrefixMessages?.length ?? 0,
+		tokensBefore: args.preparation.tokensBefore,
+		promptBudgetChars: args.promptBudgetChars,
+		maxSummaryTokens: args.maxSummaryTokens,
+		isSplitTurn: args.preparation.isSplitTurn,
+		firstKeptEntryId: args.preparation.firstKeptEntryId,
+	};
+}
+
+function buildCompactionDetails(ledger: ContinuityLedger, promptSizing: PromptSizing, fallbackReason?: CompactionDiagnosticReason, error?: string): Record<string, unknown> {
+	return {
+		source: "ben-pi-harness/session-continuity",
+		version: CONTINUITY_VERSION,
+		checkpointCount: ledger.checkpoints.length,
+		filesRead: ledger.filesRead,
+		filesModified: ledger.filesModified,
+		commands: ledger.commands.map((command) => ({ command: command.command, status: command.status })),
+		promptSizing,
+		...(fallbackReason ? { fallbackReason } : {}),
+		...(error ? { error: truncateText(error, 500) } : {}),
+	};
+}
+
+export function buildDeterministicContinuitySummary(args: {
+	ledger: ContinuityLedger;
+	fileOps?: { readFiles?: string[]; modifiedFiles?: string[] };
+	previousSummary?: string;
+	customInstructions?: string;
+	gitStatus?: string;
+	reason: CompactionDiagnosticReason;
+	error?: string;
+	promptSizing?: PromptSizing;
+}): string {
+	const recentPrompts = args.ledger.checkpoints.map((checkpoint) => checkpoint.prompt).filter((prompt): prompt is string => Boolean(prompt));
+	const previous = truncateMiddle(redactSensitiveText(args.previousSummary?.trim() || "None recorded."), 8_000, "previous summary");
+	return redactSensitiveText(`## Goal
+${recentPrompts.length ? bulletList(recentPrompts.slice(-5)) : "- Unknown from deterministic fallback. Use recent checkpoints and preserved files to continue."}
+
+## Current State
+- Memory spine used deterministic fallback during compaction.
+- Fallback reason: ${args.reason}.
+${args.error ? `- Error: ${truncateText(args.error, 500)}.` : "- Error: None recorded."}
+${args.promptSizing ? `- Tokens before compaction: ${args.promptSizing.tokensBefore}.` : "- Tokens before compaction: unknown."}
+${args.promptSizing ? `- Prompt chars: ${args.promptSizing.promptChars}.` : "- Prompt chars: unknown."}
+
+## Constraints / Preferences
+- Preserve session continuity without command output or secrets.
+- Prefer checkpoint/file metadata when model summarization fails.
+- Previous summary: ${previous}
+- Custom instructions: ${truncateMiddle(redactSensitiveText(args.customInstructions?.trim() || "None."), 2_000, "custom instructions")}
+
+## Decisions Made
+- Custom model compaction did not complete; harness fallback summary was returned instead of pi default compaction.
+
+## Files Read
+${bulletList(uniqueSorted([...(args.ledger.filesRead ?? []), ...(args.fileOps?.readFiles ?? [])], MAX_LEDGER_FILES))}
+
+## Files Modified
+${bulletList(uniqueSorted([...(args.ledger.filesModified ?? []), ...(args.fileOps?.modifiedFiles ?? [])], MAX_LEDGER_FILES))}
+
+## Commands / Verification
+${commandList(args.ledger.commands)}
+
+## Active Skills / Routing
+- Unknown unless captured in recent checkpoints or previous summary.
+
+## Subagents / Intercom State
+- Unknown unless captured in recent checkpoints or previous summary.
+
+## Blockers / Open Questions
+- Investigate memory-spine compaction diagnostic reason: ${args.reason}.
+
+## Next Exact Actions
+- Inspect recent session entries and files modified above.
+- Continue from the latest user request and checkpoint ledger.
+- If compaction diagnostics persist, inspect ben-continuity-compaction-diagnostic entries.
+
+## Critical Continuation Notes
+- This is a deterministic fallback summary, not an LLM-generated summary.
+- Current git status at compaction:
+${truncateMiddle(redactSensitiveText(args.gitStatus?.trim() || "Not checked."), 2_000, "git status")}`);
+}
+
+function appendCompactionDiagnostic(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	reason: CompactionDiagnosticReason,
+	options: { promptSizing?: PromptSizing; error?: string; fallbackReturned?: boolean; compactionEntry?: SessionCompactEvent["compactionEntry"]; fromExtension?: boolean } = {},
+): void {
+	const diagnostic: ContinuityCompactionDiagnostic = {
+		version: CONTINUITY_VERSION,
+		timestamp: new Date().toISOString(),
+		reason,
+		cwd: ctx.cwd,
+		...(modelSummary(ctx) ? { model: modelSummary(ctx) } : {}),
+		thinking: pi.getThinkingLevel(),
+		fallbackReturned: options.fallbackReturned ?? false,
+		...(options.promptSizing ? { promptSizing: options.promptSizing } : {}),
+		...(options.error ? { error: truncateText(options.error, 500) } : {}),
+		...(options.compactionEntry ? { compactionId: options.compactionEntry.id } : {}),
+		...(options.fromExtension !== undefined ? { fromExtension: options.fromExtension } : {}),
+	};
+	pi.appendEntry(COMPACTION_DIAGNOSTIC_TYPE, diagnostic);
+}
+
+function fallbackCompaction(args: {
+	pi: ExtensionAPI;
+	ctx: ExtensionContext;
+	event: SessionBeforeCompactEvent;
+	ledger: ContinuityLedger;
+	promptSizing: PromptSizing;
+	gitStatus?: string;
+	reason: CompactionDiagnosticReason;
+	error?: string;
+}) {
+	appendCompactionDiagnostic(args.pi, args.ctx, args.reason, {
+		promptSizing: args.promptSizing,
+		error: args.error,
+		fallbackReturned: true,
+	});
+	updateMemoryStatus(args.ctx, args.ledger.checkpoints.length, "fallback");
+	return {
+		compaction: {
+			summary: buildDeterministicContinuitySummary({
+				ledger: args.ledger,
+				fileOps: args.event.preparation.fileOps,
+				previousSummary: args.event.preparation.previousSummary,
+				customInstructions: args.event.customInstructions,
+				gitStatus: args.gitStatus,
+				reason: args.reason,
+				error: args.error,
+				promptSizing: args.promptSizing,
+			}),
+			firstKeptEntryId: args.event.preparation.firstKeptEntryId,
+			tokensBefore: args.event.preparation.tokensBefore,
+			details: buildCompactionDetails(args.ledger, args.promptSizing, args.reason, args.error),
+		},
+	};
+}
+
+export function createSessionContinuity(deps: { completeFn?: CompleteFn } = {}) {
+	const completeFn = deps.completeFn ?? complete;
+	return function sessionContinuity(pi: ExtensionAPI) {
 	let turnState = emptyTurnState();
 	let checkpointCount = 0;
 	let lastCheckpointHash: string | undefined;
@@ -458,20 +684,13 @@ export default function sessionContinuity(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx) => {
-		if (!ctx.model) return undefined;
-
-		const currentCheckpoint = appendCheckpoint("compact", ctx);
-		updateMemoryStatus(ctx, checkpointCount, "compact");
-		ctx.ui.notify("Memory spine: generating continuity summary...", "info");
-
-		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-		if (!auth.ok || !auth.apiKey) {
-			ctx.ui.notify(auth.ok ? `Memory spine: no API key for ${ctx.model.provider}; using default compaction` : auth.error, "warning");
-			updateMemoryStatus(ctx, checkpointCount, "fallback");
-			return undefined;
-		}
-
 		const { preparation, branchEntries, customInstructions, signal } = event;
+		const currentCheckpoint = appendCheckpoint("compact", ctx);
+		if (currentCheckpoint) turnState = emptyTurnState();
+		updateMemoryStatus(ctx, checkpointCount, "compact");
+		const maxSummaryTokens = summaryTokenBudget(ctx.model);
+		const promptBudgetChars = compactionPromptBudgetChars(ctx.model, maxSummaryTokens);
+
 		const messages = convertToLlm(preparation.messagesToSummarize);
 		const turnPrefixMessages = convertToLlm(preparation.turnPrefixMessages ?? []);
 		const conversationText = serializeConversation(messages);
@@ -488,7 +707,43 @@ export default function sessionContinuity(pi: ExtensionAPI) {
 			fileOps: preparation.fileOps,
 			customInstructions,
 			gitStatus,
+			maxPromptChars: promptBudgetChars,
 		});
+		const promptSizing = buildPromptSizing({
+			prompt,
+			conversationText,
+			turnPrefixText,
+			previousSummary: preparation.previousSummary,
+			customInstructions,
+			gitStatus,
+			preparation,
+			promptBudgetChars,
+			maxSummaryTokens,
+		});
+
+		const fallback = (reason: CompactionDiagnosticReason, error?: string) => fallbackCompaction({
+			pi,
+			ctx,
+			event,
+			ledger,
+			promptSizing,
+			gitStatus,
+			reason,
+			error,
+		});
+
+		if (!ctx.model) {
+			notify(ctx, "Memory spine: no model; using deterministic harness fallback", "warning");
+			return fallback("no_model");
+		}
+
+		notify(ctx, "Memory spine: generating continuity summary...", "info");
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+		if (!auth.ok || !auth.apiKey) {
+			const message = auth.ok ? `No API key for ${ctx.model.provider}` : auth.error;
+			notify(ctx, `Memory spine: ${message}; using deterministic harness fallback`, "warning");
+			return fallback("no_api_key", message);
+		}
 
 		const summaryMessage: Message = {
 			role: "user",
@@ -497,18 +752,24 @@ export default function sessionContinuity(pi: ExtensionAPI) {
 		};
 
 		try {
-			const response = await complete(
+			const response = await completeFn(
 				ctx.model,
 				{ messages: [summaryMessage] },
-				{ apiKey: auth.apiKey, headers: auth.headers, maxTokens: MAX_SUMMARY_TOKENS, signal },
+				{ apiKey: auth.apiKey, headers: auth.headers, maxTokens: maxSummaryTokens, signal },
 			);
-			if (response.stopReason === "aborted") return undefined;
+			if (response.stopReason === "aborted") {
+				appendCompactionDiagnostic(pi, ctx, "aborted", { promptSizing, fallbackReturned: false });
+				updateMemoryStatus(ctx, checkpointCount, "aborted");
+				return undefined;
+			}
+			if (response.stopReason === "error") {
+				return fallback("exception", response.errorMessage ?? "Model returned stopReason=error during custom compaction");
+			}
 
 			const summary = redactSensitiveText(extractSummaryText(response));
 			if (!summary) {
-				ctx.ui.notify("Memory spine: empty summary; using default compaction", "warning");
-				updateMemoryStatus(ctx, checkpointCount, "fallback");
-				return undefined;
+				notify(ctx, "Memory spine: empty model summary; using deterministic harness fallback", "warning");
+				return fallback("empty_summary");
 			}
 
 			updateMemoryStatus(ctx, checkpointCount, "compacted");
@@ -517,23 +778,31 @@ export default function sessionContinuity(pi: ExtensionAPI) {
 					summary,
 					firstKeptEntryId: preparation.firstKeptEntryId,
 					tokensBefore: preparation.tokensBefore,
-					details: {
-						source: "ben-pi-harness/session-continuity",
-						version: CONTINUITY_VERSION,
-						checkpointCount: ledger.checkpoints.length,
-						filesRead: ledger.filesRead,
-						filesModified: ledger.filesModified,
-						commands: ledger.commands.map((command) => ({ command: command.command, status: command.status })),
-					},
+					details: buildCompactionDetails(ledger, promptSizing),
 				},
 			};
 		} catch (error) {
-			if (!signal.aborted) {
-				const message = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`Memory spine failed; using default compaction: ${message}`, "warning");
-				updateMemoryStatus(ctx, checkpointCount, "fallback");
+			if (signal.aborted) {
+				appendCompactionDiagnostic(pi, ctx, "aborted", { promptSizing, fallbackReturned: false });
+				updateMemoryStatus(ctx, checkpointCount, "aborted");
+				return undefined;
 			}
-			return undefined;
+			const message = error instanceof Error ? error.message : String(error);
+			notify(ctx, `Memory spine failed; using deterministic harness fallback: ${message}`, "warning");
+			return fallback("exception", message);
 		}
 	});
+
+	pi.on("session_compact", async (event: SessionCompactEvent, ctx) => {
+		if (event.fromExtension) return;
+		appendCompactionDiagnostic(pi, ctx, "default_compaction", {
+			fallbackReturned: false,
+			compactionEntry: event.compactionEntry,
+			fromExtension: event.fromExtension,
+		});
+		updateMemoryStatus(ctx, checkpointCount, "default");
+	});
+};
 }
+
+export default createSessionContinuity();
