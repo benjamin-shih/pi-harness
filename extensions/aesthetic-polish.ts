@@ -14,7 +14,6 @@ const SENT_PROMPT_MAX_TEXT_WIDTH = 96;
 
 interface ThemeLike {
 	fg(color: string, text: string): string;
-	bg(color: string, text: string): string;
 }
 
 interface RenderableMarkdown {
@@ -74,8 +73,7 @@ function renderSentPromptBox(markdown: RenderableMarkdown, width: number, theme?
 	const paddingX = 1;
 	const innerWidth = textWidth + paddingX * 2;
 	const border = (text: string) => theme?.fg("borderAccent", text) ?? text;
-	const fill = (text: string) => theme?.bg("userMessageBg", text) ?? text;
-	const padContent = (line: string) => fill(` ${fitAnsi(line, textWidth)} `);
+	const padContent = (line: string) => ` ${fitAnsi(line, textWidth)} `;
 
 	return [
 		border(`╭${"─".repeat(innerWidth)}╮`),
