@@ -26,7 +26,7 @@ const TEX_PROJECT_FILENAMES = new Set([
 	"quarto.yml",
 ]);
 const TEX_PROJECT_EXTENSIONS = new Set([".tex", ".bib", ".sty", ".cls", ".qmd", ".rnw", ".rmd", ".typ"]);
-const DISPLAY_MATH_RESPONSE_PATTERN = /\$\$[\s\S]{1,4000}\$\$|\\\[[\s\S]{1,4000}\\\]|\\begin\{(?:equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}/;
+const DISPLAY_MATH_RESPONSE_PATTERN = /\$\$[\s\S]{1,4000}\$\$|\\\[[\s\S]{1,4000}\\\]|\\begin\{(?:displaymath|equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}/;
 
 type LatexPreviewCore = typeof import("../src/latex-preview-core.ts");
 type LatexPreviewController = ReturnType<LatexPreviewCore["createLatexPreviewController"]>;

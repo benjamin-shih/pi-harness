@@ -269,6 +269,10 @@ async function runLatexPreviewBehaviorTests() {
 		latexLoader.messageLooksMathHeavy({ messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Use \\[x^2+y^2=z^2\\]." }] }] }.messages),
 		"latex-preview loader should auto-activate on math-heavy assistant output",
 	);
+	assert(
+		latexLoader.messageLooksMathHeavy({ messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: String.raw`Use \begin{displaymath}x^2+y^2=z^2\end{displaymath}.` }] }] }.messages),
+		"latex-preview loader should auto-activate on displaymath assistant output",
+	);
 
 	const loaderHandlers = new Map();
 	let loaderWidgetFactory;
