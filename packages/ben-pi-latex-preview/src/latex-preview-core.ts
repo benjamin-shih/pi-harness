@@ -139,8 +139,146 @@ type AssistantLike = {
 	stopReason?: string;
 };
 
+type TextSpan = {
+	start: number;
+	end: number;
+};
+
+function lineEndWithNewline(text: string, start: number): number {
+	const newline = text.indexOf("\n", start);
+	return newline === -1 ? text.length : newline + 1;
+}
+
+function lineContentEnd(text: string, endWithNewline: number): number {
+	return endWithNewline > 0 && text[endWithNewline - 1] === "\n" ? endWithNewline - 1 : endWithNewline;
+}
+
+function escapedRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const FENCE_CONTAINER_PREFIX = String.raw` {0,3}(?:(?:>\s*)*)?(?:(?:[-+*]|\d{1,9}[.)])\s+)? {0,3}`;
+const BACKTICK = "`";
+
+function fenceOpener(line: string): string | undefined {
+	return line.match(new RegExp(`^${FENCE_CONTAINER_PREFIX}(${BACKTICK}{3,}|~{3,})`))?.[1];
+}
+
+function fenceCloser(line: string, char: string, minLength: number): boolean {
+	return new RegExp(`^${FENCE_CONTAINER_PREFIX}${escapedRegExp(char)}{${minLength},}\\s*$`).test(line);
+}
+
+function fencedCodeSpans(text: string): TextSpan[] {
+	const spans: TextSpan[] = [];
+	let lineStart = 0;
+
+	while (lineStart < text.length) {
+		const lineEnd = lineEndWithNewline(text, lineStart);
+		const line = text.slice(lineStart, lineContentEnd(text, lineEnd));
+		const opener = fenceOpener(line);
+		if (!opener) {
+			lineStart = lineEnd;
+			continue;
+		}
+
+		const char = opener[0]!;
+		let cursor = lineEnd;
+		let spanEnd = text.length;
+		while (cursor < text.length) {
+			const candidateEnd = lineEndWithNewline(text, cursor);
+			const candidate = text.slice(cursor, lineContentEnd(text, candidateEnd));
+			if (fenceCloser(candidate, char, opener.length)) {
+				spanEnd = candidateEnd;
+				break;
+			}
+			cursor = candidateEnd;
+		}
+
+		spans.push({ start: lineStart, end: spanEnd });
+		lineStart = spanEnd;
+	}
+
+	return spans;
+}
+
+function inlineCodeSpans(text: string, start: number, end: number): TextSpan[] {
+	const spans: TextSpan[] = [];
+	let cursor = start;
+	while (cursor < end) {
+		if (text[cursor] !== "`") {
+			cursor++;
+			continue;
+		}
+		const openStart = cursor;
+		while (cursor < end && text[cursor] === "`") cursor++;
+		const length = cursor - openStart;
+
+		let search = cursor;
+		let closeEnd: number | undefined;
+		while (search < end) {
+			const next = text.indexOf("`", search);
+			if (next < 0 || next >= end) break;
+			let runEnd = next;
+			while (runEnd < end && text[runEnd] === "`") runEnd++;
+			if (runEnd - next === length) {
+				closeEnd = runEnd;
+				break;
+			}
+			search = runEnd;
+		}
+		if (closeEnd === undefined) continue;
+		spans.push({ start: openStart, end: closeEnd });
+		cursor = closeEnd;
+	}
+	return spans;
+}
+
+function markdownCodeSpans(text: string): TextSpan[] {
+	const fenced = fencedCodeSpans(text);
+	const spans: TextSpan[] = [];
+	let cursor = 0;
+	for (const fence of fenced) {
+		spans.push(...inlineCodeSpans(text, cursor, fence.start));
+		spans.push(fence);
+		cursor = fence.end;
+	}
+	spans.push(...inlineCodeSpans(text, cursor, text.length));
+	return spans.sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
+function markdownProseSpans(text: string): TextSpan[] {
+	const spans: TextSpan[] = [];
+	let cursor = 0;
+	for (const code of markdownCodeSpans(text)) {
+		if (code.start > cursor) spans.push({ start: cursor, end: code.start });
+		cursor = Math.max(cursor, code.end);
+	}
+	if (cursor < text.length) spans.push({ start: cursor, end: text.length });
+	return spans;
+}
+
+function transformMarkdownProse(text: string, transform: (text: string) => string): string {
+	let output = "";
+	let cursor = 0;
+	for (const code of markdownCodeSpans(text)) {
+		output += transform(text.slice(cursor, code.start));
+		output += text.slice(code.start, code.end);
+		cursor = code.end;
+	}
+	output += transform(text.slice(cursor));
+	return output;
+}
+
 function blankMarkdownCode(text: string): string {
-	return text.replace(/```[\s\S]*?```/g, " ").replace(/`[^`\n]*`/g, " ");
+	let output = "";
+	let cursor = 0;
+	for (const code of markdownCodeSpans(text)) {
+		output += text.slice(cursor, code.start);
+		output += " ".repeat(code.end - code.start);
+		cursor = code.end;
+	}
+	output += text.slice(cursor);
+	return output;
 }
 
 function collectMatches(source: string, regex: RegExp, display: boolean, delimiter: string, wholeMatch = false): LatexSnippet[] {
@@ -867,41 +1005,49 @@ function prettifyInlineMathInPlainText(text: string): string {
 }
 
 export function prettifyInlineMathInMarkdown(text: string): string {
-	let output = "";
-	let cursor = 0;
-	const codePattern = /```[\s\S]*?```|`[^`\n]*`/g;
-	for (const match of text.matchAll(codePattern)) {
-		const start = match.index ?? 0;
-		output += prettifyInlineMathInPlainText(text.slice(cursor, start));
-		output += match[0];
-		cursor = start + match[0].length;
-	}
-	output += prettifyInlineMathInPlainText(text.slice(cursor));
-	return output;
+	return transformMarkdownProse(text, prettifyInlineMathInPlainText);
 }
 
-async function buildPreviewPayload(text: string, renderOptions: RenderOptions): Promise<PreviewPayload | undefined> {
+export function sanitizeMarkdownForLatexPreview(text: string): string {
+	return transformMarkdownProse(prettifyInlineMathInMarkdown(text), (prose) =>
+		prose
+			.replace(/\\\[/g, "`\\\\[`")
+			.replace(/\\\]/g, "`\\\\]`")
+			.replace(/(?<!\\)\$(?![\s\d])/g, "\\$")
+			.replace(/\n{4,}/g, "\n\n\n"),
+	);
+}
+
+export async function buildPreviewPayload(
+	text: string,
+	renderOptions: RenderOptions,
+	renderSnippet: (snippet: LatexSnippet, options: RenderOptions) => Promise<RenderResult> = renderLatexSnippet,
+): Promise<PreviewPayload | undefined> {
 	const blocks: PreviewBlock[] = [];
 	let cursor = 0;
 	let renderedCount = 0;
 	let truncated = false;
 
-	for (const match of text.matchAll(MATH_PATTERN)) {
-		const start = match.index ?? 0;
-		const raw = match[0];
-		const snippet = snippetFromRegexMatch(match);
-		if (!snippet) continue;
-		if (!snippet.display && !RENDER_INLINE_MATH_IN_CONTEXT) continue;
-		if (renderedCount >= MAX_RENDERED_SNIPPETS) {
-			truncated = true;
-			break;
-		}
+	for (const span of markdownProseSpans(text)) {
+		if (truncated) break;
+		const prose = text.slice(span.start, span.end);
+		for (const match of prose.matchAll(MATH_PATTERN)) {
+			const start = span.start + (match.index ?? 0);
+			const raw = match[0];
+			const snippet = snippetFromRegexMatch(match);
+			if (!snippet) continue;
+			if (!snippet.display && !RENDER_INLINE_MATH_IN_CONTEXT) continue;
+			if (renderedCount >= MAX_RENDERED_SNIPPETS) {
+				truncated = true;
+				break;
+			}
 
-		pushMarkdown(blocks, text.slice(cursor, start));
-		const result = await renderLatexSnippet(snippet, renderOptions);
-		blocks.push({ type: "math", math: { tex: snippet.tex, display: snippet.display, delimiter: snippet.delimiter, ...result } });
-		cursor = start + raw.length;
-		renderedCount++;
+			pushMarkdown(blocks, text.slice(cursor, start));
+			const result = await renderSnippet(snippet, renderOptions);
+			blocks.push({ type: "math", math: { tex: snippet.tex, display: snippet.display, delimiter: snippet.delimiter, ...result } });
+			cursor = start + raw.length;
+			renderedCount++;
+		}
 	}
 
 	if (renderedCount === 0) return undefined;
@@ -1012,8 +1158,42 @@ function addMathImage(container: { addChild: (child: unknown) => void }, math: R
 	container.addChild(new ResponsiveMathImage(math, index, theme));
 }
 
+class SafeMarkdownBlock {
+	private markdownComponent: { render: (width: number) => string[] } | undefined;
+	private fallbackComponent: { render: (width: number) => string[] } | undefined;
+	private readonly text: string;
+	private readonly theme: Theme;
+	private readonly markdownTheme: unknown;
+
+	constructor(text: string, theme: Theme, markdownTheme: unknown) {
+		this.text = sanitizeMarkdownForLatexPreview(text.trim());
+		this.theme = theme;
+		this.markdownTheme = markdownTheme;
+	}
+
+	render(width: number): string[] {
+		const { Markdown, Text } = runtimeDeps();
+		try {
+			this.markdownComponent ??= new Markdown(this.text, 1, 0, this.markdownTheme) as { render: (width: number) => string[] };
+			return this.markdownComponent.render(width);
+		} catch {
+			this.fallbackComponent ??= new Text(
+				this.theme.fg("warning", "LaTeX preview Markdown fallback (plain text)") + "\n" + this.theme.fg("muted", this.text),
+				1,
+				0,
+			) as { render: (width: number) => string[] };
+			return this.fallbackComponent.render(width);
+		}
+	}
+}
+
+function addSafeMarkdown(container: { addChild: (child: unknown) => void }, text: string, theme: Theme, markdownTheme: unknown): void {
+	if (!text.trim()) return;
+	container.addChild(new SafeMarkdownBlock(text, theme, markdownTheme));
+}
+
 function latexPreviewComponent(payload: PreviewPayload, theme: Theme) {
-	const { Container, Markdown, Spacer, Text, getMarkdownTheme } = runtimeDeps();
+	const { Container, Spacer, Text, getMarkdownTheme } = runtimeDeps();
 	const container = new Container();
 	const mdTheme = getMarkdownTheme();
 	container.addChild(new Spacer(1));
@@ -1029,7 +1209,7 @@ function latexPreviewComponent(payload: PreviewPayload, theme: Theme) {
 	let mathIndex = 0;
 	for (const block of payload.blocks) {
 		if (block.type === "markdown") {
-			container.addChild(new Markdown(prettifyInlineMathInMarkdown(block.text.trim()), 1, 0, mdTheme));
+			addSafeMarkdown(container, block.text, theme, mdTheme);
 		} else {
 			container.addChild(new Spacer(1));
 			addMathImage(container, block.math, mathIndex, theme);

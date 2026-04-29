@@ -28,6 +28,7 @@ All notable changes to this personal pi harness package are tracked here.
 - LaTeX preview moved out of the core harness extension set into the optional lazy package.
 
 ### Fixed
+- LaTeX preview now ignores Markdown code fences/spans when extracting display math and falls back to plain text if Markdown rendering fails.
 - Footer extension statuses are now compact colored chips, and narrow terminal layouts drop state/model detail more aggressively instead of overflowing.
 - Live prompt editor green border now survives pi's custom-editor border-color override during reload and recolors the full top/bottom border lines.
 - Memory-spine custom compaction now strips bulky tool-result/thinking bodies, uses model-aware prompt/output budgets, persists fallback diagnostics, detects default compaction, and returns deterministic harness fallback summaries when model summarization fails.
