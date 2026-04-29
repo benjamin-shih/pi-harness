@@ -56,9 +56,13 @@ function renderRoundedLine(
 	border: (text: string) => string,
 	position: "top" | "middle" | "bottom",
 ): string {
+	if (position !== "middle") {
+		const body = border(fitAnsi(stripControl(line), innerWidth));
+		if (position === "top") return `${border("╭")}${body}${border("╮")}`;
+		return `${border("╰")}${body}${border("╯")}`;
+	}
+
 	const body = fitAnsi(line, innerWidth);
-	if (position === "top") return `${border("╭")}${body}${border("╮")}`;
-	if (position === "bottom") return `${border("╰")}${body}${border("╯")}`;
 	return `${border("│")}${body}${border("│")}`;
 }
 
