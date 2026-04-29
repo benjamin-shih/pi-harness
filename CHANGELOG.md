@@ -20,6 +20,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Bash command titles now use the same blue as startup resource headings.
 - Sent prompt boxes are tighter, terminal-width-responsive rounded cards with blue borders, hot-reloadable styling, and no shaded interior fill.
 - Footer token and cost totals now include subagent usage recorded in the current session.
+- CI now uses Node 24 and Node-24-based GitHub actions.
 - Safety gate is now egress-focused: it blocks secret/private-file output, upload, and sensitive git inclusion, but no longer prompts for ordinary filesystem, package-manager, or destructive commands.
 - CI and local validation now exercise extension loading, prompt/theme metadata, safety-gate behavior, and local skill graph health when present.
 
