@@ -116,7 +116,6 @@ function patchUserMessageComponent(getTheme: UserMessagePatchState["getTheme"]):
 class RoundedPromptEditor extends CustomEditor {
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
 		super(tui, theme, keybindings, { paddingX: 1 });
-		this.borderColor = livePromptGreen;
 	}
 
 	render(width: number): string[] {
@@ -131,7 +130,7 @@ class RoundedPromptEditor extends CustomEditor {
 			.filter((index) => index >= 0);
 		const topIndex = borderIndices[0] ?? 0;
 		const bottomIndex = borderIndices.at(-1) ?? lines.length - 1;
-		const border = (text: string) => this.borderColor(text);
+		const border = livePromptGreen;
 		const rendered: string[] = [];
 
 		for (let i = 0; i < lines.length; i++) {
