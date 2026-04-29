@@ -16,8 +16,8 @@ const MIN_MATH_WIDTH_CELLS = 8;
 const PREVIEW_PX_PER_CELL = 18;
 const RENDER_INLINE_MATH_IN_CONTEXT = false;
 const DEFAULT_TEXT_RGB: Rgb = { r: 205, g: 214, b: 244 };
-const DISPLAY_ENVIRONMENT = /^(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)$/;
-const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\4\})|\\\(([\s\S]+?)\\\)|(?<!\\)\$(?![\s\d])([^\n$]{1,220}?)(?<![\\\s])\$/g;
+const DISPLAY_ENVIRONMENT = /^(displaymath|equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)$/;
+const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(displaymath|equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\4\})|\\\(([\s\S]+?)\\\)|(?<!\\)\$(?![\s\d])([^\n$]{1,220}?)(?<![\\\s])\$/g;
 const INLINE_DOLLAR_PATTERN = /(?<!\\)\$(?![\s\d])([^\n$]{1,220}?)(?<![\\\s])\$/g;
 const MAX_TEX_SNIPPET_CHARS = 5_000;
 const BLOCKED_LATEX_COMMANDS = [
@@ -319,7 +319,7 @@ export function extractLatexSnippets(text: string, maxSnippets = MAX_RENDERED_SN
 	const displayPatterns: Array<[RegExp, string, boolean?]> = [
 		[/\$\$([\s\S]+?)\$\$/g, "$$"],
 		[/\\\[([\s\S]+?)\\\]/g, "\\["],
-		[/\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\1\}/g, "environment", true],
+		[/\\begin\{(displaymath|equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\1\}/g, "environment", true],
 	];
 
 	const collected: LatexSnippet[] = [];

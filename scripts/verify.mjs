@@ -373,6 +373,16 @@ async function runLatexPreviewBehaviorTests() {
 	assert(mathBlocks.every((block) => !block.math.tex.includes("input")), "latex-preview should not extract TeX from code fences");
 	assert(payload.blocks.some((block) => block.type === "markdown" && block.text.includes("shouldNotRender")), "latex-preview should preserve code fences as markdown prose blocks");
 
+	const displaymathPayload = await latexPreview.buildPreviewPayload(
+		String.raw`Use \begin{displaymath}W_n = \sqrt{n}(X_n/n - 1/2)\end{displaymath} in prose.`,
+		{ textRgb: { r: 1, g: 2, b: 3 } },
+		async (snippet) => ({ error: `rendered:${snippet.delimiter}:${snippet.tex}` }),
+	);
+	const displaymathBlocks = displaymathPayload?.blocks.filter((block) => block.type === "math") ?? [];
+	assert(displaymathBlocks.length === 1, "latex-preview should render displaymath environments as display math");
+	assert(displaymathBlocks[0].math.delimiter === "environment", "latex-preview should classify displaymath as an environment delimiter");
+	assert(displaymathBlocks[0].math.tex.includes("\\begin{displaymath}"), "latex-preview should preserve the full displaymath environment for rendering");
+
 	const trickyMarkdownCode = [
 		"~~~ts",
 		String.raw`const tildeFence = "\\[\\input{tilde}\\]";`,
