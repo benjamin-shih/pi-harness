@@ -85,6 +85,43 @@ for (const extension of readdirSync(join(root, "extensions")).filter((file) => /
 	}
 }
 
+function runFooterUsageTests() {
+	const footer = loadExtensionModule("extensions/catppuccin-footer.ts");
+	assert(typeof footer.calculateFooterUsage === "function", "catppuccin-footer should export calculateFooterUsage");
+	const usage = footer.calculateFooterUsage([
+		{
+			type: "message",
+			message: {
+				role: "assistant",
+				usage: { input: 10, output: 5, cacheRead: 2, cacheWrite: 3, cost: { total: 0.01 } },
+			},
+		},
+		{
+			type: "message",
+			message: {
+				role: "toolResult",
+				toolName: "subagent",
+				details: { mode: "single", results: [{ usage: { input: 100, output: 50, cacheRead: 10, cacheWrite: 5, cost: 0.2 } }] },
+			},
+		},
+		{
+			type: "custom_message",
+			customType: "subagent-slash-result",
+			details: {
+				requestId: "r1",
+				result: { details: { mode: "single", results: [{ usage: { input: 7, output: 3, cacheRead: 0, cacheWrite: 0, cost: 0.04 } }] } },
+			},
+		},
+	]);
+	assert(usage.input === 117, "footer usage should include parent and subagent input tokens");
+	assert(usage.output === 58, "footer usage should include parent and subagent output tokens");
+	assert(usage.cacheRead + usage.cacheWrite === 20, "footer usage should include parent and subagent cache tokens");
+	assert(Math.abs(usage.cost - 0.25) < 1e-9, "footer usage should include parent and subagent cost");
+	assert(usage.subagentInput === 107 && usage.subagentOutput === 53, "footer usage should expose subagent token contribution");
+}
+
+runFooterUsageTests();
+
 function textFromCodes(...codes) {
 	return String.fromCharCode(...codes);
 }

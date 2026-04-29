@@ -1,4 +1,3 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
@@ -13,6 +12,26 @@ const OLD_FOOTER_MAUVE = "\x1b[38;2;203;166;247m";
 const OLD_FOOTER_PINK = "\x1b[38;2;245;194;231m";
 
 type FooterColor = string | ((text: string) => string);
+type UsageTotals = {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: number;
+	subagentInput: number;
+	subagentOutput: number;
+	subagentCacheRead: number;
+	subagentCacheWrite: number;
+	subagentCost: number;
+};
+
+type UsageLike = {
+	input?: number;
+	output?: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+	cost?: number | { total?: number };
+};
 
 function mauve(text: string): string {
 	return `${OLD_FOOTER_MAUVE}${text}\x1b[39m`;
@@ -60,6 +79,92 @@ function footerLine(width: number, left: string, right: string): string {
 	return truncateToWidth(safeLeft + padding + right, width, "");
 }
 
+function emptyUsageTotals(): UsageTotals {
+	return {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		cost: 0,
+		subagentInput: 0,
+		subagentOutput: 0,
+		subagentCacheRead: 0,
+		subagentCacheWrite: 0,
+		subagentCost: 0,
+	};
+}
+
+function costValue(cost: UsageLike["cost"]): number {
+	if (typeof cost === "number") return cost;
+	return cost?.total ?? 0;
+}
+
+function addUsage(target: UsageTotals, usage: UsageLike | undefined, source: "parent" | "subagent"): void {
+	if (!usage) return;
+	const input = usage.input ?? 0;
+	const output = usage.output ?? 0;
+	const cacheRead = usage.cacheRead ?? 0;
+	const cacheWrite = usage.cacheWrite ?? 0;
+	const cost = costValue(usage.cost);
+	target.input += input;
+	target.output += output;
+	target.cacheRead += cacheRead;
+	target.cacheWrite += cacheWrite;
+	target.cost += cost;
+	if (source === "subagent") {
+		target.subagentInput += input;
+		target.subagentOutput += output;
+		target.subagentCacheRead += cacheRead;
+		target.subagentCacheWrite += cacheWrite;
+		target.subagentCost += cost;
+	}
+}
+
+function usageHasValues(usage: UsageLike | undefined): boolean {
+	return Boolean(usage && ((usage.input ?? 0) || (usage.output ?? 0) || (usage.cacheRead ?? 0) || (usage.cacheWrite ?? 0) || costValue(usage.cost)));
+}
+
+function addSubagentDetailsUsage(target: UsageTotals, details: unknown): void {
+	const candidate = details as { results?: Array<{ usage?: UsageLike; modelAttempts?: Array<{ usage?: UsageLike }> }> } | undefined;
+	if (!Array.isArray(candidate?.results)) return;
+	for (const result of candidate.results) {
+		if (usageHasValues(result.usage)) {
+			addUsage(target, result.usage, "subagent");
+			continue;
+		}
+		for (const attempt of result.modelAttempts ?? []) {
+			if (usageHasValues(attempt.usage)) addUsage(target, attempt.usage, "subagent");
+		}
+	}
+}
+
+function subagentDetailsFromEntry(entry: unknown): unknown {
+	const e = entry as {
+		type?: string;
+		customType?: string;
+		details?: unknown;
+		message?: { role?: string; toolName?: string; customType?: string; details?: unknown };
+	};
+	if (e.type === "message" && e.message?.role === "toolResult" && e.message.toolName === "subagent") return e.message.details;
+	if (e.type === "message" && e.message?.role === "custom" && e.message.customType === "subagent-slash-result") {
+		return (e.message.details as { result?: { details?: unknown } } | undefined)?.result?.details;
+	}
+	if (e.type === "custom_message" && e.customType === "subagent-slash-result") {
+		return (e.details as { result?: { details?: unknown } } | undefined)?.result?.details;
+	}
+	return undefined;
+}
+
+export function calculateFooterUsage(entries: readonly unknown[]): UsageTotals {
+	const totals = emptyUsageTotals();
+	for (const entry of entries) {
+		const e = entry as { type?: string; message?: { role?: string; usage?: UsageLike } };
+		if (e.type === "message" && e.message?.role === "assistant") addUsage(totals, e.message.usage, "parent");
+		addSubagentDetailsUsage(totals, subagentDetailsFromEntry(entry));
+	}
+	return totals;
+}
+
 export default function catppuccinFooter(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		ctx.ui.setFooter((tui, theme, footerData) => {
@@ -69,33 +174,19 @@ export default function catppuccinFooter(pi: ExtensionAPI) {
 				dispose: unsub,
 				invalidate() {},
 				render(width: number): string[] {
-					let input = 0;
-					let output = 0;
-					let cacheRead = 0;
-					let cacheWrite = 0;
-					let cost = 0;
+					const branchEntries = ctx.sessionManager.getBranch();
+					const usage = calculateFooterUsage(branchEntries);
 					let compacts = 0;
-
-					for (const entry of ctx.sessionManager.getBranch()) {
-						if (entry.type === "compaction") {
-							compacts++;
-							continue;
-						}
-
-						if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-						const message = entry.message as AssistantMessage;
-						const usage = message.usage;
-						if (!usage) continue;
-
-						input += usage.input ?? 0;
-						output += usage.output ?? 0;
-						cacheRead += usage.cacheRead ?? 0;
-						cacheWrite += usage.cacheWrite ?? 0;
-						cost += usage.cost?.total ?? 0;
+					for (const entry of branchEntries) {
+						if (entry.type === "compaction") compacts++;
 					}
 
-					const cache = cacheRead + cacheWrite;
+					const input = usage.input;
+					const output = usage.output;
+					const cache = usage.cacheRead + usage.cacheWrite;
 					const total = input + output + cache;
+					const subagentTotal = usage.subagentInput + usage.subagentOutput + usage.subagentCacheRead + usage.subagentCacheWrite;
+					const cost = usage.cost;
 					const branch = footerData.getGitBranch();
 					const statuses = [...footerData.getExtensionStatuses().values()].filter(Boolean).join(" ");
 					const model = ctx.model?.id ?? "no-model";
@@ -103,21 +194,26 @@ export default function catppuccinFooter(pi: ExtensionAPI) {
 					const sep = theme.fg("dim", " ");
 
 					const piMark = mauve(" π ");
+					const subagentSegment = subagentTotal > 0 ? segment(theme, "sub", formatCount(subagentTotal), "customMessageLabel") : "";
 					const fullLeft = [
 						piMark,
 						segment(theme, "tok", formatCount(total), "text"),
 						segment(theme, "in", formatCount(input), "syntaxFunction"),
 						segment(theme, "out", formatCount(output), "success"),
 						segment(theme, "cache", formatCount(cache), "mdCode"),
+						subagentSegment,
 						segment(theme, "compact", `${compacts}`, compacts > 0 ? "warning" : "dim"),
 						segment(theme, "$", cost.toFixed(3), "syntaxNumber"),
-					].join(sep);
+					]
+						.filter(Boolean)
+						.join(sep);
 
 					const mediumLeft = [
 						piMark,
 						segment(theme, "tok", formatCount(total), "text"),
 						segment(theme, "in", formatCount(input), "syntaxFunction"),
 						segment(theme, "out", formatCount(output), "success"),
+						subagentSegment,
 						segment(theme, "$", cost.toFixed(3), "syntaxNumber"),
 						compacts > 0 ? segment(theme, "cmp", `${compacts}`, "warning") : "",
 					]
