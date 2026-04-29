@@ -14,6 +14,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Release-note drafting script and tracked pre-push validation hook.
 - Automatic session-continuity extension with hidden checkpoints, footer memory status, and custom compaction summaries.
 - Optional `ben-pi-latex-preview` package with lazy TeX/math-context activation.
+- Post-change cleanup reminders for coding/file edits plus a one-shot major-change cleanup guard.
 
 ### Changed
 - Folded `/skills-audit` into `harness-commands.ts` and git-finalization checks into `safety-gate.ts` to reduce core extension count.
