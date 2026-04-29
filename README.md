@@ -20,6 +20,7 @@ extensions/
   harness-commands.ts   /mode, /status, /checkpoint, and skill-routing reminders
   latex-preview.ts      Hardened transient LaTeX previews with Unicode inline math
   safety-gate.ts        Secret/private-file egress guardrails
+  session-continuity.ts Automatic checkpoints and custom compaction summaries
   skills-audit.ts       /skills-audit command for the shared skill graph
 prompts/
   handoff.md            Session/task handoff prompt

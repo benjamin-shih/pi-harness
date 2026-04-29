@@ -97,6 +97,7 @@ export default function catppuccinFooter(pi: ExtensionAPI) {
 					const cache = cacheRead + cacheWrite;
 					const total = input + output + cache;
 					const branch = footerData.getGitBranch();
+					const statuses = [...footerData.getExtensionStatuses().values()].filter(Boolean).join(" ");
 					const model = ctx.model?.id ?? "no-model";
 					const thinkingLevel = pi.getThinkingLevel();
 					const sep = theme.fg("dim", " ");
@@ -129,10 +130,14 @@ export default function catppuccinFooter(pi: ExtensionAPI) {
 						theme.fg("dim", `$${cost.toFixed(3)}`),
 					].join(sep);
 
+					const statusSegment = statuses ? segment(theme, "state", statuses, (text: string) => text) : undefined;
 					const modelAndThinking = [
+						statusSegment,
 						segment(theme, "model", model, mauve),
 						segment(theme, "think", thinkingLevel, thinkingLevel === "off" ? "dim" : "warning"),
-					].join(sep);
+					]
+						.filter(Boolean)
+						.join(sep);
 					const branchSegment = branch ? segment(theme, "git", ` ${branch}`, "muted") : undefined;
 					const fullRight = branchSegment
 						? [modelAndThinking, branchSegment].join(theme.fg("dim", "  │  "))

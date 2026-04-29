@@ -12,6 +12,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Behavioral safety-gate verification in `npm run verify`.
 - `/skills-audit` command plus `npm run skills:audit` for shared skill graph validation and bloat summaries.
 - Release-note drafting script and tracked pre-push validation hook.
+- Automatic session-continuity extension with hidden checkpoints, footer memory status, and custom compaction summaries.
 
 ### Changed
 - Catppuccin theme now uses blue/sapphire-forward UI accents instead of mauve-heavy defaults.

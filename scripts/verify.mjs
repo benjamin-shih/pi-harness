@@ -267,6 +267,105 @@ async function runLatexPreviewBehaviorTests() {
 
 await runLatexPreviewBehaviorTests();
 
+async function runSessionContinuityBehaviorTests() {
+	const continuity = loadExtensionModule("extensions/session-continuity.ts");
+	assert(typeof continuity.redactSensitiveText === "function", "session-continuity should export redactSensitiveText");
+	assert(typeof continuity.extractContinuityCheckpoints === "function", "session-continuity should export extractContinuityCheckpoints");
+	assert(typeof continuity.buildLedger === "function", "session-continuity should export buildLedger");
+	assert(typeof continuity.buildContinuitySummaryPrompt === "function", "session-continuity should export buildContinuitySummaryPrompt");
+	const fakeToken = textFromCodes(84, 79, 75, 69, 78, 61, 97, 98, 99, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102);
+	assert(
+		continuity.redactSensitiveText(fakeToken) === "TOKEN=[REDACTED]",
+		"session-continuity should redact credential-looking command text",
+	);
+
+	const factory = continuity.default ?? continuity;
+	const handlers = new Map();
+	const appended = [];
+	let registeredCommands = 0;
+	let registeredShortcuts = 0;
+	factory({
+		on: (event, handler) => handlers.set(event, handler),
+		appendEntry: (customType, data) => appended.push({ customType, data }),
+		getThinkingLevel: () => "xhigh",
+		registerCommand: () => registeredCommands++,
+		registerShortcut: () => registeredShortcuts++,
+	});
+	assert(registeredCommands === 0 && registeredShortcuts === 0, "session-continuity should not depend on commands or shortcuts");
+	for (const event of ["session_start", "before_agent_start", "tool_result", "agent_end", "session_shutdown", "session_before_compact"]) {
+		assert(typeof handlers.get(event) === "function", `session-continuity should register ${event}`);
+	}
+
+	const ctx = {
+		cwd: root,
+		hasUI: true,
+		ui: { theme: { fg: (_color, text) => text }, setStatus: () => {}, notify: () => {} },
+		sessionManager: { getBranch: () => [], getSessionFile: () => join(root, ".test-session.jsonl") },
+		model: { provider: "test", id: "model" },
+		getContextUsage: () => ({ tokens: 100, contextWindow: 1000, percent: 10 }),
+	};
+	await handlers.get("session_start")(
+		{ reason: "startup" },
+		{ ...ctx, ui: { setStatus: () => {}, notify: () => {} } },
+	);
+	await handlers.get("session_start")({ reason: "startup" }, ctx);
+	await handlers.get("before_agent_start")({ prompt: "Implement robust automatic memory spine for the harness." }, ctx);
+	await handlers.get("tool_result")({ toolName: "edit", input: { path: "extensions/session-continuity.ts" }, isError: false }, ctx);
+	await handlers.get("tool_result")({ toolName: "bash", input: { command: `echo ${fakeToken}` }, isError: false }, ctx);
+	await handlers.get("agent_end")({}, ctx);
+
+	assert(appended.length === 1, "session-continuity should append one hidden checkpoint after a meaningful turn");
+	assert(appended[0].customType === "ben-continuity-checkpoint", "session-continuity should use the checkpoint custom entry type");
+	assert(appended[0].data.filesModified.includes("extensions/session-continuity.ts"), "session-continuity should track modified files");
+	assert(appended[0].data.commands[0].command.includes("[REDACTED]"), "session-continuity should redact checkpoint commands");
+
+	const entries = [{ type: "custom", customType: appended[0].customType, data: appended[0].data }];
+	const checkpoints = continuity.extractContinuityCheckpoints(entries);
+	const ledger = continuity.buildLedger(checkpoints);
+	const prompt = continuity.buildContinuitySummaryPrompt({
+		conversationText: `[Tool result]: ${fakeToken}`,
+		previousSummary: fakeToken,
+		customInstructions: fakeToken,
+		ledger,
+	});
+	for (const section of [
+		"## Goal",
+		"## Current State",
+		"## Constraints / Preferences",
+		"## Decisions Made",
+		"## Files Read",
+		"## Files Modified",
+		"## Commands / Verification",
+		"## Active Skills / Routing",
+		"## Subagents / Intercom State",
+		"## Blockers / Open Questions",
+		"## Next Exact Actions",
+		"## Critical Continuation Notes",
+	]) {
+		assert(prompt.includes(section), `session-continuity prompt should include ${section}`);
+	}
+	assert(!prompt.includes(fakeToken.slice(6)), "session-continuity prompt should not contain unredacted token text");
+
+	const compactFallback = await handlers.get("session_before_compact")(
+		{
+			preparation: {
+				messagesToSummarize: [],
+				turnPrefixMessages: [],
+				previousSummary: undefined,
+				fileOps: { readFiles: [], modifiedFiles: [] },
+				firstKeptEntryId: "entry-1",
+				tokensBefore: 100,
+			},
+			branchEntries: entries,
+			signal: new AbortController().signal,
+		},
+		{ ...ctx, model: undefined },
+	);
+	assert(compactFallback === undefined, "session-continuity compaction should fall back cleanly without a model");
+}
+
+await runSessionContinuityBehaviorTests();
+
 const localSkillsRoot = "/Users/benjaminshih/.agents/skills";
 if (existsSync(localSkillsRoot)) {
 	try {
