@@ -10,6 +10,7 @@ const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 const USER_MESSAGE_PATCH_KEY = "__benPiHarnessRoundedUserMessagePatch";
+const CATPPUCCIN_GREEN = "\x1b[38;2;166;227;161m";
 
 interface ThemeLike {
 	fg(color: string, text: string): string;
@@ -23,6 +24,10 @@ interface UserMessagePatchState {
 	originalRender: (width: number) => string[];
 	getTheme: () => ThemeLike | undefined;
 	patched: boolean;
+}
+
+function livePromptGreen(text: string): string {
+	return `${CATPPUCCIN_GREEN}${text}\x1b[39m`;
 }
 
 function fitAnsi(line: string, width: number): string {
@@ -111,6 +116,7 @@ function patchUserMessageComponent(getTheme: UserMessagePatchState["getTheme"]):
 class RoundedPromptEditor extends CustomEditor {
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) {
 		super(tui, theme, keybindings, { paddingX: 1 });
+		this.borderColor = livePromptGreen;
 	}
 
 	render(width: number): string[] {

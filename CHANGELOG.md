@@ -20,6 +20,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Footer keeps its original mauve/pink segment colors while the rest of the theme stays blue-forward.
 - Bash command titles now use the same blue as startup resource headings.
 - Sent prompt boxes are tighter, terminal-width-responsive rounded cards with blue borders, hot-reloadable styling, and no shaded interior fill.
+- Live prompt editor border now uses Catppuccin green while sent prompt cards keep the existing blue border.
 - Footer token and cost totals now include subagent usage recorded in the current session.
 - CI now uses Node 24 and Node-24-based GitHub actions.
 - Safety gate is now egress-focused: it blocks secret/private-file output, upload, and sensitive git inclusion, but no longer prompts for ordinary filesystem, package-manager, or destructive commands.
