@@ -13,6 +13,7 @@ All notable changes to this personal pi harness package are tracked here.
 - `/skills-audit` command plus `npm run skills:audit` for shared skill graph validation and bloat summaries.
 - Release-note drafting script and tracked pre-push validation hook.
 - Automatic session-continuity extension with hidden checkpoints, footer memory status, and custom compaction summaries.
+- Optional `ben-pi-latex-preview` package with lazy TeX/math-context activation.
 
 ### Changed
 - Catppuccin theme now uses blue/sapphire-forward UI accents instead of mauve-heavy defaults.
@@ -22,7 +23,8 @@ All notable changes to this personal pi harness package are tracked here.
 - Footer token and cost totals now include subagent usage recorded in the current session.
 - CI now uses Node 24 and Node-24-based GitHub actions.
 - Safety gate is now egress-focused: it blocks secret/private-file output, upload, and sensitive git inclusion, but no longer prompts for ordinary filesystem, package-manager, or destructive commands.
-- CI and local validation now exercise extension loading, prompt/theme metadata, safety-gate behavior, and local skill graph health when present.
+- CI and local validation now exercise extension loading, prompt/theme metadata, safety-gate behavior, optional LaTeX preview behavior, and local skill graph health when present.
+- LaTeX preview moved out of the core harness extension set into the optional lazy package.
 
 ### Fixed
 - Memory-spine custom compaction now strips bulky tool-result/thinking bodies, uses model-aware prompt/output budgets, persists fallback diagnostics, detects default compaction, and returns deterministic harness fallback summaries when model summarization fails.

@@ -1,0 +1,14 @@
+{
+  "name": "ben-pi-latex-preview",
+  "version": "0.1.0",
+  "private": true,
+  "keywords": ["pi-package"],
+  "description": "Optional auto-activating LaTeX/math preview package for Benjamin's pi setup.",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  }
+}

@@ -1,17 +1,4 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import {
-	calculateImageRows,
-	Container,
-	encodeITerm2,
-	encodeKitty,
-	getCapabilities,
-	getCellDimensions,
-	imageFallback,
-	Markdown,
-	Spacer,
-	Text,
-} from "@mariozechner/pi-tui";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -118,6 +105,33 @@ type PreviewPayload = {
 	blocks: PreviewBlock[];
 	truncated: boolean;
 };
+
+type Constructable<T = unknown> = new (...args: any[]) => T;
+
+type LatexPreviewRuntime = {
+	calculateImageRows: (dimensions: PngDimensions, columns: number, cellDimensions: unknown) => number;
+	Container: Constructable<{ addChild: (child: unknown) => void }>;
+	encodeITerm2: (base64Data: string, options: Record<string, unknown>) => string;
+	encodeKitty: (base64Data: string, options: Record<string, unknown>) => string;
+	getCapabilities: () => { images?: string };
+	getCellDimensions: () => unknown;
+	getMarkdownTheme: () => unknown;
+	imageFallback: (mediaType: string, dimensions: PngDimensions, filename: string) => string;
+	Markdown: Constructable;
+	Spacer: Constructable;
+	Text: Constructable<{ render: (width: number) => string[] }>;
+};
+
+let runtime: LatexPreviewRuntime | undefined;
+
+export function configureLatexPreviewRuntime(deps: LatexPreviewRuntime): void {
+	runtime = deps;
+}
+
+function runtimeDeps(): LatexPreviewRuntime {
+	if (!runtime) throw new Error("LaTeX preview runtime dependencies have not been configured.");
+	return runtime;
+}
 
 type AssistantLike = {
 	role?: string;
@@ -919,6 +933,7 @@ function terminalImageLines(
 	theme: Theme,
 ): string[] {
 	const resolvedDimensions = dimensions ?? { widthPx: 800, heightPx: 600 };
+	const { calculateImageRows, getCapabilities, getCellDimensions } = runtimeDeps();
 	const rows = calculateImageRows(resolvedDimensions, imageWidthCells, getCellDimensions());
 	const caps = getCapabilities();
 	let sequence: string | undefined;
@@ -926,9 +941,9 @@ function terminalImageLines(
 	if (caps.images === "kitty") {
 		// Deliberately omit `rows`: Kitty then preserves the PNG's native aspect
 		// ratio instead of stretching it to a quantized terminal-cell rectangle.
-		sequence = encodeKitty(base64Data, { columns: imageWidthCells });
+		sequence = runtimeDeps().encodeKitty(base64Data, { columns: imageWidthCells });
 	} else if (caps.images === "iterm2") {
-		sequence = encodeITerm2(base64Data, {
+		sequence = runtimeDeps().encodeITerm2(base64Data, {
 			width: imageWidthCells,
 			height: "auto",
 			name: filename,
@@ -937,7 +952,7 @@ function terminalImageLines(
 	}
 
 	if (!sequence) {
-		return [theme.fg("muted", imageFallback("image/png", resolvedDimensions, filename))];
+		return [theme.fg("muted", runtimeDeps().imageFallback("image/png", resolvedDimensions, filename))];
 	}
 
 	const lines = Array.from({ length: Math.max(0, rows - 1) }, () => "");
@@ -953,16 +968,20 @@ function compactTexSource(tex: string, maxLength = 240): string {
 class ResponsiveMathImage {
 	private cachedWidth?: number;
 	private cachedLines?: string[];
+	private readonly math: RenderedMath;
+	private readonly index: number;
+	private readonly theme: Theme;
 
-	constructor(
-		private readonly math: RenderedMath,
-		private readonly index: number,
-		private readonly theme: Theme,
-	) {}
+	constructor(math: RenderedMath, index: number, theme: Theme) {
+		this.math = math;
+		this.index = index;
+		this.theme = theme;
+	}
 
 	render(width: number): string[] {
 		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
 		if (!this.math.pngBase64) {
+			const { Text } = runtimeDeps();
 			const error = new Text(this.theme.fg("warning", this.math.error ?? "LaTeX render failed"), 1, 0);
 			const source = new Text(this.theme.fg("muted", `TeX: ${compactTexSource(this.math.tex)}`), 1, 0);
 			this.cachedLines = [...error.render(width), ...source.render(width)];
@@ -989,11 +1008,12 @@ class ResponsiveMathImage {
 	}
 }
 
-function addMathImage(container: Container, math: RenderedMath, index: number, theme: Theme): void {
+function addMathImage(container: { addChild: (child: unknown) => void }, math: RenderedMath, index: number, theme: Theme): void {
 	container.addChild(new ResponsiveMathImage(math, index, theme));
 }
 
-function latexPreviewComponent(payload: PreviewPayload, theme: Theme): Container {
+function latexPreviewComponent(payload: PreviewPayload, theme: Theme) {
+	const { Container, Markdown, Spacer, Text, getMarkdownTheme } = runtimeDeps();
 	const container = new Container();
 	const mdTheme = getMarkdownTheme();
 	container.addChild(new Spacer(1));
@@ -1020,7 +1040,12 @@ function latexPreviewComponent(payload: PreviewPayload, theme: Theme): Container
 	return container;
 }
 
-export default function latexPreview(pi: ExtensionAPI) {
+export type LatexPreviewController = {
+	clearPreview: (ctx?: ExtensionContext) => void;
+	handleAgentEnd: (event: { messages: unknown[] }, ctx: ExtensionContext) => Promise<void>;
+};
+
+export function createLatexPreviewController(): LatexPreviewController {
 	let clearTimer: ReturnType<typeof setTimeout> | undefined;
 
 	function clearPreview(ctx?: ExtensionContext): void {
@@ -1046,25 +1071,33 @@ export default function latexPreview(pi: ExtensionAPI) {
 		}, PREVIEW_AUTO_CLEAR_MS);
 	}
 
-	pi.on("input", (_event, ctx) => {
-		clearPreview(ctx);
-	});
-
-	pi.on("agent_start", (_event, ctx) => {
-		clearPreview(ctx);
-	});
-
-	pi.on("session_shutdown", () => {
-		clearPreview();
-	});
-
-	pi.on("agent_end", async (event, ctx) => {
+	async function handleAgentEnd(event: { messages: unknown[] }, ctx: ExtensionContext): Promise<void> {
 		if (!ctx.hasUI) return;
-		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant") as AssistantLike | undefined;
+		const lastAssistant = [...event.messages].reverse().find((message) => (message as AssistantLike).role === "assistant") as AssistantLike | undefined;
 		const text = assistantText(lastAssistant);
 		if (!text) return;
 		const payload = await buildPreviewPayload(text, renderOptionsFromTheme(ctx.ui.theme));
 		if (!payload) return;
 		showPreview(ctx, payload);
+	}
+
+	return { clearPreview, handleAgentEnd };
+}
+
+export default function latexPreview(pi: ExtensionAPI) {
+	const controller = createLatexPreviewController();
+
+	pi.on("input", (_event, ctx) => {
+		controller.clearPreview(ctx);
 	});
+
+	pi.on("agent_start", (_event, ctx) => {
+		controller.clearPreview(ctx);
+	});
+
+	pi.on("session_shutdown", () => {
+		controller.clearPreview();
+	});
+
+	pi.on("agent_end", controller.handleAgentEnd);
 }

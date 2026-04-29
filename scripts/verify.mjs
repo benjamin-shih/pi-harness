@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import Module from "node:module";
@@ -58,16 +58,26 @@ for (const dep of ["@mariozechner/pi-ai", "@mariozechner/pi-coding-agent", "@mar
 
 const piRoot = join(root, "node_modules", "@mariozechner", "pi-coding-agent");
 assert(existsSync(join(piRoot, "package.json")), "@mariozechner/pi-coding-agent is not installed; run npm install or npm ci");
-const piNodeModules = join(piRoot, "node_modules");
+const piNodeModules = join(root, "node_modules");
 process.env.NODE_PATH = [piNodeModules, process.env.NODE_PATH].filter(Boolean).join(process.platform === "win32" ? ";" : ":");
 Module.Module._initPaths();
 
 const { createJiti } = require("@mariozechner/jiti");
+const jitiAlias = {
+	"@mariozechner/pi-coding-agent": join(piRoot, "dist", "index.js"),
+	"@mariozechner/pi-agent-core": join(piNodeModules, "@mariozechner", "pi-agent-core", "dist", "index.js"),
+	"@mariozechner/pi-ai": join(piNodeModules, "@mariozechner", "pi-ai", "dist", "index.js"),
+	"@mariozechner/pi-ai/oauth": join(piNodeModules, "@mariozechner", "pi-ai", "dist", "oauth.js"),
+	"@mariozechner/pi-tui": join(piNodeModules, "@mariozechner", "pi-tui", "dist", "index.js"),
+};
+
+function loadModuleAt(fullPath) {
+	const jiti = createJiti(fullPath, { interopDefault: true, moduleCache: false, alias: jitiAlias });
+	return jiti(fullPath);
+}
 
 function loadExtensionModule(relativePath) {
-	const fullPath = join(root, relativePath);
-	const jiti = createJiti(fullPath, { interopDefault: true, moduleCache: false });
-	return jiti(fullPath);
+	return loadModuleAt(join(root, relativePath));
 }
 
 function loadExtension(relativePath) {
@@ -227,7 +237,73 @@ function latexPreviewTempDirs() {
 }
 
 async function runLatexPreviewBehaviorTests() {
-	const latexPreview = loadExtensionModule("extensions/latex-preview.ts");
+	const optionalPackageJson = readJson("packages/ben-pi-latex-preview/package.json");
+	assert(optionalPackageJson?.pi?.extensions?.includes("./extensions"), "optional latex-preview package should expose its extensions directory");
+	const latexLoader = loadExtensionModule("packages/ben-pi-latex-preview/extensions/latex-preview.ts");
+	assert(typeof (latexLoader.default ?? latexLoader) === "function", "optional latex-preview loader should export a default extension");
+	assert(typeof latexLoader.looksLikeTexProject === "function", "latex-preview loader should export looksLikeTexProject for verification");
+	assert(typeof latexLoader.messageLooksMathHeavy === "function", "latex-preview loader should export messageLooksMathHeavy for verification");
+	const tempRoot = mkdtempSync(join(tmpdir(), "pi-latex-preview-verify-"));
+	try {
+		const plainDir = join(tempRoot, "plain");
+		const texDir = join(tempRoot, "tex");
+		mkdirSync(plainDir);
+		mkdirSync(texDir);
+		writeFileSync(join(texDir, "main.tex"), "\\documentclass{article}\n", "utf8");
+		assert(!latexLoader.looksLikeTexProject(plainDir), "latex-preview loader should stay inactive for plain directories");
+		assert(latexLoader.looksLikeTexProject(texDir), "latex-preview loader should auto-activate for TeX projects");
+	} finally {
+		rmSync(tempRoot, { recursive: true, force: true });
+	}
+	assert(
+		latexLoader.messageLooksMathHeavy({ messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Use \\[x^2+y^2=z^2\\]." }] }] }.messages),
+		"latex-preview loader should auto-activate on math-heavy assistant output",
+	);
+
+	const loaderHandlers = new Map();
+	let loaderWidgetFactory;
+	const loaderFactory = latexLoader.default ?? latexLoader;
+	loaderFactory({ on: (event, handler) => loaderHandlers.set(event, handler) });
+	const loaderTheme = {
+		getFgAnsi: () => "\u001b[38;2;205;214;244m",
+		fg: (_color, text) => text,
+		bold: (text) => text,
+	};
+	const loaderCtx = {
+		cwd: root,
+		hasUI: true,
+		ui: { theme: loaderTheme, setStatus: () => {}, notify: () => {}, setWidget: (_key, widget) => (loaderWidgetFactory = widget) },
+	};
+	await loaderHandlers.get("session_start")({ reason: "startup" }, loaderCtx);
+	await loaderHandlers.get("agent_end")(
+		{ messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: String.raw`Bad:
+\[\input{x}\]` }] }] },
+		loaderCtx,
+	);
+	assert(typeof loaderWidgetFactory === "function", "latex-preview loader should lazy-load core and render math previews on demand");
+	loaderHandlers.get("session_shutdown")?.({}, loaderCtx);
+
+	const isolatedRoot = mkdtempSync(join(tmpdir(), "pi-latex-preview-isolated-"));
+	try {
+		const isolatedPackage = join(isolatedRoot, "ben-pi-latex-preview");
+		cpSync(join(root, "packages", "ben-pi-latex-preview"), isolatedPackage, { recursive: true });
+		const isolatedLoader = loadModuleAt(join(isolatedPackage, "extensions", "latex-preview.ts"));
+		const isolatedHandlers = new Map();
+		let isolatedWidgetFactory;
+		(isolatedLoader.default ?? isolatedLoader)({ on: (event, handler) => isolatedHandlers.set(event, handler) });
+		await isolatedHandlers.get("session_start")({ reason: "startup" }, loaderCtx);
+		await isolatedHandlers.get("agent_end")(
+			{ messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: String.raw`Bad:
+\[\input{x}\]` }] }] },
+			{ ...loaderCtx, ui: { ...loaderCtx.ui, setWidget: (_key, widget) => (isolatedWidgetFactory = widget) } },
+		);
+		assert(typeof isolatedWidgetFactory === "function", "latex-preview should lazy-load from an isolated optional package copy");
+		isolatedHandlers.get("session_shutdown")?.({}, loaderCtx);
+	} finally {
+		rmSync(isolatedRoot, { recursive: true, force: true });
+	}
+
+	const latexPreview = require(join(root, "packages", "ben-pi-latex-preview", "src", "latex-preview-core.ts"));
 	const prettify = latexPreview.prettifyInlineMathInMarkdown;
 	const validate = latexPreview.validateLatexSnippet;
 	const render = latexPreview.renderLatexSnippet;
@@ -289,7 +365,11 @@ async function runLatexPreviewBehaviorTests() {
 	assert(fallbackLines.includes("LaTeX preview blocked"), "latex-preview should show blocked render errors in the widget");
 	assert(fallbackLines.includes("TeX: \\input{x}"), "latex-preview should include original TeX in render fallbacks");
 
-	const source = readFileSync(join(root, "extensions", "latex-preview.ts"), "utf8");
+	const loaderSource = readFileSync(join(root, "packages", "ben-pi-latex-preview", "extensions", "latex-preview.ts"), "utf8");
+	assert(loaderSource.includes("requireCore"), "latex-preview loader should lazy-load the heavy core renderer");
+	assert(loaderSource.includes("configureLatexPreviewRuntime"), "latex-preview loader should inject pi runtime dependencies before loading previews");
+	const source = readFileSync(join(root, "packages", "ben-pi-latex-preview", "src", "latex-preview-core.ts"), "utf8");
+	assert(!source.includes('from "@mariozechner/pi-tui"'), "latex-preview core should not native-require pi-tui peer imports");
 	assert(source.includes('"-no-shell-escape"'), "latex-preview should run pdflatex with -no-shell-escape");
 	assert(!source.includes("sendMessage"), "latex-preview should not persist preview messages");
 	assert(source.includes("encodeKitty(base64Data, { columns: imageWidthCells })"), "latex-preview should not force Kitty image rows");
