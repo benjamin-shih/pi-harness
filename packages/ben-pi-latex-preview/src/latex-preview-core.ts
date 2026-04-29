@@ -8,7 +8,6 @@ import { deflateSync, inflateSync } from "node:zlib";
 
 const execFileAsync = promisify(execFile);
 const WIDGET_KEY = "latex-preview";
-const MAX_RENDERED_SNIPPETS = 10;
 const LATEX_TIMEOUT_MS = 12_000;
 const PREVIEW_AUTO_CLEAR_MS = 5 * 60_000;
 const MAX_MATH_WIDTH_CELLS = 72;
@@ -103,7 +102,6 @@ type PreviewBlock =
 
 type PreviewPayload = {
 	blocks: PreviewBlock[];
-	truncated: boolean;
 };
 
 type Constructable<T = unknown> = new (...args: any[]) => T;
@@ -314,7 +312,7 @@ function snippetFromRegexMatch(match: RegExpMatchArray): LatexSnippet | undefine
 	return undefined;
 }
 
-export function extractLatexSnippets(text: string, maxSnippets = MAX_RENDERED_SNIPPETS): { snippets: LatexSnippet[]; truncated: boolean } {
+export function extractLatexSnippets(text: string, maxSnippets = Number.POSITIVE_INFINITY): { snippets: LatexSnippet[]; truncated: boolean } {
 	const source = blankMarkdownCode(text);
 	const displayPatterns: Array<[RegExp, string, boolean?]> = [
 		[/\$\$([\s\S]+?)\$\$/g, "$$"],
@@ -1025,11 +1023,7 @@ export async function buildPreviewPayload(
 ): Promise<PreviewPayload | undefined> {
 	const blocks: PreviewBlock[] = [];
 	let cursor = 0;
-	let renderedCount = 0;
-	let truncated = false;
-
 	for (const span of markdownProseSpans(text)) {
-		if (truncated) break;
 		const prose = text.slice(span.start, span.end);
 		for (const match of prose.matchAll(MATH_PATTERN)) {
 			const start = span.start + (match.index ?? 0);
@@ -1037,22 +1031,17 @@ export async function buildPreviewPayload(
 			const snippet = snippetFromRegexMatch(match);
 			if (!snippet) continue;
 			if (!snippet.display && !RENDER_INLINE_MATH_IN_CONTEXT) continue;
-			if (renderedCount >= MAX_RENDERED_SNIPPETS) {
-				truncated = true;
-				break;
-			}
 
 			pushMarkdown(blocks, text.slice(cursor, start));
 			const result = await renderSnippet(snippet, renderOptions);
 			blocks.push({ type: "math", math: { tex: snippet.tex, display: snippet.display, delimiter: snippet.delimiter, ...result } });
 			cursor = start + raw.length;
-			renderedCount++;
 		}
 	}
 
-	if (renderedCount === 0) return undefined;
+	if (!blocks.some((block) => block.type === "math")) return undefined;
 	pushMarkdown(blocks, text.slice(cursor));
-	return { blocks, truncated };
+	return { blocks };
 }
 
 function targetWidthCells(math: RenderedMath, availableWidthCells = MAX_MATH_WIDTH_CELLS): number {
@@ -1202,10 +1191,6 @@ function latexPreviewComponent(payload: PreviewPayload, theme: Theme) {
 	if (!RENDER_INLINE_MATH_IN_CONTEXT) {
 		container.addChild(new Text(theme.fg("dim", "Display equations are rendered in context; inline math stays in prose."), 1, 0));
 	}
-	if (payload.truncated) {
-		container.addChild(new Text(theme.fg("dim", `Showing first ${MAX_RENDERED_SNIPPETS} display equations.`), 1, 0));
-	}
-
 	let mathIndex = 0;
 	for (const block of payload.blocks) {
 		if (block.type === "markdown") {

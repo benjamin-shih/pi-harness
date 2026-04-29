@@ -27,6 +27,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Safety gate is now egress-focused: it blocks secret/private-file output, upload, and sensitive git inclusion, but no longer prompts for ordinary filesystem, package-manager, or destructive commands.
 - CI and local validation now exercise extension loading, prompt/theme metadata, safety-gate behavior, optional LaTeX preview behavior, and local skill graph health when present.
 - LaTeX preview moved out of the core harness extension set into the optional lazy package.
+- Display-equation guidance now asks agents to use `displaymath` environments, and the LaTeX preview renders every display equation in a response instead of stopping after ten.
 
 ### Fixed
 - LaTeX preview now ignores Markdown code fences/spans when extracting display math and falls back to plain text if Markdown rendering fails.

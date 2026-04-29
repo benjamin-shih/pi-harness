@@ -16,6 +16,10 @@ type ModeDefinition = {
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DEFAULT_SKILLS_ROOT = "/Users/benjaminshih/.agents/skills";
+const DISPLAY_MATH_RENDERING_INSTRUCTION = [
+	"## Display Math Rendering",
+	"When writing display equations in assistant responses, use `\\begin{displaymath}` and `\\end{displaymath}` delimiters instead of `\\[` and `\\]` so the local LaTeX preview renderer activates reliably.",
+].join("\n");
 
 const MODES: Record<string, ModeDefinition> = {
 	fast: {
@@ -286,7 +290,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		const additions: string[] = [];
+		const additions: string[] = [DISPLAY_MATH_RENDERING_INSTRUCTION];
 		if (activeMode && MODES[activeMode]?.instructions) additions.push(MODES[activeMode].instructions!);
 		const reminder = skillRoutingReminder(classifyPrompt(event.prompt));
 		if (reminder) additions.push(reminder);

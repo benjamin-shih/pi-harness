@@ -142,6 +142,25 @@ function runFooterUsageTests() {
 
 runFooterUsageTests();
 
+async function runHarnessCommandBehaviorTests() {
+	const harnessCommands = loadExtension("extensions/harness-commands.ts");
+	const handlers = new Map();
+	harnessCommands({
+		on: (event, handler) => handlers.set(event, handler),
+		registerCommand: () => {},
+		getAllTools: () => [],
+	});
+	const result = await handlers.get("before_agent_start")(
+		{ prompt: "What is the CLT?", systemPrompt: "base" },
+		{},
+	);
+	assert(result?.systemPrompt?.includes("## Display Math Rendering"), "harness should inject displaymath rendering guidance");
+	assert(result.systemPrompt.includes("\\begin{displaymath}"), "harness should ask agents to use displaymath delimiters");
+	assert(result.systemPrompt.includes("instead of `\\[`"), "harness should discourage bracket display delimiters");
+}
+
+await runHarnessCommandBehaviorTests();
+
 function textFromCodes(...codes) {
 	return String.fromCharCode(...codes);
 }
@@ -386,6 +405,11 @@ async function runLatexPreviewBehaviorTests() {
 	assert(displaymathBlocks.length === 1, "latex-preview should render displaymath environments as display math");
 	assert(displaymathBlocks[0].math.delimiter === "environment", "latex-preview should classify displaymath as an environment delimiter");
 	assert(displaymathBlocks[0].math.tex.includes("\\begin{displaymath}"), "latex-preview should preserve the full displaymath environment for rendering");
+
+	const manyDisplaymath = Array.from({ length: 12 }, (_, index) => String.raw`\begin{displaymath}x_${index}=y_${index}\end{displaymath}`).join("\n\n");
+	const manyPayload = await latexPreview.buildPreviewPayload(manyDisplaymath, { textRgb: { r: 1, g: 2, b: 3 } }, async (snippet) => ({ error: `rendered:${snippet.tex}` }));
+	const manyMathBlocks = manyPayload?.blocks.filter((block) => block.type === "math") ?? [];
+	assert(manyMathBlocks.length === 12, "latex-preview should render every display equation in a response, not just the first ten");
 
 	const trickyMarkdownCode = [
 		"~~~ts",
