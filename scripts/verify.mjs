@@ -383,6 +383,12 @@ async function runSessionContinuityBehaviorTests() {
 	}
 	assert(!prompt.includes(fakeToken.slice(6)), "session-continuity prompt should not contain unredacted token text");
 
+	const hugeToolResult = `[User]: summarize\n[Tool result]: ${"x".repeat(500_000)}\n[Assistant thinking]: ${"y".repeat(500_000)}\n[Assistant]: done`;
+	const boundedPrompt = continuity.buildContinuitySummaryPrompt({ conversationText: hugeToolResult, ledger });
+	assert(boundedPrompt.length <= 120_000, "session-continuity compaction prompt should be hard capped");
+	assert(boundedPrompt.includes("[Tool result]: [omitted by memory spine budget"), "session-continuity should omit bulky tool result bodies");
+	assert(boundedPrompt.includes("[Assistant thinking]: [omitted by memory spine budget"), "session-continuity should omit bulky thinking bodies");
+
 	const compactFallback = await handlers.get("session_before_compact")(
 		{
 			preparation: {

@@ -18,6 +18,12 @@ const MAX_LEDGER_COMMANDS = 40;
 const MAX_LEDGER_FILES = 80;
 const MAX_SUMMARY_TOKENS = 8192;
 const MIN_CHECKPOINT_INTERVAL_MS = 5 * 60_000;
+const MAX_COMPACTION_PROMPT_CHARS = 120_000;
+const MAX_PREVIOUS_SUMMARY_CHARS = 20_000;
+const MAX_TURN_PREFIX_CHARS = 20_000;
+const MAX_CONVERSATION_CHARS = 70_000;
+const MAX_CUSTOM_INSTRUCTIONS_CHARS = 4_000;
+const MAX_GIT_STATUS_CHARS = 4_000;
 
 export type ContinuityCommand = {
 	command: string;
@@ -79,7 +85,7 @@ export function redactSensitiveText(text: string): string {
 		.replace(/-----BEGIN [^-]*(?:PRIVATE KEY|SECRET)[\s\S]*?-----END [^-]*(?:PRIVATE KEY|SECRET)-----/gi, "[REDACTED_PRIVATE_BLOCK]")
 		.replace(/(https?:\/\/[^:\s/@]+:)[^@\s]+(@)/gi, "$1[REDACTED]$2")
 		.replace(/(Authorization:\s*Bearer\s+)[^\s'\"]+/gi, "$1[REDACTED]")
-		.replace(/([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY)[A-Z0-9_]*\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s'\"]+)/gi, "$1[REDACTED]")
+		.replace(/\b([A-Za-z0-9_]{0,80}(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY)[A-Za-z0-9_]{0,80}\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s'\"]+)/g, "$1[REDACTED]")
 		.replace(/(--(?:api-key|token|password|secret)\s+)[^\s'\"]+/gi, "$1[REDACTED]")
 		.replace(/\b(?:sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16})\b/g, "[REDACTED_TOKEN]");
 }
@@ -87,6 +93,42 @@ export function redactSensitiveText(text: string): string {
 function truncateText(text: string, maxChars: number): string {
 	const clean = redactSensitiveText(text).replace(/\s+/g, " ").trim();
 	return clean.length <= maxChars ? clean : `${clean.slice(0, maxChars - 1)}…`;
+}
+
+function truncateMiddle(text: string, maxChars: number, label = "content"): string {
+	if (text.length <= maxChars) return text;
+	if (maxChars <= 200) return `${text.slice(0, Math.max(0, maxChars - 1))}…`;
+	const marker = `\n\n[${label} truncated: omitted ${text.length - maxChars} chars to keep custom compaction under model context limits]\n\n`;
+	const keep = Math.max(0, maxChars - marker.length);
+	const head = Math.floor(keep * 0.35);
+	const tail = keep - head;
+	return `${text.slice(0, head)}${marker}${text.slice(text.length - tail)}`;
+}
+
+function compactSerializedConversation(text: string): string {
+	const lines = text.split(/\r?\n/);
+	const kept: string[] = [];
+	let skipping: "thinking" | "tool" | undefined;
+
+	for (const line of lines) {
+		const isSectionStart = /^\[[A-Za-z ]+\]:/.test(line);
+		if (isSectionStart) skipping = undefined;
+
+		if (line.startsWith("[Assistant thinking]:")) {
+			kept.push("[Assistant thinking]: [omitted by memory spine budget]");
+			skipping = "thinking";
+			continue;
+		}
+		if (line.startsWith("[Tool result]:")) {
+			kept.push("[Tool result]: [omitted by memory spine budget; use file/tool metadata]");
+			skipping = "tool";
+			continue;
+		}
+		if (skipping) continue;
+		kept.push(line);
+	}
+
+	return redactSensitiveText(kept.join("\n"));
 }
 
 function contextSummary(ctx: ExtensionContext): string | undefined {
@@ -253,13 +295,13 @@ export function buildContinuitySummaryPrompt(args: {
 	customInstructions?: string;
 	gitStatus?: string;
 }): string {
-	const previous = redactSensitiveText(args.previousSummary?.trim() || "None.");
-	const conversationText = redactSensitiveText(args.conversationText || "None.");
-	const turnPrefix = redactSensitiveText(args.turnPrefixText?.trim() || "None.");
-	const customInstructions = redactSensitiveText(args.customInstructions?.trim() || "None.");
-	const gitStatus = redactSensitiveText(args.gitStatus?.trim() || "Not checked.");
+	const previous = truncateMiddle(redactSensitiveText(args.previousSummary?.trim() || "None."), MAX_PREVIOUS_SUMMARY_CHARS, "previous summary");
+	const conversationText = truncateMiddle(compactSerializedConversation(args.conversationText || "None."), MAX_CONVERSATION_CHARS, "conversation");
+	const turnPrefix = truncateMiddle(compactSerializedConversation(args.turnPrefixText?.trim() || "None."), MAX_TURN_PREFIX_CHARS, "turn prefix");
+	const customInstructions = truncateMiddle(redactSensitiveText(args.customInstructions?.trim() || "None."), MAX_CUSTOM_INSTRUCTIONS_CHARS, "custom instructions");
+	const gitStatus = truncateMiddle(redactSensitiveText(args.gitStatus?.trim() || "Not checked."), MAX_GIT_STATUS_CHARS, "git status");
 
-	return `You are generating a durable continuity summary for a long-running pi coding-agent session.
+	const prompt = `You are generating a durable continuity summary for a long-running pi coding-agent session.
 
 Your job is to preserve exactly what a future agent needs to continue after compaction. Be concise, factual, and operational. Do not invent work. Do not include secret values, command output, or credentials. If something is unknown, say unknown.
 
@@ -329,6 +371,10 @@ Conversation being compacted:
 <conversation>
 ${conversationText}
 </conversation>`;
+
+	return prompt.length <= MAX_COMPACTION_PROMPT_CHARS
+		? prompt
+		: truncateMiddle(prompt, MAX_COMPACTION_PROMPT_CHARS, "continuity compaction prompt");
 }
 
 function extractSummaryText(response: { content?: Array<{ type: string; text?: string }> }): string {

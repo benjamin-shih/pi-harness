@@ -25,7 +25,7 @@ All notable changes to this personal pi harness package are tracked here.
 - CI and local validation now exercise extension loading, prompt/theme metadata, safety-gate behavior, and local skill graph health when present.
 
 ### Fixed
-- None.
+- Memory-spine custom compaction now strips bulky tool-result/thinking bodies and hard-caps prompt size to avoid context-window overflows.
 
 ### Breaking
 - None.
