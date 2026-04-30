@@ -53,7 +53,7 @@ To enable it globally while keeping it outside the core harness package:
 
 Pi reuses the shared `/Users/benjaminshih/.agents/tasks` control plane through the versioned `.agents` task API. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, capture safe typed task-artifact metadata, and release current-session leases on shutdown.
 
-The shared `.agents` scripts own project-root, bootstrap-path, sensitive-path, and artifact-capture policy via `task-api.sh info`, `task-candidate-root.sh`, `path-safety.sh`, and `task-artifact-*.sh`; the TypeScript harness is only the Pi runtime adapter/UI layer. Set `AGENTS_SHARED_ROOT` to point at an alternate `.agents` checkout. Tests can set `TASKS_ROOT` to isolate task packages.
+The shared `.agents` scripts own project-root, bootstrap-path, sensitive-path, and artifact-capture policy via `task-api.sh info`, `task-candidate-root.sh`, `path-safety.sh`, and `task-artifact-*.sh`; the TypeScript harness is only the Pi runtime adapter/UI layer. Set `AGENTS_SHARED_ROOT` to point at an alternate `.agents` checkout, `AGENTS_SKILLS_ROOT` to override the default skills root, and `TASKS_ROOT` to isolate task packages in tests.
 
 ## UI polish
 

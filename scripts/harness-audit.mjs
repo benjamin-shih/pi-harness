@@ -61,8 +61,10 @@ function groupedExtensionStats(entrypoint) {
 	const isDirectoryEntrypoint = basename(entrypoint).startsWith("index.") && dirname(parent) === join(root, "extensions");
 	let files = isDirectoryEntrypoint ? walk(parent).filter((file) => [".ts", ".js"].includes(extname(file))) : [entrypoint];
 	if (!isDirectoryEntrypoint) {
-		const supportDir = join(parent, basename(entrypoint, extname(entrypoint)));
-		if (existsSync(supportDir)) files = [...files, ...walk(supportDir).filter((file) => [".ts", ".js"].includes(extname(file)))];
+		const stem = basename(entrypoint, extname(entrypoint));
+		for (const supportDir of [join(parent, stem), join(parent, `${stem}-lib`)]) {
+			if (existsSync(supportDir)) files = [...files, ...walk(supportDir).filter((file) => [".ts", ".js"].includes(extname(file)))];
+		}
 	}
 	return { loc: files.reduce((total, file) => total + linesOf(file), 0), fileCount: files.length };
 }
@@ -105,7 +107,9 @@ const warnings = [];
 const packageJson = readJson("package.json");
 const entries = extensionEntrypoints();
 const extensionGroups = entries.map((entry) => ({ path: posix(relative(root, entry)), ...groupedExtensionStats(entry) }));
-const extensionLoc = extensionGroups.reduce((total, entry) => total + entry.loc, 0);
+const sharedSupportFiles = walk(join(root, "extensions", "shared")).filter((file) => [".ts", ".js"].includes(extname(file)));
+const sharedSupportLoc = sharedSupportFiles.reduce((total, file) => total + linesOf(file), 0);
+const extensionLoc = extensionGroups.reduce((total, entry) => total + entry.loc, 0) + sharedSupportLoc;
 const sourceFiles = walk(root).filter((file) => !posix(relative(root, file)).startsWith("package-lock.json"));
 const staleMatches = scanStaleReferences(sourceFiles);
 
@@ -134,6 +138,7 @@ const result = {
 		runtimeExtensionEntrypoints: entries.length,
 		extensionLoc,
 		optionalLatexLoc,
+		sharedSupportLoc,
 	},
 	extensions: extensionGroups,
 	issues,

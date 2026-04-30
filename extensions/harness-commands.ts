@@ -1,7 +1,17 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import {
+	CLEANUP_GUARD_MARKER,
+	cleanupGuardMessage,
+	diffDelta,
+	diffLooksMajor,
+	gitChangeSnapshot,
+	looksFileMutatingCommand,
+	type GitChangeSnapshot,
+} from "./harness-commands/cleanup-guard";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
+import { skillsRoot } from "./shared/config";
 import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemorySpineDiagnostics } from "./session-continuity/diagnostics";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -16,30 +26,10 @@ type ModeDefinition = {
 	instructions?: string;
 };
 
-type PathStat = {
-	inserted: number;
-	deleted: number;
-	untracked: boolean;
-};
-
-type DiffStats = {
-	files: number;
-	inserted: number;
-	deleted: number;
-	untracked: number;
-	paths: string[];
-	byPath: Record<string, PathStat>;
-};
-
-type GitChangeSnapshot = {
-	stats: DiffStats;
-	signature: string;
-};
-
 type HarnessAudit = {
 	root: string;
 	packageVersion: string;
-	metrics?: { runtimeExtensionEntrypoints?: number; extensionLoc?: number; optionalLatexLoc?: number };
+	metrics?: { runtimeExtensionEntrypoints?: number; extensionLoc?: number; optionalLatexLoc?: number; sharedSupportLoc?: number };
 	issues?: unknown[];
 	warnings?: unknown[];
 };
@@ -48,11 +38,6 @@ type HarnessAuditResult = { ok: true; audit: HarnessAudit } | { ok: false; error
 type AgentsTaskLayer = ReturnType<typeof createAgentsTaskLayer>;
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const DEFAULT_SKILLS_ROOT = "/Users/benjaminshih/.agents/skills";
-const CLEANUP_GUARD_MARKER = "PI_CLEANUP_GUARD";
-const MAJOR_CLEANUP_FILE_THRESHOLD = 4;
-const MAJOR_CLEANUP_FILE_LINE_FLOOR = 40;
-const MAJOR_CLEANUP_LINE_THRESHOLD = 200;
 const DISPLAY_MATH_RENDERING_INSTRUCTION = [
 	"## Display Math Rendering",
 	"When writing display equations in assistant responses, use `\\begin{displaymath}` and `\\end{displaymath}` delimiters instead of `\\[` and `\\]` so the local LaTeX preview renderer activates reliably.",
@@ -143,7 +128,7 @@ function skillRoutingReminder(weight: TaskWeight): string | undefined {
 		"## Harness Skill Routing Reminder",
 		"Classify the user task before substantive work.",
 		"If the task is actually trivial, do not perform full skill traversal; answer or complete it immediately.",
-		"For nontrivial work, use `/Users/benjaminshih/.agents/skills/SKILLS.md` as the skill graph root.",
+		`For nontrivial work, use \`${skillsRoot()}/SKILLS.md\` as the skill graph root.`,
 		"Treat `Depends on` as hard ordering edges and `Related` as optional discovery only.",
 		"Report the selected skills and why before executing substantive steps.",
 	];
@@ -257,117 +242,6 @@ async function gitSummary(pi: ExtensionAPI, cwd: string): Promise<{ branch?: str
 		if (line[1] && line[1] !== " ") unstaged++;
 	}
 	return { branch, summary: `${staged} staged, ${unstaged} unstaged, ${untracked} untracked` };
-}
-
-function emptyDiffStats(): DiffStats {
-	return { files: 0, inserted: 0, deleted: 0, untracked: 0, paths: [], byPath: {} };
-}
-
-function addFileStat(stats: DiffStats, filePath: string, inserted: number, deleted: number, untracked = false): void {
-	const current = stats.byPath[filePath] ?? { inserted: 0, deleted: 0, untracked: false };
-	if (!stats.byPath[filePath]) {
-		stats.files++;
-		stats.paths.push(filePath);
-	}
-	stats.inserted += inserted;
-	stats.deleted += deleted;
-	if (untracked && !current.untracked) stats.untracked++;
-	current.inserted += inserted;
-	current.deleted += deleted;
-	current.untracked ||= untracked;
-	stats.byPath[filePath] = current;
-}
-
-function addNumstat(stats: DiffStats, stdout: string, untracked = false, fallbackPath?: string): void {
-	for (const line of stdout.split(/\r?\n/)) {
-		if (!line.trim()) continue;
-		const [insertedText, deletedText, ...pathParts] = line.split("\t");
-		const filePath = pathParts.join("\t").trim() || fallbackPath;
-		if (!filePath) continue;
-		addFileStat(stats, filePath, Number.parseInt(insertedText ?? "0", 10) || 0, Number.parseInt(deletedText ?? "0", 10) || 0, untracked);
-	}
-}
-
-async function untrackedFileNumstat(pi: ExtensionAPI, cwd: string, filePath: string): Promise<string> {
-	try {
-		const result = await pi.exec("git", ["diff", "--numstat", "--no-index", "--", "/dev/null", filePath], { cwd, timeout: 5_000 });
-		return result.stdout;
-	} catch {
-		return "";
-	}
-}
-
-async function gitChangeSnapshot(pi: ExtensionAPI, cwd: string): Promise<GitChangeSnapshot | undefined> {
-	try {
-		const diff = await pi.exec("git", ["diff", "--numstat", "HEAD", "--"], { cwd, timeout: 5_000 });
-		if (diff.code !== 0) return undefined;
-
-		const untracked = await pi.exec("git", ["ls-files", "--others", "--exclude-standard"], { cwd, timeout: 5_000 });
-		const untrackedFiles = untracked.code === 0 ? untracked.stdout.split(/\r?\n/).filter(Boolean) : [];
-		const stats = emptyDiffStats();
-		addNumstat(stats, diff.stdout);
-
-		const untrackedNumstats: string[] = [];
-		for (const filePath of untrackedFiles.slice(0, 20)) {
-			const numstat = await untrackedFileNumstat(pi, cwd, filePath);
-			untrackedNumstats.push(numstat || `0\t0\t${filePath}`);
-			if (numstat.trim()) addNumstat(stats, numstat, true, filePath);
-			else addFileStat(stats, filePath, 0, 0, true);
-		}
-
-		return { stats, signature: [diff.stdout, untrackedFiles.join("\n"), untrackedNumstats.join("\n")].join("\0") };
-	} catch {
-		return undefined;
-	}
-}
-
-function diffDelta(before: DiffStats | undefined, after: DiffStats): DiffStats {
-	if (!before) return after;
-	const delta = emptyDiffStats();
-	for (const [filePath, current] of Object.entries(after.byPath)) {
-		const previous = before.byPath[filePath];
-		const inserted = Math.max(0, current.inserted - (previous?.inserted ?? 0));
-		const deleted = Math.max(0, current.deleted - (previous?.deleted ?? 0));
-		const untracked = current.untracked && !previous?.untracked;
-		if (inserted > 0 || deleted > 0 || untracked) addFileStat(delta, filePath, inserted, deleted, untracked);
-	}
-	return delta;
-}
-
-function diffLooksMajor(stats: DiffStats | undefined): boolean {
-	if (!stats) return false;
-	const changedLines = stats.inserted + stats.deleted;
-	const structuralPathTouched = stats.paths.some((filePath) => /(?:^|\/)(extensions|packages|scripts|src|lib|app|core)\//.test(filePath));
-	return (
-		(stats.files >= MAJOR_CLEANUP_FILE_THRESHOLD && changedLines >= MAJOR_CLEANUP_FILE_LINE_FLOOR) ||
-		changedLines >= MAJOR_CLEANUP_LINE_THRESHOLD ||
-		(structuralPathTouched && changedLines >= 80)
-	);
-}
-
-function formatDiffStats(stats: DiffStats | undefined): string {
-	if (!stats) return "git diff stats unavailable";
-	const untracked = stats.untracked ? `, ${stats.untracked} untracked` : "";
-	return `${stats.files} file(s), +${stats.inserted}/-${stats.deleted}${untracked}`;
-}
-
-function looksFileMutatingCommand(command: string): boolean {
-	return /(^|[;&|()\s])(?:rm|mv|cp|touch|mkdir|rmdir|tee|python|python3|node|npm|pnpm|yarn|make|git\s+(?:add|commit|reset|checkout|switch|merge|rebase|stash|clean))\b/.test(command)
-		|| /(^|[^<])>{1,2}\s*[^&]/.test(command)
-		|| /\b(?:sed|perl)\s+[^\n]*\s-i\b/.test(command);
-}
-
-function cleanupGuardMessage(stats: DiffStats | undefined, promptWasMajor: boolean): string {
-	const reason = promptWasMajor ? "major-change prompt" : `large/structural diff (${formatDiffStats(stats)})`;
-	return [
-		`${CLEANUP_GUARD_MARKER}: Major code/file change detected (${reason}).`,
-		"Before finalizing, run a cleanup/simplify pass:",
-		"- inspect the current git diff and touched files",
-		"- remove code, docs, comments, config, helpers, imports, and compatibility shims made obsolete by this change",
-		"- scan affected subsystems and obvious repo-wide references for stale names or versions, including old model IDs like `gpt-5.2`/`gpt5.2` when relevant",
-		"- simplify only where behavior is preserved; do not broaden into unrelated rewrites",
-		"- run the relevant verification again, then commit/push or report the blocker",
-	].join("\n");
 }
 
 function contextSummary(ctx: ExtensionContext): string {
@@ -581,7 +455,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	pi.registerCommand("skills-audit", {
 		description: "Audit the shared .agents skill graph for schema, registry, link, and bloat issues",
 		handler: async (args, ctx) => {
-			const root = args.trim() || DEFAULT_SKILLS_ROOT;
+			const root = args.trim() || skillsRoot();
 			const script = join(PACKAGE_ROOT, "scripts", "skills-audit.mjs");
 			const result = await pi.exec("node", [script, "--root", root, "--json"], { cwd: PACKAGE_ROOT, timeout: 15_000 });
 			const content = result.code === 0 ? formatAudit(result.stdout) : `## Skills audit failed\n\n${result.stderr || result.stdout}`;

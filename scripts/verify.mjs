@@ -109,6 +109,32 @@ for (const extension of extensionEntries) {
 	}
 }
 
+function runSupportModuleTests() {
+	const config = loadExtensionModule("extensions/shared/config.ts");
+	const previousAgentsRoot = process.env.AGENTS_SHARED_ROOT;
+	const previousSkillsRoot = process.env.AGENTS_SKILLS_ROOT;
+	try {
+		process.env.AGENTS_SHARED_ROOT = "/tmp/pi-agents-root";
+		delete process.env.AGENTS_SKILLS_ROOT;
+		assert(config.agentsRoot() === "/tmp/pi-agents-root", "shared config should honor AGENTS_SHARED_ROOT");
+		assert(config.skillsRoot() === join("/tmp/pi-agents-root", "skills"), "shared config should derive skills root from AGENTS_SHARED_ROOT");
+		process.env.AGENTS_SKILLS_ROOT = "/tmp/pi-skills-root";
+		assert(config.skillsRoot() === "/tmp/pi-skills-root", "shared config should honor AGENTS_SKILLS_ROOT");
+	} finally {
+		if (previousAgentsRoot === undefined) delete process.env.AGENTS_SHARED_ROOT;
+		else process.env.AGENTS_SHARED_ROOT = previousAgentsRoot;
+		if (previousSkillsRoot === undefined) delete process.env.AGENTS_SKILLS_ROOT;
+		else process.env.AGENTS_SKILLS_ROOT = previousSkillsRoot;
+	}
+
+	const shell = loadExtensionModule("extensions/safety-gate-lib/shell.ts");
+	assert(shell.extractWritePathTokens("printf ok>./out.txt").includes("./out.txt"), "shell parser should catch adjacent output redirection targets");
+	assert(shell.extractPathTokens("node ./scripts/foo.js").includes("./scripts/foo.js"), "shell parser should extract relative path operands");
+	assert(shell.looksRecursiveTraversalCommand("grep -R needle ."), "shell parser should detect recursive grep traversal");
+}
+
+runSupportModuleTests();
+
 function runFooterUsageTests() {
 	const footer = loadExtensionModule("extensions/ui-polish/index.ts");
 	assert(typeof footer.calculateFooterUsage === "function", "ui-polish should export calculateFooterUsage");
@@ -275,6 +301,17 @@ async function runHarnessCommandBehaviorTests() {
 	assert(result.systemPrompt.includes("use only `#` and `##` Markdown headings"), "harness should steer agents away from deeper Markdown headings");
 	assert(result.systemPrompt.includes("instead of `###`"), "harness should recommend bold labels instead of raw level-3 headings");
 	assert(!result.systemPrompt.includes("## Post-Change Cleanup Gate"), "harness should not inject cleanup guidance for non-coding prompts");
+
+	const previousSkillsRootForPrompt = process.env.AGENTS_SKILLS_ROOT;
+	try {
+		process.env.AGENTS_SKILLS_ROOT = "/tmp/pi-custom-skills";
+		const routed = createHarness([]);
+		const routedResult = await routed.beforeAgentStart({ prompt: "Implement config cleanup", systemPrompt: "base" }, { cwd: root });
+		assert(routedResult.systemPrompt.includes("/tmp/pi-custom-skills/SKILLS.md"), "skill-routing guidance should honor AGENTS_SKILLS_ROOT");
+	} finally {
+		if (previousSkillsRootForPrompt === undefined) delete process.env.AGENTS_SKILLS_ROOT;
+		else process.env.AGENTS_SKILLS_ROOT = previousSkillsRootForPrompt;
+	}
 
 	const statusCommands = new Map();
 	const statusMessages = [];

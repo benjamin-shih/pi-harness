@@ -14,6 +14,8 @@ All notable changes to this personal pi harness package are tracked here.
 
 ### Changed
 - `/status` now includes compact memory-spine health, entry counts, and active AGENTS task state.
+- Centralized `.agents`/skills root configuration behind environment-aware shared helpers.
+- Split cleanup-guard diff logic out of the main harness command extension.
 - Task-layer verification now includes a local real-script integration path when `AGENTS_SHARED_ROOT` is available.
 - Harness audit now treats internally split directory extensions and same-name support modules as part of their owning runtime extension.
 - System prompt guidance now asks agents to avoid level-3-and-deeper Markdown headings so terminal responses render cleanly.

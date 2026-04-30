@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
+import { agentsRoot, agentsScriptPath } from "../shared/config";
 
 export type TaskWeight = "trivial" | "standard" | "complex";
 
@@ -79,7 +80,6 @@ type TaskLayerState = {
 	lastHeartbeatAt: number;
 };
 
-const DEFAULT_AGENTS_ROOT = "/Users/benjaminshih/.agents";
 const SUPPORTED_TASK_API_VERSION = 1;
 const SUPPORTED_ARTIFACT_API_VERSION = 1;
 const HEARTBEAT_INTERVAL_MS = 60_000;
@@ -103,14 +103,6 @@ function initialState(): TaskLayerState {
 		artifactSkipped: 0,
 		lastHeartbeatAt: 0,
 	};
-}
-
-function agentsRoot(): string {
-	return process.env.AGENTS_SHARED_ROOT || DEFAULT_AGENTS_ROOT;
-}
-
-function scriptPath(name: string): string {
-	return path.join(agentsRoot(), "scripts", name);
 }
 
 function modelSummary(ctx: ExtensionContext): string | undefined {
@@ -138,7 +130,7 @@ function parseJson<T>(text: string): T | undefined {
 }
 
 async function runScript(pi: ExtensionAPI, scriptName: string, args: string[], cwd: string, timeout = SCRIPT_TIMEOUT_MS): Promise<ExecResult> {
-	return pi.exec("bash", [scriptPath(scriptName), ...args], { cwd, timeout });
+	return pi.exec("bash", [agentsScriptPath(scriptName), ...args], { cwd, timeout });
 }
 
 async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd: string): Promise<boolean> {

@@ -1,8 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import path from "node:path";
+import { agentsRoot, agentsScriptPath } from "../shared/config";
 import { cleanPathToken } from "./shell";
 
-const DEFAULT_AGENTS_ROOT = "/Users/benjaminshih/.agents";
 const POLICY_API_VERSION = 1;
 
 export type PolicyOperation = "read" | "write" | "list" | "egress" | "capture" | "git";
@@ -19,10 +18,6 @@ export type PathSafetyResult = {
 };
 
 export type PathSafetyCheck = (rawPath: string | undefined, cwd: string, operation?: PolicyOperation, recursive?: boolean) => Promise<PathSafetyResult | undefined>;
-
-function agentsRoot(): string {
-	return process.env.AGENTS_SHARED_ROOT || DEFAULT_AGENTS_ROOT;
-}
 
 function parseJson<T>(text: string): T | undefined {
 	try {
@@ -53,7 +48,7 @@ export function createPathSafetyChecker(pi: ExtensionAPI): { pathSafety: PathSaf
 		const cacheKey = `${root}\0${cwd}\0${operation}\0${recursive ? "recursive" : "direct"}\0${pathToken}`;
 		if (cache.has(cacheKey)) return cache.get(cacheKey) ?? undefined;
 		try {
-			const args = [path.join(root, "scripts", "path-safety.sh"), "--path", pathToken, "--cwd", cwd, "--operation", operation];
+			const args = [agentsScriptPath("path-safety.sh"), "--path", pathToken, "--cwd", cwd, "--operation", operation];
 			if (recursive) args.push("--recursive");
 			const result = await pi.exec("bash", args, { cwd, timeout: 5_000 });
 			if (result.code !== 0) {
