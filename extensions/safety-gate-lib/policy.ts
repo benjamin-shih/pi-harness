@@ -24,10 +24,6 @@ function agentsRoot(): string {
 	return process.env.AGENTS_SHARED_ROOT || DEFAULT_AGENTS_ROOT;
 }
 
-function policyScriptPath(scriptName: string): string {
-	return path.join(agentsRoot(), "scripts", scriptName);
-}
-
 function parseJson<T>(text: string): T | undefined {
 	try {
 		return JSON.parse(text) as T;
@@ -53,10 +49,11 @@ export function createPathSafetyChecker(pi: ExtensionAPI): { pathSafety: PathSaf
 	async function pathSafety(rawPath: string | undefined, cwd: string, operation: PolicyOperation = "read", recursive = false): Promise<PathSafetyResult | undefined> {
 		const pathToken = rawPath ? cleanPathToken(rawPath) : "";
 		if (!pathToken) return undefined;
-		const cacheKey = `${agentsRoot()}\0${cwd}\0${operation}\0${recursive ? "recursive" : "direct"}\0${pathToken}`;
+		const root = agentsRoot();
+		const cacheKey = `${root}\0${cwd}\0${operation}\0${recursive ? "recursive" : "direct"}\0${pathToken}`;
 		if (cache.has(cacheKey)) return cache.get(cacheKey) ?? undefined;
 		try {
-			const args = [policyScriptPath("path-safety.sh"), "--path", pathToken, "--cwd", cwd, "--operation", operation];
+			const args = [path.join(root, "scripts", "path-safety.sh"), "--path", pathToken, "--cwd", cwd, "--operation", operation];
 			if (recursive) args.push("--recursive");
 			const result = await pi.exec("bash", args, { cwd, timeout: 5_000 });
 			if (result.code !== 0) {

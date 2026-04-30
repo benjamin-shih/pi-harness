@@ -89,10 +89,10 @@ async function gitLines(pi: ExtensionAPI, cwd: string, args: string[]): Promise<
 	}
 }
 
-async function sensitivePaths(pathSafety: PathSafetyCheck, cwd: string, paths: string[], operation: "git" | "egress" = "git"): Promise<string[]> {
+async function sensitiveGitPaths(pathSafety: PathSafetyCheck, cwd: string, paths: string[]): Promise<string[]> {
 	const matches: string[] = [];
 	for (const p of paths) {
-		if (await pathSafety(p, cwd, operation)) matches.push(p);
+		if (await pathSafety(p, cwd, "git")) matches.push(p);
 	}
 	return matches;
 }
@@ -104,7 +104,7 @@ async function changedSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyChe
 			timeout: 5_000,
 		});
 		if (result.code !== 0) return [];
-		return sensitivePaths(pathSafety, cwd, parsePorcelainPaths(result.stdout), "git");
+		return sensitiveGitPaths(pathSafety, cwd, parsePorcelainPaths(result.stdout));
 	} catch {
 		return [];
 	}
@@ -112,7 +112,7 @@ async function changedSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyChe
 
 async function stagedSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<string[]> {
 	const paths = await gitLines(pi, cwd, ["diff", "--cached", "--name-only"]);
-	return sensitivePaths(pathSafety, cwd, paths, "git");
+	return sensitiveGitPaths(pathSafety, cwd, paths);
 }
 
 async function outgoingSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<string[]> {
@@ -124,7 +124,7 @@ async function outgoingSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCh
 		if (upstream.code === 0) {
 			const base = upstream.stdout.trim();
 			const paths = await gitLines(pi, cwd, ["diff", "--name-only", `${base}..HEAD`]);
-			return sensitivePaths(pathSafety, cwd, paths, "git");
+			return sensitiveGitPaths(pathSafety, cwd, paths);
 		}
 	} catch {
 		// Fall back below.
