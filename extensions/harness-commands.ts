@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemorySpineDiagnostics } from "./session-continuity/diagnostics";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 type TaskWeight = "trivial" | "standard" | "complex";
@@ -33,6 +34,16 @@ type GitChangeSnapshot = {
 	stats: DiffStats;
 	signature: string;
 };
+
+type HarnessAudit = {
+	root: string;
+	packageVersion: string;
+	metrics?: { runtimeExtensionEntrypoints?: number; extensionLoc?: number; optionalLatexLoc?: number };
+	issues?: unknown[];
+	warnings?: unknown[];
+};
+
+type HarnessAuditResult = { ok: true; audit: HarnessAudit } | { ok: false; error: string };
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DEFAULT_SKILLS_ROOT = "/Users/benjaminshih/.agents/skills";
@@ -359,29 +370,40 @@ function contextSummary(ctx: ExtensionContext): string {
 	return `${usage.percent.toFixed(1)}% (${usage.tokens}/${usage.contextWindow})`;
 }
 
-async function harnessAuditStatus(pi: ExtensionAPI): Promise<string[]> {
+async function runHarnessAudit(pi: ExtensionAPI): Promise<HarnessAuditResult> {
 	try {
 		const script = join(PACKAGE_ROOT, "scripts", "harness-audit.mjs");
 		const result = await pi.exec("node", [script, "--json"], { cwd: PACKAGE_ROOT, timeout: 5_000 });
-		if (result.code !== 0) return [`- harness audit: failed (${result.stderr || result.stdout || `exit ${result.code}`})`];
-		const audit = JSON.parse(result.stdout) as {
-			metrics?: { runtimeExtensionEntrypoints?: number; extensionLoc?: number; optionalLatexLoc?: number };
-			issues?: unknown[];
-			warnings?: unknown[];
-		};
-		return [
-			`- harness audit: ${audit.issues?.length ? "issues" : "ok"} (${audit.issues?.length ?? 0} issue(s), ${audit.warnings?.length ?? 0} warning(s))`,
-			`- runtime extensions: ${audit.metrics?.runtimeExtensionEntrypoints ?? "unknown"}`,
-			`- core extension LOC: ${audit.metrics?.extensionLoc ?? "unknown"}`,
-			`- optional LaTeX LOC: ${audit.metrics?.optionalLatexLoc ?? "unknown"}`,
-		];
+		if (result.code !== 0) return { ok: false, error: result.stderr || result.stdout || `exit ${result.code}` };
+		return { ok: true, audit: JSON.parse(result.stdout) as HarnessAudit };
 	} catch (error) {
-		return [`- harness audit: unavailable (${error instanceof Error ? error.message : String(error)})`];
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
 	}
+}
+
+function formatHarnessAuditLines(result: HarnessAuditResult): string[] {
+	if (!result.ok) return [`- harness audit: unavailable (${result.error})`];
+	const { audit } = result;
+	return [
+		`- harness audit: ${audit.issues?.length ? "issues" : "ok"} (${audit.issues?.length ?? 0} issue(s), ${audit.warnings?.length ?? 0} warning(s))`,
+		`- runtime extensions: ${audit.metrics?.runtimeExtensionEntrypoints ?? "unknown"}`,
+		`- core extension LOC: ${audit.metrics?.extensionLoc ?? "unknown"}`,
+		`- optional LaTeX LOC: ${audit.metrics?.optionalLatexLoc ?? "unknown"}`,
+	];
+}
+
+function memoryStatusLines(diagnostics: MemorySpineDiagnostics): string[] {
+	return [
+		`- memory spine: ${diagnostics.health} (${diagnostics.status})`,
+		`- memory entries: ${diagnostics.checkpointCount} checkpoint(s), ${diagnostics.harnessCompactionCount}/${diagnostics.compactionCount} harness compaction(s), ${diagnostics.diagnosticCount} diagnostic(s)`,
+	];
 }
 
 async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string> {
 	const git = await gitSummary(pi, ctx.cwd);
+	const audit = await runHarnessAudit(pi);
+	const branch = ctx.sessionManager.getBranch();
+	const memory = buildMemorySpineDiagnostics(branch);
 	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none";
 	const tools = pi.getActiveTools();
 	return [
@@ -392,8 +414,53 @@ async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext): Promise<str
 		`- context: ${contextSummary(ctx)}`,
 		`- git: ${git.branch ? `${git.branch}, ` : ""}${git.summary}`,
 		`- active tools: ${tools.length ? tools.join(", ") : "none"}`,
-		`- session entries: ${ctx.sessionManager.getBranch().length}`,
-		...(await harnessAuditStatus(pi)),
+		`- session entries: ${branch.length}`,
+		...formatHarnessAuditLines(audit),
+		...memoryStatusLines(memory),
+	].join("\n");
+}
+
+function doctorRecommendations(audit: HarnessAuditResult, memory: MemorySpineDiagnostics): string[] {
+	const recommendations: string[] = [];
+	if (!audit.ok) recommendations.push("Run `npm run harness:audit` in the harness package; the slash-command audit call failed.");
+	else if (audit.audit.issues?.length) recommendations.push("Fix harness audit issues before adding more harness features.");
+	if (memory.health === "warning") recommendations.push("Inspect `/memory`; latest memory-spine diagnostics indicate compaction fallback/default behavior.");
+	if (memory.health === "unknown") recommendations.push("No memory-spine entries yet; run one normal agent turn and check `/memory` again.");
+	return recommendations.length ? recommendations : ["None; harness checks are green."];
+}
+
+function doctorHealth(audit: HarnessAuditResult, memory: MemorySpineDiagnostics): "ok" | "warning" {
+	if (!audit.ok || (audit.ok && Boolean(audit.audit.issues?.length))) return "warning";
+	if (memory.health === "warning") return "warning";
+	return "ok";
+}
+
+async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string> {
+	const git = await gitSummary(pi, ctx.cwd);
+	const audit = await runHarnessAudit(pi);
+	const branch = ctx.sessionManager.getBranch();
+	const memory = buildMemorySpineDiagnostics(branch);
+	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none";
+	const tools = pi.getActiveTools();
+	return [
+		"## Harness doctor",
+		`- health: ${doctorHealth(audit, memory)}`,
+		`- package: ben-pi-harness ${audit.ok ? audit.audit.packageVersion ?? "unknown" : "unknown"}`,
+		`- cwd: ${ctx.cwd}`,
+		`- model: ${model}`,
+		`- thinking: ${pi.getThinkingLevel()}`,
+		`- context: ${contextSummary(ctx)}`,
+		`- git: ${git.branch ? `${git.branch}, ` : ""}${git.summary}`,
+		`- active tools: ${tools.length ? tools.join(", ") : "none"}`,
+		`- session entries: ${branch.length}`,
+		"",
+		"### Harness audit",
+		...formatHarnessAuditLines(audit),
+		"",
+		formatMemorySpineDiagnostics(memory, { verbose: true }),
+		"",
+		"### Recommendations",
+		...doctorRecommendations(audit, memory).map((recommendation) => `- ${recommendation}`),
 	].join("\n");
 }
 
@@ -457,9 +524,31 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("status", {
-		description: "Show current harness, model, tool, context, and git status",
+		description: "Show current harness, model, tool, context, git, audit, and memory status",
 		handler: async (_args, ctx) => {
 			pi.sendMessage({ customType: "harness-status", content: await buildStatus(pi, ctx), display: true });
+		},
+	});
+
+	pi.registerCommand("doctor", {
+		description: "Run a read-only harness health check with memory-spine diagnostics",
+		handler: async (_args, ctx) => {
+			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx), display: true });
+		},
+	});
+
+	pi.registerCommand("doct", {
+		description: "Alias for /doctor",
+		handler: async (_args, ctx) => {
+			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx), display: true });
+		},
+	});
+
+	pi.registerCommand("memory", {
+		description: "Show memory-spine checkpoint and compaction diagnostics",
+		handler: async (_args, ctx) => {
+			const content = formatMemorySpineDiagnostics(buildMemorySpineDiagnostics(ctx.sessionManager.getBranch()), { verbose: true });
+			pi.sendMessage({ customType: "harness-memory", content, display: true });
 		},
 	});
 

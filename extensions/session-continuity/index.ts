@@ -33,8 +33,10 @@ import { formatUnknownError, redactSensitiveText } from "./redaction";
 import type { CompactionDiagnosticReason, ContinuityCheckpoint } from "./types";
 
 export { extractContinuityCheckpoints, buildLedger } from "./checkpoints";
+export { buildMemorySpineDiagnostics, extractContinuityCompactionDiagnostics, extractMemoryCompactions, formatMemorySpineDiagnostics } from "./diagnostics";
 export { buildContinuitySummaryPrompt, buildDeterministicContinuitySummary } from "./prompts";
 export { formatUnknownError, redactSensitiveText } from "./redaction";
+export type { MemoryCompactionSnapshot, MemorySpineDiagnostics } from "./diagnostics";
 export type { ContinuityCheckpoint, ContinuityCommand, ContinuityCompactionDiagnostic } from "./types";
 
 type CompleteFn = typeof complete;

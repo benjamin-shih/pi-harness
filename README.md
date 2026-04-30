@@ -18,7 +18,7 @@ extensions/
   ui-polish/            Rounded prompt boxes and responsive Catppuccin footer
   harness-commands.ts   /mode, /status, /checkpoint, /skills-audit, skill routing, and cleanup guards
   safety-gate.ts        Secret/private-file egress guardrails and git finalization checks
-  session-continuity/  Automatic checkpoints and custom compaction summaries
+  session-continuity/   Automatic checkpoints and custom compaction summaries and diagnostics
 prompts/
   handoff.md            Session/task handoff prompt
   review.md             Review prompt
@@ -56,6 +56,8 @@ After loading this package in pi:
 ```text
 /mode [fast|default|deep|readonly|full]
 /status
+/doctor            # /doct alias also works
+/memory
 /checkpoint [note]
 /skills-audit [skills-root]
 /simplify [scope]
@@ -98,7 +100,7 @@ npm run skills:audit
 npm run hooks:install
 ```
 
-The tracked pre-push hook runs `npm run verify`.
+The tracked pre-push hook runs `npm run verify` and `npm run harness:audit`.
 
 ## Remote install later
 

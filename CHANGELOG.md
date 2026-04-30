@@ -5,10 +5,12 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
-- None.
+- `/doctor` (`/doct` alias) for read-only harness health checks across package audit, model/context/git state, tools, and memory-spine status.
+- `/memory` for detailed memory-spine checkpoint, compaction, fallback, and diagnostic inspection.
 
 ### Changed
-- None.
+- `/status` now includes compact memory-spine health and entry counts.
+- Harness audit now treats internally split directory extensions as healthy up to a higher LOC budget than single-file extensions.
 
 ### Fixed
 - None.

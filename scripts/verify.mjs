@@ -207,6 +207,58 @@ async function runHarnessCommandBehaviorTests() {
 
 	const statusCommands = new Map();
 	const statusMessages = [];
+	const promptSizing = {
+		promptChars: 1000,
+		conversationChars: 2000,
+		turnPrefixChars: 0,
+		previousSummaryChars: 0,
+		customInstructionsChars: 0,
+		gitStatusChars: 0,
+		messagesToSummarize: 2,
+		turnPrefixMessages: 0,
+		tokensBefore: 1234,
+		promptBudgetChars: 120000,
+		maxSummaryTokens: 8192,
+		isSplitTurn: false,
+		firstKeptEntryId: "entry-1",
+	};
+	const statusBranch = [
+		{
+			type: "custom",
+			customType: "ben-continuity-checkpoint",
+			data: {
+				version: 1,
+				reason: "agent_end",
+				timestamp: "2026-04-30T00:00:00.000Z",
+				cwd: root,
+				prompt: "Add doctor and memory diagnostics.",
+				filesRead: ["README.md"],
+				filesModified: ["extensions/harness-commands.ts"],
+				commands: [{ command: "npm run verify", status: "ok" }],
+				toolErrors: [],
+			},
+		},
+		{
+			type: "compaction",
+			timestamp: "2026-04-30T00:05:00.000Z",
+			tokensBefore: 1234,
+			firstKeptEntryId: "entry-1",
+			details: { source: "ben-pi-harness/session-continuity", version: 1, promptSizing },
+		},
+		{
+			type: "custom",
+			customType: "ben-continuity-compaction-diagnostic",
+			data: {
+				version: 1,
+				timestamp: "2026-04-30T00:10:00.000Z",
+				reason: "exception",
+				cwd: root,
+				error: "context_length_exceeded",
+				fallbackReturned: true,
+				promptSizing,
+			},
+		},
+	];
 	harnessCommands({
 		on: () => {},
 		registerCommand: (name, command) => statusCommands.set(name, command),
@@ -218,20 +270,37 @@ async function runHarnessCommandBehaviorTests() {
 			if (key === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
 			if (key === "status --porcelain=v1 --untracked-files=all") return { code: 0, stdout: "", stderr: "" };
 			if (key === "scripts/harness-audit.mjs --json" || key.endsWith("scripts/harness-audit.mjs --json")) {
-				return { code: 0, stdout: JSON.stringify({ metrics: { runtimeExtensionEntrypoints: 4, extensionLoc: 2000, optionalLatexLoc: 1300 }, issues: [], warnings: [] }), stderr: "" };
+				return {
+					code: 0,
+					stdout: JSON.stringify({ root, packageVersion: "0.2.0", metrics: { runtimeExtensionEntrypoints: 4, extensionLoc: 2000, optionalLatexLoc: 1300 }, issues: [], warnings: [] }),
+					stderr: "",
+				};
 			}
 			return { code: 1, stdout: "", stderr: "" };
 		},
 		sendMessage: (message) => statusMessages.push(message),
 	});
-	await statusCommands.get("status").handler("", {
+	const commandCtx = {
 		cwd: root,
 		model: { provider: "test", id: "model" },
 		getContextUsage: () => ({ tokens: 10, contextWindow: 100, percent: 10 }),
-		sessionManager: { getBranch: () => [{ type: "message" }] },
-	});
+		sessionManager: { getBranch: () => statusBranch },
+	};
+	assert(typeof statusCommands.get("doctor")?.handler === "function", "harness should register /doctor");
+	assert(typeof statusCommands.get("doct")?.handler === "function", "harness should register /doct alias");
+	assert(typeof statusCommands.get("memory")?.handler === "function", "harness should register /memory");
+	await statusCommands.get("status").handler("", commandCtx);
 	assert(statusMessages[0].content.includes("harness audit: ok"), "/status should include harness audit health");
 	assert(statusMessages[0].content.includes("runtime extensions: 4"), "/status should include runtime extension count");
+	assert(statusMessages[0].content.includes("memory spine: warning"), "/status should include compact memory-spine health");
+	await statusCommands.get("doctor").handler("", commandCtx);
+	assert(statusMessages[1].customType === "harness-doctor", "/doctor should send a harness doctor message");
+	assert(statusMessages[1].content.includes("## Harness doctor"), "/doctor should render a doctor report");
+	assert(statusMessages[1].content.includes("package: ben-pi-harness 0.2.0"), "/doctor should include package version");
+	assert(statusMessages[1].content.includes("latest diagnostic"), "/doctor should include memory-spine diagnostics");
+	await statusCommands.get("memory").handler("", commandCtx);
+	assert(statusMessages[2].customType === "harness-memory", "/memory should send a memory diagnostics message");
+	assert(statusMessages[2].content.includes("latest diagnostic error: context_length_exceeded"), "/memory should include latest diagnostic errors");
 
 	const major = createHarness([
 		{ diff: "", untracked: "" },
@@ -730,6 +799,8 @@ async function runSessionContinuityBehaviorTests() {
 	assert(typeof continuity.buildLedger === "function", "session-continuity should export buildLedger");
 	assert(typeof continuity.buildContinuitySummaryPrompt === "function", "session-continuity should export buildContinuitySummaryPrompt");
 	assert(typeof continuity.buildDeterministicContinuitySummary === "function", "session-continuity should export buildDeterministicContinuitySummary");
+	assert(typeof continuity.buildMemorySpineDiagnostics === "function", "session-continuity should export buildMemorySpineDiagnostics");
+	assert(typeof continuity.formatMemorySpineDiagnostics === "function", "session-continuity should export formatMemorySpineDiagnostics");
 	assert(typeof continuity.createSessionContinuity === "function", "session-continuity should export createSessionContinuity for behavior tests");
 	assert(typeof continuity.formatUnknownError === "function", "session-continuity should export formatUnknownError for diagnostic regression coverage");
 	const fakeToken = textFromCodes(84, 79, 75, 69, 78, 61, 97, 98, 99, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102);
@@ -833,6 +904,10 @@ async function runSessionContinuityBehaviorTests() {
 	);
 	assert(compactFallback?.compaction?.details?.fallbackReason === "no_model", "session-continuity should return deterministic fallback without a model");
 	assert(appended.some((entry) => entry.customType === "ben-continuity-compaction-diagnostic" && entry.data.reason === "no_model"), "session-continuity should persist no_model fallback diagnostics");
+	const memoryDiagnostics = continuity.buildMemorySpineDiagnostics(appended.map((entry) => ({ type: "custom", customType: entry.customType, data: entry.data })));
+	assert(memoryDiagnostics.health === "warning", "session-continuity memory diagnostics should warn on latest fallback diagnostics");
+	assert(memoryDiagnostics.checkpointCount === 1 && memoryDiagnostics.diagnosticCount === 1, "session-continuity memory diagnostics should count checkpoints and diagnostics");
+	assert(continuity.formatMemorySpineDiagnostics(memoryDiagnostics, { verbose: true }).includes("latest diagnostic"), "session-continuity memory diagnostics should render latest diagnostic details");
 
 	const fakePreparation = {
 		messagesToSummarize: [{ role: "user", content: [{ type: "text", text: "Continue the harness work." }], timestamp: Date.now() }],

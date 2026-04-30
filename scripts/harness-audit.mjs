@@ -56,11 +56,11 @@ function extensionEntrypoints() {
 		.sort();
 }
 
-function groupedExtensionLoc(entrypoint) {
+function groupedExtensionStats(entrypoint) {
 	const parent = dirname(entrypoint);
 	const isDirectoryEntrypoint = basename(entrypoint).startsWith("index.") && dirname(parent) === join(root, "extensions");
 	const files = isDirectoryEntrypoint ? walk(parent).filter((file) => [".ts", ".js"].includes(extname(file))) : [entrypoint];
-	return files.reduce((total, file) => total + linesOf(file), 0);
+	return { loc: files.reduce((total, file) => total + linesOf(file), 0), fileCount: files.length };
 }
 
 function lineAt(text, index) {
@@ -100,7 +100,7 @@ const issues = [];
 const warnings = [];
 const packageJson = readJson("package.json");
 const entries = extensionEntrypoints();
-const extensionGroups = entries.map((entry) => ({ path: posix(relative(root, entry)), loc: groupedExtensionLoc(entry) }));
+const extensionGroups = entries.map((entry) => ({ path: posix(relative(root, entry)), ...groupedExtensionStats(entry) }));
 const extensionLoc = extensionGroups.reduce((total, entry) => total + entry.loc, 0);
 const sourceFiles = walk(root).filter((file) => !posix(relative(root, file)).startsWith("package-lock.json"));
 const staleMatches = scanStaleReferences(sourceFiles);
@@ -110,7 +110,8 @@ if (!entries.includes(join(root, "extensions", "session-continuity", "index.ts")
 if (existsSync(join(root, "extensions", "session-continuity.ts"))) issues.push("obsolete extensions/session-continuity.ts still exists");
 if (entries.length > 4) issues.push(`runtime extension entrypoint count is ${entries.length}; expected <= 4`);
 for (const group of extensionGroups) {
-	if (group.loc > 900) warnings.push(`${group.path} is ${group.loc} LOC; consider internal split`);
+	const limit = group.fileCount > 1 ? 1_200 : 900;
+	if (group.loc > limit) warnings.push(`${group.path} is ${group.loc} LOC across ${group.fileCount} file(s); consider another internal split`);
 }
 for (const match of staleMatches) issues.push(`${match.label}: ${match.file} (${match.match})`);
 
