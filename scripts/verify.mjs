@@ -608,6 +608,9 @@ async function runLatexPreviewBehaviorTests() {
 		ctx,
 	);
 	const fallbackLines = widgetFactory({}, theme).render(80).join("\n");
+	assert(fallbackLines.includes("Rendered LaTeX preview"), "latex-preview should keep a compact widget heading");
+	assert(!fallbackLines.includes("Not saved to session"), "latex-preview should not show transient-storage help text in the widget");
+	assert(!fallbackLines.includes("inline math stays in prose"), "latex-preview should not show inline/display policy help text in the widget");
 	assert(fallbackLines.includes("LaTeX preview blocked"), "latex-preview should show blocked render errors in the widget");
 	assert(fallbackLines.includes("TeX: \\input{x}"), "latex-preview should include original TeX in render fallbacks");
 	await handlers.get("agent_end")(

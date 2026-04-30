@@ -13,11 +13,9 @@ const PREVIEW_AUTO_CLEAR_MS = 5 * 60_000;
 const MAX_MATH_WIDTH_CELLS = 72;
 const MIN_MATH_WIDTH_CELLS = 8;
 const PREVIEW_PX_PER_CELL = 18;
-const RENDER_INLINE_MATH_IN_CONTEXT = false;
 const DEFAULT_TEXT_RGB: Rgb = { r: 205, g: 214, b: 244 };
 const DISPLAY_ENVIRONMENT = /^(displaymath|equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)$/;
-const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(displaymath|equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\4\})|\\\(([\s\S]+?)\\\)|(?<!\\)\$(?![\s\d])([^\n$]{1,220}?)(?<![\\\s])\$/g;
-const INLINE_DOLLAR_PATTERN = /(?<!\\)\$(?![\s\d])([^\n$]{1,220}?)(?<![\\\s])\$/g;
+const DISPLAY_MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(displaymath|equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\4\})/g;
 const MAX_TEX_SNIPPET_CHARS = 5_000;
 const BLOCKED_LATEX_COMMANDS = [
 	"addbibresource",
@@ -279,20 +277,6 @@ function blankMarkdownCode(text: string): string {
 	return output;
 }
 
-function collectMatches(source: string, regex: RegExp, display: boolean, delimiter: string, wholeMatch = false): LatexSnippet[] {
-	const snippets: LatexSnippet[] = [];
-	for (const match of source.matchAll(regex)) {
-		const tex = (wholeMatch ? match[0] : match[1])?.trim();
-		if (!tex) continue;
-		snippets.push({ tex, display, delimiter });
-	}
-	return snippets;
-}
-
-function normalizeSnippetKey(snippet: LatexSnippet): string {
-	return `${snippet.display ? "display" : "inline"}:${snippet.tex.replace(/\s+/g, " ").trim()}`;
-}
-
 function isUsefulInlineMath(tex: string): boolean {
 	if (tex.length > 220) return false;
 	if (/^\d+(?:\.\d{2})?$/.test(tex.trim())) return false;
@@ -303,43 +287,7 @@ function snippetFromRegexMatch(match: RegExpMatchArray): LatexSnippet | undefine
 	if (match[1]) return { tex: match[1].trim(), display: true, delimiter: "$$" };
 	if (match[2]) return { tex: match[2].trim(), display: true, delimiter: "\\[" };
 	if (match[3]) return { tex: match[3].trim(), display: true, delimiter: "environment" };
-	if (match[5]?.trim() && isUsefulInlineMath(match[5].trim())) {
-		return { tex: match[5].trim(), display: false, delimiter: "\\(" };
-	}
-	if (match[6]?.trim() && isUsefulInlineMath(match[6].trim())) {
-		return { tex: match[6].trim(), display: false, delimiter: "$" };
-	}
 	return undefined;
-}
-
-export function extractLatexSnippets(text: string, maxSnippets = Number.POSITIVE_INFINITY): { snippets: LatexSnippet[]; truncated: boolean } {
-	const source = blankMarkdownCode(text);
-	const displayPatterns: Array<[RegExp, string, boolean?]> = [
-		[/\$\$([\s\S]+?)\$\$/g, "$$"],
-		[/\\\[([\s\S]+?)\\\]/g, "\\["],
-		[/\\begin\{(displaymath|equation\*?|align\*?|gather\*?|multline\*?|flalign\*?|alignat\*?)\}[\s\S]*?\\end\{\1\}/g, "environment", true],
-	];
-
-	const collected: LatexSnippet[] = [];
-	let inlineSource = source;
-	for (const [regex, delimiter, wholeMatch] of displayPatterns) {
-		collected.push(...collectMatches(source, regex, true, delimiter, Boolean(wholeMatch)));
-		inlineSource = inlineSource.replace(regex, " ");
-	}
-
-	collected.push(...collectMatches(inlineSource, /\\\(([\s\S]+?)\\\)/g, false, "\\("));
-	collected.push(...collectMatches(inlineSource, INLINE_DOLLAR_PATTERN, false, "$").filter((snippet) => isUsefulInlineMath(snippet.tex)));
-
-	const seen = new Set<string>();
-	const unique: LatexSnippet[] = [];
-	for (const snippet of collected) {
-		const key = normalizeSnippetKey(snippet);
-		if (seen.has(key)) continue;
-		seen.add(key);
-		unique.push(snippet);
-	}
-
-	return { snippets: unique.slice(0, maxSnippets), truncated: unique.length > maxSnippets };
 }
 
 function displayBody(tex: string): string {
@@ -1025,12 +973,11 @@ export async function buildPreviewPayload(
 	let cursor = 0;
 	for (const span of markdownProseSpans(text)) {
 		const prose = text.slice(span.start, span.end);
-		for (const match of prose.matchAll(MATH_PATTERN)) {
+		for (const match of prose.matchAll(DISPLAY_MATH_PATTERN)) {
 			const start = span.start + (match.index ?? 0);
 			const raw = match[0];
 			const snippet = snippetFromRegexMatch(match);
 			if (!snippet) continue;
-			if (!snippet.display && !RENDER_INLINE_MATH_IN_CONTEXT) continue;
 
 			pushMarkdown(blocks, text.slice(cursor, start));
 			const result = await renderSnippet(snippet, renderOptions);
@@ -1186,11 +1133,7 @@ function latexPreviewComponent(payload: PreviewPayload, theme: Theme) {
 	const container = new Container();
 	const mdTheme = getMarkdownTheme();
 	container.addChild(new Spacer(1));
-	container.addChild(new Text(theme.fg("accent", theme.bold("Rendered LaTeX preview (transient)")), 1, 0));
-	container.addChild(new Text(theme.fg("dim", "Not saved to session; clears on next prompt, reload, or timeout."), 1, 0));
-	if (!RENDER_INLINE_MATH_IN_CONTEXT) {
-		container.addChild(new Text(theme.fg("dim", "Display equations are rendered in context; inline math stays in prose."), 1, 0));
-	}
+	container.addChild(new Text(theme.fg("accent", theme.bold("Rendered LaTeX preview")), 1, 0));
 	let mathIndex = 0;
 	for (const block of payload.blocks) {
 		if (block.type === "markdown") {
