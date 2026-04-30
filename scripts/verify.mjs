@@ -128,9 +128,24 @@ function runSupportModuleTests() {
 	}
 
 	const shell = loadExtensionModule("extensions/safety-gate-lib/shell.ts");
-	assert(shell.extractWritePathTokens("printf ok>./out.txt").includes("./out.txt"), "shell parser should catch adjacent output redirection targets");
-	assert(shell.extractPathTokens("node ./scripts/foo.js").includes("./scripts/foo.js"), "shell parser should extract relative path operands");
-	assert(shell.looksRecursiveTraversalCommand("grep -R needle ."), "shell parser should detect recursive grep traversal");
+	for (const [command, expected] of [
+		["printf ok>./out.txt", "./out.txt"],
+		["echo ok 2>../err.log", "../err.log"],
+		["cat < ~/.ssh/config", "~/.ssh/config"],
+		["tee .env", ".env"],
+	]) {
+		assert(shell.extractWritePathTokens(command).includes(expected), `shell parser should extract write/redirection target ${expected}`);
+	}
+	for (const [command, expected] of [
+		["node ./scripts/foo.js", "./scripts/foo.js"],
+		["cat $HOME/.ssh/config", "$HOME/.ssh/config"],
+		["rg token ~/.config/gh", "~/.config/gh"],
+	]) {
+		assert(shell.extractPathTokens(command).includes(expected), `shell parser should extract path token ${expected}`);
+	}
+	for (const command of ["grep -R needle .", "find . -type f", "ls -R .", "rg needle ."]) {
+		assert(shell.looksRecursiveTraversalCommand(command), `shell parser should detect recursive traversal: ${command}`);
+	}
 }
 
 runSupportModuleTests();
