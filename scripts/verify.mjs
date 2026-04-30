@@ -87,18 +87,32 @@ function loadExtension(relativePath) {
 	return factory;
 }
 
-for (const extension of readdirSync(join(root, "extensions")).filter((file) => /\.[cm]?[jt]s$/.test(file))) {
+function extensionEntrypoints() {
+	return readdirSync(join(root, "extensions"), { withFileTypes: true })
+		.flatMap((entry) => {
+			if (entry.isFile() && /\.[cm]?[jt]s$/.test(entry.name)) return [join("extensions", entry.name)];
+			if (!entry.isDirectory()) return [];
+			const indexPath = join("extensions", entry.name, "index.ts");
+			return existsSync(join(root, indexPath)) ? [indexPath] : [];
+		})
+		.sort();
+}
+
+const extensionEntries = extensionEntrypoints();
+assert(extensionEntries.includes(join("extensions", "ui-polish", "index.ts")), "verify should discover directory-style ui-polish extension");
+
+for (const extension of extensionEntries) {
 	try {
-		loadExtension(join("extensions", extension));
+		loadExtension(extension);
 	} catch (error) {
 		fail(`${extension} failed to load: ${error.stack ?? error.message}`);
 	}
 }
 
 function runFooterUsageTests() {
-	const footer = loadExtensionModule("extensions/catppuccin-footer.ts");
-	assert(typeof footer.calculateFooterUsage === "function", "catppuccin-footer should export calculateFooterUsage");
-	assert(typeof footer.compactExtensionStatusItems === "function", "catppuccin-footer should export compactExtensionStatusItems");
+	const footer = loadExtensionModule("extensions/ui-polish/index.ts");
+	assert(typeof footer.calculateFooterUsage === "function", "ui-polish should export calculateFooterUsage");
+	assert(typeof footer.compactExtensionStatusItems === "function", "ui-polish should export compactExtensionStatusItems");
 	const usage = footer.calculateFooterUsage([
 		{
 			type: "message",

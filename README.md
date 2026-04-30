@@ -15,8 +15,7 @@ Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and ses
 
 ```text
 extensions/
-  aesthetic-polish.ts   Blue-forward Catppuccin accents and rounded prompt boxes
-  catppuccin-footer.ts  Responsive Catppuccin footer
+  ui-polish/            Rounded prompt boxes and responsive Catppuccin footer
   harness-commands.ts   /mode, /status, /checkpoint, /skills-audit, skill routing, and cleanup guards
   safety-gate.ts        Secret/private-file egress guardrails and git finalization checks
   session-continuity.ts Automatic checkpoints and custom compaction summaries

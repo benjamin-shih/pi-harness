@@ -153,7 +153,7 @@ class RoundedPromptEditor extends CustomEditor {
 	}
 }
 
-export default function aestheticPolish(pi: ExtensionAPI) {
+export function installPromptPolish(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		patchUserMessageComponent(() => ctx.ui.theme);
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => new RoundedPromptEditor(tui, theme, keybindings));

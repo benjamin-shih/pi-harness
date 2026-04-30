@@ -17,6 +17,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Post-change cleanup reminders for coding/file edits plus a one-shot major-change cleanup guard.
 
 ### Changed
+- Folded prompt/card styling and the Catppuccin footer into one `ui-polish` extension module.
 - Folded `/skills-audit` into `harness-commands.ts` and git-finalization checks into `safety-gate.ts` to reduce core extension count.
 - Catppuccin theme now uses blue/sapphire-forward UI accents instead of mauve-heavy defaults.
 - Footer keeps its original mauve/pink segment colors while the rest of the theme stays blue-forward.

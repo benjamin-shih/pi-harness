@@ -229,7 +229,7 @@ export function calculateFooterUsage(entries: readonly unknown[]): UsageTotals {
 	return totals;
 }
 
-export default function catppuccinFooter(pi: ExtensionAPI) {
+export function installCatppuccinFooter(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			const unsub = footerData.onBranchChange(() => tui.requestRender());
