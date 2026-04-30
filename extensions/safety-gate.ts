@@ -119,7 +119,9 @@ async function pathSafety(pi: ExtensionAPI, rawPath: string | undefined, cwd: st
 	}
 }
 
-function extractPathTokens(command: string): string[] {
+const SHELL_COMMAND_WORD_RE = /^(?:cat|bat|less|more|head|tail|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl|curl|wget|scp|sftp|rsync|rclone|git|aws|gh|make|npm|pnpm|yarn|cd)$/;
+
+function extractPathTokens(command: string, includePlainOperands = false): string[] {
 	const tokens = new Set<string>();
 	const pathLike = /(?:^|[\s"'`=:(])(@?(?:~|\$HOME|\.{1,2}|\/)[^\s"'`;&|)]+)/g;
 	let match: RegExpExecArray | null;
@@ -131,10 +133,34 @@ function extractPathTokens(command: string): string[] {
 	for (const token of command.split(/\s+/)) {
 		const cleaned = cleanPathToken(token);
 		if (!cleaned || cleaned.startsWith("-") || /^[A-Z_]+=/.test(cleaned) || /^[a-z]+:\/\//i.test(cleaned)) continue;
-		if (/^(?:cat|bat|less|more|head|tail|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl|curl|wget|scp|sftp|rsync|rclone|git|aws|gh)$/.test(cleaned)) continue;
-		if (/[/~.$]|(?:env|rsa|ed25519|ecdsa|dsa|npmrc|pypirc|netrc|credentials?|secrets?|tokens?|wallet|private-key|service-account|auth\.json|\.pem|\.key|\.p12|\.pfx)$/i.test(cleaned)) tokens.add(cleaned);
+		if (SHELL_COMMAND_WORD_RE.test(cleaned)) continue;
+		if (includePlainOperands || /[/~.$]|(?:env|rsa|ed25519|ecdsa|dsa|npmrc|pypirc|netrc|credentials?|secrets?|tokens?|wallet|private-key|service-account|auth\.json|\.pem|\.key|\.p12|\.pfx)$/i.test(cleaned)) tokens.add(cleaned);
 	}
 
+	return [...tokens];
+}
+
+function extractRedirectionTargets(command: string): string[] {
+	const targets = new Set<string>();
+	const re = /(?:\d*(?:>>?|<)|&>)\s*([^\s;&|)]+)/g;
+	let match: RegExpExecArray | null;
+	while ((match = re.exec(command))) {
+		const token = cleanPathToken(match[1] ?? "");
+		if (token) targets.add(token);
+	}
+	return [...targets];
+}
+
+function looksFileMutationCommand(command: string): boolean {
+	return /(^|[;&|()\s])(?:rm|mv|cp|touch|mkdir|rmdir|tee)\b/.test(command)
+		|| /\b(?:sed|perl)\s+[^\n]*\s-i\b/.test(command);
+}
+
+function extractWritePathTokens(command: string): string[] {
+	const tokens = new Set(extractRedirectionTargets(command));
+	if (looksFileMutationCommand(command)) {
+		for (const token of extractPathTokens(command, true)) tokens.add(token);
+	}
 	return [...tokens];
 }
 
@@ -145,9 +171,9 @@ async function commandMentionsSensitivePath(pi: ExtensionAPI, command: string, c
 	return false;
 }
 
-async function commandMentionsBlockedPath(pi: ExtensionAPI, command: string, cwd: string, operation: PolicyOperation = "write", recursive = false): Promise<boolean> {
-	for (const token of extractPathTokens(command)) {
-		if ((await pathSafety(pi, token, cwd, operation, recursive))?.action === "block") return true;
+async function commandMentionsBlockedWritePath(pi: ExtensionAPI, command: string, cwd: string): Promise<boolean> {
+	for (const token of extractWritePathTokens(command)) {
+		if ((await pathSafety(pi, token, cwd, "write", true))?.action === "block") return true;
 	}
 	return false;
 }
@@ -340,9 +366,9 @@ function redactToolContent(content: unknown): { content: unknown; changed: boole
 }
 
 function looksRecursiveTraversalCommand(command: string): boolean {
-	return /\bgrep\b[\s\S]*\s-[A-Za-z]*r[A-Za-z]*\b/i.test(command)
+	return /\bgrep\b[\s\S]*(?:\s-[A-Za-z]*r[A-Za-z]*\b|\s--(?:dereference-)?recursive\b)/i.test(command)
 		|| /\b(?:rg|ripgrep|fd|find|tree)\b/i.test(command)
-		|| /\bls\b[\s\S]*\s-[A-Za-z]*R[A-Za-z]*\b/.test(command);
+		|| /\bls\b[\s\S]*(?:\s-[A-Za-z]*R[A-Za-z]*\b|\s--recursive\b)/.test(command);
 }
 
 async function guardShellCommand(pi: ExtensionAPI, cwd: string, command: string, forUserBash = false) {
@@ -351,8 +377,8 @@ async function guardShellCommand(pi: ExtensionAPI, cwd: string, command: string,
 
 	const mutating = looksMutatingBash(command);
 	if (mutating && (
-		(await pathSafety(pi, ".", cwd, "write", true))?.action === "block" ||
-		await commandMentionsBlockedPath(pi, command, cwd, "write", true)
+		(await pathSafety(pi, ".", cwd, "write"))?.action === "block" ||
+		await commandMentionsBlockedWritePath(pi, command, cwd)
 	)) {
 		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
 	}
