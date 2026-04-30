@@ -179,6 +179,8 @@ export function formatMemorySpineDiagnostics(diagnostics: MemorySpineDiagnostics
 			`- latest harness compaction budget: prompt ${compaction.promptSizing?.promptChars ?? "unknown"}/${compaction.promptSizing?.promptBudgetChars ?? "unknown"} chars, max summary ${compaction.promptSizing?.maxSummaryTokens ?? "unknown"} tokens`,
 		);
 		if (options.verbose && compaction.error) lines.push(`- latest compaction error: ${compaction.error}`);
+	} else if (diagnostics.latestCompaction) {
+		lines.push(`- latest compaction: ${diagnostics.latestCompaction.timestamp} (${diagnostics.latestCompaction.source ?? "pi/default"})`);
 	}
 
 	lines.push(`- compaction diagnostics: ${diagnostics.diagnosticCount}`);
