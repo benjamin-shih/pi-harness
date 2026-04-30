@@ -321,9 +321,9 @@ function gitFinalizationStateChanged(before: GitFinalizationState | undefined, a
 }
 
 function looksMutatingBash(command: string): boolean {
-	return /(^|[;&|()\s])(?:rm|mv|cp|touch|mkdir|rmdir|tee|python|python3|node|npm|pnpm|yarn|make|lualatex|latexmk|git\s+(?:add|commit|push|reset|checkout|switch|merge|rebase|stash|clean))\b/.test(command)
-		|| /(^|[^<])>{1,2}\s*[^&]/.test(command)
-		|| /\b(?:sed|perl)\s+[^\n]*\s-i\b/.test(command);
+	return looksFileMutationCommand(command)
+		|| /(^|[;&|()\s])(?:python|python3|node|npm|pnpm|yarn|make|lualatex|latexmk|git\s+(?:add|commit|push|reset|checkout|switch|merge|rebase|stash|clean))\b/.test(command)
+		|| /(^|[^<])>{1,2}\s*[^&]/.test(command);
 }
 
 function needsGitFinalization(state: GitFinalizationState, before: GitFinalizationState | undefined): boolean {
