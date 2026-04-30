@@ -6,6 +6,7 @@ export type TaskWeight = "trivial" | "standard" | "complex";
 type BindAction = "created" | "claimed_existing" | "refreshed_existing" | "skipped" | "blocked" | "error";
 
 type BindResult = {
+	task_api_version?: number;
 	action: BindAction;
 	bound: boolean;
 	created: boolean;
@@ -19,6 +20,7 @@ type BindResult = {
 };
 
 type TaskClassification = {
+	task_api_version?: number;
 	weight: TaskWeight;
 	binding_mode: "auto" | "skip" | "reuse_only";
 	reasons: string[];
@@ -26,8 +28,31 @@ type TaskClassification = {
 
 type ExecResult = Awaited<ReturnType<ExtensionAPI["exec"]>>;
 
+type TaskApiInfo = {
+	task_api_version: number;
+	agents_shared_root: string;
+	tasks_root: string;
+	scripts_dir: string;
+	capabilities: string[];
+};
+
+type CandidateRootResult = {
+	task_api_version: number;
+	candidate: string;
+	cwd: string;
+	project_root: string;
+	bindable: boolean;
+	safe_to_auto_create: boolean;
+	bootstrap_path: boolean;
+	auto_create: "auto" | "never";
+	reason: string;
+};
+
 type TaskLayerState = {
 	sessionId: string;
+	apiChecked: boolean;
+	apiAvailable: boolean;
+	apiInfo?: TaskApiInfo;
 	currentPromptWeight: TaskWeight;
 	currentBindingMode: TaskClassification["binding_mode"];
 	currentPromptNeedsTask: boolean;
@@ -41,9 +66,8 @@ type TaskLayerState = {
 	lastHeartbeatAt: number;
 };
 
-const AGENTS_ROOT = "/Users/benjaminshih/.agents";
-const SCRIPTS_DIR = path.join(AGENTS_ROOT, "scripts");
-const HOME = path.dirname(AGENTS_ROOT);
+const DEFAULT_AGENTS_ROOT = "/Users/benjaminshih/.agents";
+const SUPPORTED_TASK_API_VERSION = 1;
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const SCRIPT_TIMEOUT_MS = 10_000;
 
@@ -54,6 +78,8 @@ function emptyActivity() {
 function initialState(): TaskLayerState {
 	return {
 		sessionId: "pi-unknown-session",
+		apiChecked: false,
+		apiAvailable: false,
 		currentPromptWeight: "standard",
 		currentBindingMode: "auto",
 		currentPromptNeedsTask: false,
@@ -63,8 +89,12 @@ function initialState(): TaskLayerState {
 	};
 }
 
+function agentsRoot(): string {
+	return process.env.AGENTS_SHARED_ROOT || DEFAULT_AGENTS_ROOT;
+}
+
 function scriptPath(name: string): string {
-	return path.join(SCRIPTS_DIR, name);
+	return path.join(agentsRoot(), "scripts", name);
 }
 
 function modelSummary(ctx: ExtensionContext): string | undefined {
@@ -83,30 +113,6 @@ function safeSessionId(ctx: ExtensionContext): string {
 	return `pi-${process.pid}`;
 }
 
-function isHomePath(candidate: string): boolean {
-	return path.resolve(candidate) === path.resolve(HOME);
-}
-
-function isInsidePath(candidate: string, parent: string): boolean {
-	const relative = path.relative(path.resolve(parent), path.resolve(candidate));
-	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function isBootstrapPath(candidate: string): boolean {
-	const resolved = path.resolve(candidate);
-	return (
-		resolved === path.join(HOME, "CLAUDE.md") ||
-		resolved === path.join(HOME, ".pi", "agent", "AGENTS.md") ||
-		isInsidePath(resolved, path.join(HOME, ".claude")) ||
-		isInsidePath(resolved, path.join(HOME, ".agents", "skills")) ||
-		isInsidePath(resolved, path.join(HOME, ".agents", "shared"))
-	);
-}
-
-function fallbackClassification(weight: TaskWeight): TaskClassification {
-	return { weight, binding_mode: weight === "trivial" ? "skip" : "auto", reasons: ["pi harness fallback classification"] };
-}
-
 function parseJson<T>(text: string): T | undefined {
 	try {
 		return JSON.parse(text) as T;
@@ -119,30 +125,57 @@ async function runScript(pi: ExtensionAPI, scriptName: string, args: string[], c
 	return pi.exec("bash", [scriptPath(scriptName), ...args], { cwd, timeout });
 }
 
-async function classifyTask(pi: ExtensionAPI, prompt: string, cwd: string, fallbackWeight: TaskWeight): Promise<TaskClassification> {
+async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd: string): Promise<boolean> {
+	if (state.apiChecked) return state.apiAvailable;
+	state.apiChecked = true;
 	try {
-		const result = await runScript(pi, "task-classify.sh", ["--prompt-text", prompt, "--cwd", cwd], cwd, 5_000);
-		if (result.code !== 0) return fallbackClassification(fallbackWeight);
-		return parseJson<TaskClassification>(result.stdout) ?? fallbackClassification(fallbackWeight);
-	} catch {
-		return fallbackClassification(fallbackWeight);
+		const result = await runScript(pi, "task-api.sh", ["info"], cwd, 5_000);
+		if (result.code !== 0) {
+			state.lastError = shortError(result);
+			return false;
+		}
+		const payload = parseJson<TaskApiInfo>(result.stdout);
+		if (!payload || payload.task_api_version !== SUPPORTED_TASK_API_VERSION) {
+			state.lastError = `unsupported AGENTS task API version: ${payload?.task_api_version ?? "unknown"}`;
+			return false;
+		}
+		state.apiInfo = payload;
+		state.apiAvailable = true;
+		return true;
+	} catch (error) {
+		state.lastError = error instanceof Error ? error.message : String(error);
+		return false;
 	}
 }
 
-async function resolveProjectRoot(pi: ExtensionAPI, candidate: string, cwd: string): Promise<string | undefined> {
+async function candidateRoot(pi: ExtensionAPI, candidate: string, cwd: string): Promise<CandidateRootResult | undefined> {
 	try {
-		const result = await runScript(pi, "resolve-project-root.sh", [candidate], cwd, 5_000);
+		const result = await runScript(pi, "task-candidate-root.sh", ["--candidate", candidate, "--cwd", cwd], cwd, 5_000);
 		if (result.code !== 0) return undefined;
-		return result.stdout.trim() || undefined;
+		const payload = parseJson<CandidateRootResult>(result.stdout);
+		if (!payload || payload.task_api_version !== SUPPORTED_TASK_API_VERSION) return undefined;
+		return payload;
 	} catch {
 		return undefined;
 	}
 }
 
-function bindAutoCreateMode(state: TaskLayerState, bindCwd: string): "auto" | "never" {
+async function classifyTask(pi: ExtensionAPI, prompt: string, cwd: string, fallbackWeight: TaskWeight): Promise<TaskClassification | undefined> {
+	try {
+		const result = await runScript(pi, "task-classify.sh", ["--prompt-text", prompt, "--cwd", cwd], cwd, 5_000);
+		if (result.code !== 0) return undefined;
+		const payload = parseJson<TaskClassification>(result.stdout);
+		if (!payload) return undefined;
+		return payload.task_api_version === SUPPORTED_TASK_API_VERSION ? payload : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function bindAutoCreateMode(state: TaskLayerState, suggested: "auto" | "never"): "auto" | "never" {
 	if (state.currentBindingMode === "skip" || state.currentBindingMode === "reuse_only") return "never";
 	if (state.currentPromptWeight === "trivial") return "never";
-	return isHomePath(bindCwd) ? "never" : "auto";
+	return suggested;
 }
 
 function shortError(result: ExecResult): string {
@@ -165,12 +198,10 @@ function shellUnquote(value: string): string {
 	return value.replace(/^['"]|['"]$/g, "");
 }
 
-function normalizeCandidatePath(candidate: string, cwd: string): string {
-	let p = shellUnquote(candidate.trim());
-	if (p === "~") p = HOME;
-	else if (p.startsWith("~/")) p = path.join(HOME, p.slice(2));
-	else if (!path.isAbsolute(p)) p = path.resolve(cwd, p);
-	return p;
+function normalizeCandidatePath(candidate: string, _cwd: string): string {
+	// Keep candidate-root normalization in `.agents` so home/bootstrap policy has
+	// one owner. In particular, do not expand `~` with process.env.HOME here.
+	return shellUnquote(candidate.trim());
 }
 
 function pathFromTool(event: ToolResultEvent, fallbackCwd: string): string | undefined {
@@ -198,8 +229,8 @@ function activityFromTool(state: TaskLayerState, event: ToolResultEvent): void {
 export function createAgentsTaskLayer() {
 	const state = initialState();
 
-	async function bind(pi: ExtensionAPI, ctx: ExtensionContext, bindCwd: string): Promise<BindResult | undefined> {
-		const autoCreate = bindAutoCreateMode(state, bindCwd);
+	async function bind(pi: ExtensionAPI, ctx: ExtensionContext, bindCwd: string, suggestedAutoCreate: "auto" | "never" = "auto"): Promise<BindResult | undefined> {
+		const autoCreate = bindAutoCreateMode(state, suggestedAutoCreate);
 		try {
 			const args = [
 				"--runtime", "pi",
@@ -221,6 +252,11 @@ export function createAgentsTaskLayer() {
 			if (!payload) {
 				state.lastAction = "error";
 				state.lastError = "task-bind returned invalid JSON";
+				return undefined;
+			}
+			if (payload.task_api_version !== SUPPORTED_TASK_API_VERSION) {
+				state.lastAction = "error";
+				state.lastError = `task-bind returned unsupported API version: ${payload.task_api_version ?? "missing"}`;
 				return undefined;
 			}
 			state.lastAction = payload.action;
@@ -278,7 +314,7 @@ export function createAgentsTaskLayer() {
 	}
 
 	return {
-		async sessionStart(_pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+		async sessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 			state.sessionId = safeSessionId(ctx);
 			state.currentPromptWeight = "standard";
 			state.currentBindingMode = "auto";
@@ -286,31 +322,36 @@ export function createAgentsTaskLayer() {
 			state.meaningfulActivity = false;
 			state.activity = emptyActivity();
 			state.lastHeartbeatAt = 0;
+			await ensureTaskApi(pi, state, ctx.cwd);
 		},
 
 		async beforeAgentStart(pi: ExtensionAPI, prompt: string, fallbackWeight: TaskWeight, ctx: ExtensionContext): Promise<string | undefined> {
+			if (!(await ensureTaskApi(pi, state, ctx.cwd))) return undefined;
 			state.active = undefined;
 			state.context = undefined;
 			state.currentPromptWeight = fallbackWeight;
 			state.activity = emptyActivity();
 			state.meaningfulActivity = false;
 			const classification = await classifyTask(pi, prompt, ctx.cwd, fallbackWeight);
+			if (!classification) {
+				state.lastError = "task-classify returned an unsupported AGENTS task API version";
+				return undefined;
+			}
 			state.currentPromptWeight = classification.weight;
 			state.currentBindingMode = classification.binding_mode;
 			state.currentPromptNeedsTask = classification.binding_mode !== "skip" && classification.weight !== "trivial";
 			if (!state.currentPromptNeedsTask) return undefined;
-			await bind(pi, ctx, ctx.cwd);
+			const decision = await candidateRoot(pi, ctx.cwd, ctx.cwd);
+			await bind(pi, ctx, decision?.project_root || ctx.cwd, decision?.auto_create || "never");
 			return state.context ? contextBlock(state.context) : undefined;
 		},
 
 		async toolResult(pi: ExtensionAPI, event: ToolResultEvent, ctx: ExtensionContext): Promise<void> {
 			activityFromTool(state, event);
-			if (!state.active && state.currentPromptNeedsTask) {
+			if (!state.active && state.currentPromptNeedsTask && state.apiAvailable) {
 				const candidate = pathFromTool(event, ctx.cwd);
-				if (candidate && !isBootstrapPath(candidate)) {
-					const projectRoot = await resolveProjectRoot(pi, candidate, ctx.cwd);
-					if (projectRoot && !isHomePath(projectRoot)) await bind(pi, ctx, projectRoot);
-				}
+				const decision = candidate ? await candidateRoot(pi, candidate, ctx.cwd) : undefined;
+				if (decision?.bindable) await bind(pi, ctx, decision.project_root, decision.auto_create);
 			}
 			await heartbeat(pi, ctx);
 		},
@@ -345,6 +386,8 @@ export function createAgentsTaskLayer() {
 			return [
 				"## AGENTS task binding",
 				...statusLines(),
+				`- task API: ${state.apiAvailable ? `v${state.apiInfo?.task_api_version ?? "?"}` : "unavailable"}`,
+				`- agents root: ${state.apiInfo?.agents_shared_root ?? agentsRoot()}`,
 				`- prompt task mode: ${state.currentPromptWeight}/${state.currentBindingMode}`,
 				`- current turn activity: reads ${state.activity.reads}, writes ${state.activity.writes}, commands ${state.activity.commands}, errors ${state.activity.errors}`,
 				...(state.lastError ? [`- last task-layer error: ${state.lastError}`] : []),

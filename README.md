@@ -51,7 +51,9 @@ To enable it globally while keeping it outside the core harness package:
 
 ## Ambient task binding
 
-Pi reuses the shared `/Users/benjaminshih/.agents/tasks` control plane. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, and release current-session leases on shutdown. Broad home-directory sessions are reuse-only until concrete project file activity identifies a safer project scope.
+Pi reuses the shared `/Users/benjaminshih/.agents/tasks` control plane through the versioned `.agents` task API. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, and release current-session leases on shutdown.
+
+The shared `.agents` scripts own project-root and bootstrap-path safety policy via `task-api.sh info` and `task-candidate-root.sh`; the TypeScript harness is only the Pi runtime adapter. Set `AGENTS_SHARED_ROOT` to point at an alternate `.agents` checkout. Tests can set `TASKS_ROOT` to isolate task packages.
 
 ## Commands
 
@@ -110,7 +112,8 @@ Cross-runtime task-script changes live in `/Users/benjaminshih/.agents`; validat
 
 ```bash
 cd /Users/benjaminshih/.agents
-bash scripts/smoke-test.sh
+make verify-ci      # portable
+make verify-local   # includes machine-local Codex schema checks
 ```
 
 ## Remote install later

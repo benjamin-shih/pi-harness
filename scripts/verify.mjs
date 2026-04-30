@@ -159,6 +159,70 @@ runFooterUsageTests();
 async function runHarnessCommandBehaviorTests() {
 	const harnessCommands = loadExtension("extensions/harness-commands.ts");
 
+	async function runRealAgentsTaskLayerTest() {
+		const agentsRoot = process.env.AGENTS_SHARED_ROOT || "/Users/benjaminshih/.agents";
+		if (!existsSync(join(agentsRoot, "scripts", "task-api.sh"))) return;
+		const tempRoot = mkdtempSync(join(tmpdir(), "pi-agents-task-layer-"));
+		const tasksRoot = join(tempRoot, "tasks");
+		const projectRoot = join(tempRoot, "project");
+		mkdirSync(projectRoot, { recursive: true });
+		writeFileSync(join(projectRoot, "AGENTS.md"), "# test project\n");
+		writeFileSync(join(projectRoot, "README.md"), "hello\n");
+		const previousAgentsRoot = process.env.AGENTS_SHARED_ROOT;
+		const previousTasksRoot = process.env.TASKS_ROOT;
+		process.env.AGENTS_SHARED_ROOT = agentsRoot;
+		process.env.TASKS_ROOT = tasksRoot;
+		try {
+			const handlers = new Map();
+			harnessCommands({
+				on: (event, handler) => handlers.set(event, handler),
+				registerCommand: () => {},
+				getAllTools: () => [],
+				getActiveTools: () => ["read", "bash"],
+				getThinkingLevel: () => "xhigh",
+				exec: async (cmd, args, options) => {
+					try {
+						const stdout = execFileSync(cmd, args, { cwd: options?.cwd || projectRoot, env: process.env, encoding: "utf8", timeout: options?.timeout || 10_000 });
+						return { code: 0, stdout, stderr: "", killed: false };
+					} catch (error) {
+						return { code: error.status ?? 1, stdout: String(error.stdout || ""), stderr: String(error.stderr || error.message || ""), killed: false };
+					}
+				},
+				sendUserMessage: () => {},
+			});
+			const ctx = {
+				cwd: projectRoot,
+				model: { provider: "test", id: "model" },
+				getContextUsage: () => ({ tokens: 10, contextWindow: 100, percent: 10 }),
+				sessionManager: {
+					getBranch: () => [],
+					getSessionId: () => "real-script-session",
+					getSessionFile: () => join(tempRoot, "session.jsonl"),
+					getLeafId: () => undefined,
+				},
+			};
+			await handlers.get("session_start")({ reason: "startup" }, ctx);
+			const result = await handlers.get("before_agent_start")({ prompt: "Analyze real AGENTS task layer integration", systemPrompt: "base" }, ctx);
+			assert(result?.systemPrompt.includes("## Active AGENTS Task Context"), "real .agents task-layer test should inject task context");
+			await handlers.get("tool_result")({ toolName: "read", input: { path: join(projectRoot, "README.md") }, isError: false }, ctx);
+			await handlers.get("agent_end")({}, ctx);
+			await handlers.get("session_shutdown")({ reason: "quit" }, ctx);
+			const taskDirs = readdirSync(tasksRoot).filter((name) => !name.startsWith("."));
+			assert(taskDirs.length === 1, "real .agents task-layer test should create exactly one temp task");
+			const taskDir = join(tasksRoot, taskDirs[0]);
+			const events = readFileSync(join(taskDir, "events.jsonl"), "utf8");
+			assert(events.includes('"type": "checkpoint"'), "real .agents task-layer test should checkpoint through real scripts");
+			const lease = JSON.parse(readFileSync(join(taskDir, "lease.json"), "utf8"));
+			assert(Boolean(lease.released_at), "real .agents task-layer test should release the temp task lease on shutdown");
+		} finally {
+			if (previousAgentsRoot === undefined) delete process.env.AGENTS_SHARED_ROOT;
+			else process.env.AGENTS_SHARED_ROOT = previousAgentsRoot;
+			if (previousTasksRoot === undefined) delete process.env.TASKS_ROOT;
+			else process.env.TASKS_ROOT = previousTasksRoot;
+			rmSync(tempRoot, { recursive: true, force: true });
+		}
+	}
+
 	function execSnapshots(snapshots) {
 		let index = 0;
 		let current = snapshots[0] ?? {};
@@ -305,7 +369,7 @@ async function runHarnessCommandBehaviorTests() {
 	assert(statusMessages[2].customType === "harness-memory", "/memory should send a memory diagnostics message");
 	assert(statusMessages[2].content.includes("latest diagnostic error: context_length_exceeded"), "/memory should include latest diagnostic errors");
 
-	function createTaskHarness({ bindPayload, bindPayloads, classifyPayload, cwd = root }) {
+	function createTaskHarness({ bindPayload, bindPayloads, classifyPayload, classifyResult, cwd = root }) {
 		const handlers = new Map();
 		const execCalls = [];
 		const queuedBindPayloads = [...(bindPayloads ?? [])];
@@ -318,14 +382,20 @@ async function runHarnessCommandBehaviorTests() {
 			exec: async (cmd, args, options) => {
 				execCalls.push({ cmd, args, cwd: options?.cwd });
 				const script = args[0] || "";
-				if (cmd === "bash" && script.endsWith("task-classify.sh")) return { code: 0, stdout: JSON.stringify(classifyPayload ?? { weight: "standard", binding_mode: "auto", reasons: [] }), stderr: "" };
-				if (cmd === "bash" && script.endsWith("resolve-project-root.sh")) {
-					const target = args[1] || cwd;
-					if (target.startsWith(root)) return { code: 0, stdout: `${root}\n`, stderr: "" };
-					if (target.startsWith("/Users/benjaminshih/.agents")) return { code: 0, stdout: "/Users/benjaminshih/.agents\n", stderr: "" };
-					return { code: 0, stdout: "/Users/benjaminshih\n", stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: "/Users/benjaminshih/.agents", tasks_root: "/Users/benjaminshih/.agents/tasks", scripts_dir: "/Users/benjaminshih/.agents/scripts", capabilities: ["candidate_root_policy"] }), stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-classify.sh")) {
+					if (classifyResult) return classifyResult;
+					return { code: 0, stdout: JSON.stringify({ task_api_version: 1, ...(classifyPayload ?? { weight: "standard", binding_mode: "auto", reasons: [] }) }), stderr: "" };
 				}
-				if (cmd === "bash" && script.endsWith("task-bind.sh")) return { code: 0, stdout: JSON.stringify(queuedBindPayloads.length ? queuedBindPayloads.shift() : bindPayload), stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-candidate-root.sh")) {
+					const candidate = args[args.indexOf("--candidate") + 1] || cwd;
+					const candidateCwd = args[args.indexOf("--cwd") + 1] || cwd;
+					const target = candidate === "~" ? "/Users/benjaminshih" : (candidate.startsWith("~/") ? join("/Users/benjaminshih", candidate.slice(2)) : (candidate.startsWith("/") ? candidate : join(candidateCwd, candidate)));
+					const isBootstrap = target === "/Users/benjaminshih/CLAUDE.md" || target.startsWith("/Users/benjaminshih/.claude") || target.startsWith("/Users/benjaminshih/.agents/skills") || target.startsWith("/Users/benjaminshih/.agents/shared");
+					const isProject = target.startsWith(root);
+					return { code: 0, stdout: JSON.stringify({ task_api_version: 1, candidate: target, cwd: candidateCwd, project_root: isProject ? root : "/Users/benjaminshih", bindable: isProject && !isBootstrap, safe_to_auto_create: isProject && !isBootstrap, bootstrap_path: isBootstrap, auto_create: isProject && !isBootstrap ? "auto" : "never", reason: isProject && !isBootstrap ? "project_path" : (isBootstrap ? "bootstrap_path" : "home_root") }), stderr: "" };
+				}
+				if (cmd === "bash" && script.endsWith("task-bind.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, ...(queuedBindPayloads.length ? queuedBindPayloads.shift() : bindPayload) }), stderr: "" };
 				if (cmd === "bash" && script.endsWith("task-context.sh")) return { code: 0, stdout: "Active task context\n- task_id: pi-task\n- next_action: Continue", stderr: "" };
 				if (cmd === "bash" && script.endsWith("task-heartbeat.sh")) return { code: 0, stdout: "", stderr: "" };
 				if (cmd === "bash" && script.endsWith("task-event.sh")) return { code: 0, stdout: JSON.stringify({ type: "checkpoint" }), stderr: "" };
@@ -364,6 +434,36 @@ async function runHarnessCommandBehaviorTests() {
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-event.sh") && call.args.includes("checkpoint")), "pi task layer should append a checkpoint event after meaningful turns");
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-gc.sh") && call.args.includes("--no-sweep")), "pi task layer should release only current-session tasks on shutdown");
 
+	const incompatibleClassify = createTaskHarness({
+		classifyPayload: { task_api_version: 2, weight: "standard", binding_mode: "auto", reasons: [] },
+		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "bad", task_dir: "/tmp/bad", runtime: "pi", session: "pi-session-1", project_root: root },
+	});
+	await incompatibleClassify.handlers.get("session_start")({ reason: "startup" }, incompatibleClassify.ctx);
+	const incompatibleClassifyResult = await incompatibleClassify.handlers.get("before_agent_start")({ prompt: "Implement task binding", systemPrompt: "base" }, incompatibleClassify.ctx);
+	assert(!incompatibleClassifyResult?.systemPrompt?.includes("## Active AGENTS Task Context"), "pi task layer should not bind when task-classify returns an incompatible API version");
+	assert(!incompatibleClassify.execCalls.some((call) => call.args[0]?.endsWith("task-bind.sh")), "pi task layer should skip task-bind after incompatible classification");
+
+	for (const [label, classifyResult] of [
+		["missing version", { code: 0, stdout: JSON.stringify({ weight: "standard", binding_mode: "auto", reasons: [] }), stderr: "" }],
+		["invalid JSON", { code: 0, stdout: "not json", stderr: "" }],
+		["nonzero", { code: 1, stdout: "", stderr: "boom" }],
+	]) {
+		const badClassify = createTaskHarness({
+			classifyResult,
+			bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "bad", task_dir: "/tmp/bad", runtime: "pi", session: "pi-session-1", project_root: root },
+		});
+		await badClassify.handlers.get("session_start")({ reason: "startup" }, badClassify.ctx);
+		await badClassify.handlers.get("before_agent_start")({ prompt: `Implement task binding with ${label}`, systemPrompt: "base" }, badClassify.ctx);
+		assert(!badClassify.execCalls.some((call) => call.args[0]?.endsWith("task-bind.sh")), `pi task layer should skip task-bind after ${label} task-classify output`);
+	}
+
+	const incompatibleBind = createTaskHarness({
+		bindPayload: { task_api_version: 2, action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "bad", task_dir: "/tmp/bad", runtime: "pi", session: "pi-session-1", project_root: root },
+	});
+	await incompatibleBind.handlers.get("session_start")({ reason: "startup" }, incompatibleBind.ctx);
+	const incompatibleBindResult = await incompatibleBind.handlers.get("before_agent_start")({ prompt: "Implement task binding", systemPrompt: "base" }, incompatibleBind.ctx);
+	assert(!incompatibleBindResult?.systemPrompt?.includes("## Active AGENTS Task Context"), "pi task layer should not inject context when task-bind returns an incompatible API version");
+
 	const homeTask = createTaskHarness({
 		cwd: "/Users/benjaminshih",
 		bindPayload: { action: "skipped", bound: false, created: false, blocked: false, reason: "no matching task", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-home", project_root: "/Users/benjaminshih" },
@@ -384,6 +484,8 @@ async function runHarnessCommandBehaviorTests() {
 	await bootstrapTask.handlers.get("session_start")({ reason: "startup" }, bootstrapTask.ctx);
 	await bootstrapTask.handlers.get("before_agent_start")({ prompt: "Implement a harness improvement", systemPrompt: "base" }, bootstrapTask.ctx);
 	await bootstrapTask.handlers.get("tool_result")({ toolName: "read", input: { path: "/Users/benjaminshih/CLAUDE.md" }, isError: false }, bootstrapTask.ctx);
+	await bootstrapTask.handlers.get("tool_result")({ toolName: "read", input: { path: "~/CLAUDE.md" }, isError: false }, bootstrapTask.ctx);
+	await bootstrapTask.handlers.get("tool_result")({ toolName: "read", input: { path: "~/.claude/CLAUDE.md" }, isError: false }, bootstrapTask.ctx);
 	await bootstrapTask.handlers.get("tool_result")({ toolName: "read", input: { path: "/Users/benjaminshih/.agents/skills/SKILLS.md" }, isError: false }, bootstrapTask.ctx);
 	await bootstrapTask.handlers.get("tool_result")({ toolName: "read", input: { path: "/Users/benjaminshih/.agents/shared/AGENT_OPERATING_CONTRACT.md" }, isError: false }, bootstrapTask.ctx);
 	assert(bootstrapTask.execCalls.filter((call) => call.args[0]?.endsWith("task-bind.sh")).length === 1, "pi task layer should not late-bind or auto-create from home bootstrap files");
@@ -510,6 +612,8 @@ async function runHarnessCommandBehaviorTests() {
 	await loop.toolCall({ toolName: "edit", input: { path: "src/foo.ts" } }, {});
 	await loop.agentEnd({}, { cwd: root });
 	assert(loop.sentUserMessages.length === 0, "cleanup guard should not recursively trigger itself");
+
+	await runRealAgentsTaskLayerTest();
 }
 
 await runHarnessCommandBehaviorTests();
