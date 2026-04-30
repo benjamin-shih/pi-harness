@@ -386,7 +386,7 @@ async function runHarnessCommandBehaviorTests() {
 			exec: async (cmd, args, options) => {
 				execCalls.push({ cmd, args, cwd: options?.cwd });
 				const script = args[0] || "";
-				if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: "/Users/benjaminshih/.agents", tasks_root: "/Users/benjaminshih/.agents/tasks", scripts_dir: "/Users/benjaminshih/.agents/scripts", capabilities: ["candidate_root_policy"] }), stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: "/Users/benjaminshih/.agents", tasks_root: "/Users/benjaminshih/.agents/tasks", scripts_dir: "/Users/benjaminshih/.agents/scripts", capabilities: ["candidate_root_policy", "task_artifacts"] }), stderr: "" };
 				if (cmd === "bash" && script.endsWith("task-classify.sh")) {
 					if (classifyResult) return classifyResult;
 					return { code: 0, stdout: JSON.stringify({ task_api_version: 1, ...(classifyPayload ?? { weight: "standard", binding_mode: "auto", reasons: [] }) }), stderr: "" };
@@ -403,6 +403,8 @@ async function runHarnessCommandBehaviorTests() {
 				if (cmd === "bash" && script.endsWith("task-context.sh")) return { code: 0, stdout: "Active task context\n- task_id: pi-task\n- next_action: Continue", stderr: "" };
 				if (cmd === "bash" && script.endsWith("task-heartbeat.sh")) return { code: 0, stdout: "", stderr: "" };
 				if (cmd === "bash" && script.endsWith("task-event.sh")) return { code: 0, stdout: JSON.stringify({ type: "checkpoint" }), stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-artifact-list.sh")) return { code: 0, stdout: JSON.stringify({ artifact_api_version: 1, task_id: args[1], count: 0, artifacts: [] }), stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-artifact-add.sh")) return { code: 0, stdout: JSON.stringify({ artifact_api_version: 1, task_id: args[1], recorded: true, artifact: { id: "artifact-1" } }), stderr: "" };
 				if (cmd === "bash" && script.endsWith("task-status.sh")) return { code: 0, stdout: "{}", stderr: "" };
 				if (cmd === "bash" && script.endsWith("task-gc.sh")) return { code: 0, stdout: "released: pi-task", stderr: "" };
 				return { code: 1, stdout: "", stderr: "" };
@@ -431,10 +433,15 @@ async function runHarnessCommandBehaviorTests() {
 	assert(taskPromptResult.systemPrompt.includes("## Active AGENTS Task Context"), "harness should inject bound AGENTS task context");
 	assert(taskPromptResult.systemPrompt.includes("task_id: pi-task"), "harness should include active task id in context");
 	await boundTask.handlers.get("tool_result")({ toolName: "read", input: { path: "README.md" }, isError: false }, boundTask.ctx);
+	await boundTask.handlers.get("tool_result")({ toolName: "edit", input: { path: "extensions/harness-commands.ts" }, isError: false }, boundTask.ctx);
+	await boundTask.handlers.get("tool_result")({ toolName: "bash", input: { command: "npm run verify" }, isError: false }, boundTask.ctx);
 	await boundTask.handlers.get("agent_end")({}, boundTask.ctx);
 	await boundTask.handlers.get("session_shutdown")({ reason: "quit" }, boundTask.ctx);
 	const bindCall = boundTask.execCalls.find((call) => call.args[0]?.endsWith("task-bind.sh"));
 	assert(bindCall && !bindCall.args.includes("--prompt-text"), "pi task binding should not persist raw prompts by default");
+	const artifactCalls = boundTask.execCalls.filter((call) => call.args[0]?.endsWith("task-artifact-add.sh"));
+	assert(artifactCalls.some((call) => call.args.includes("file_path") && call.args.includes("extensions/harness-commands.ts")), "pi task layer should capture edited path artifacts");
+	assert(artifactCalls.some((call) => call.args.includes("verification_summary") && call.args.includes("npm verify completed")), "pi task layer should capture verification summary artifacts");
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-event.sh") && call.args.includes("checkpoint")), "pi task layer should append a checkpoint event after meaningful turns");
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-gc.sh") && call.args.includes("--no-sweep")), "pi task layer should release only current-session tasks on shutdown");
 

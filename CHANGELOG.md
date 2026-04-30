@@ -5,7 +5,7 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
-- Ambient pi binding to the shared `.agents/tasks` control plane: pi can auto-bind/reuse tasks, inject task context, heartbeat leases, checkpoint meaningful turns, and release current-session tasks on shutdown without slash-command usage.
+- Ambient pi binding to the shared `.agents/tasks` control plane: pi can auto-bind/reuse tasks, inject task context, heartbeat leases, checkpoint meaningful turns, capture safe typed task-artifact metadata, and release current-session tasks on shutdown without slash-command usage.
 - Consumption of the versioned `.agents` task API and candidate-root policy instead of hardcoding bootstrap-path binding rules in TypeScript.
 - Consumption of `.agents` sensitive-path policy via `path-safety.sh`, keeping only Pi-specific UI and git-finalization behavior in the harness.
 - Kitty/terminal titlebar spinner while an agent turn is running; idle tabs keep the compact `π` title.

@@ -36,6 +36,17 @@ type TaskApiInfo = {
 	capabilities: string[];
 };
 
+type ArtifactAddResult = {
+	artifact_api_version?: number;
+	recorded: boolean;
+	reason?: string;
+};
+
+type ArtifactListResult = {
+	artifact_api_version?: number;
+	count: number;
+};
+
 type CandidateRootResult = {
 	task_api_version: number;
 	candidate: string;
@@ -58,6 +69,8 @@ type TaskLayerState = {
 	currentPromptNeedsTask: boolean;
 	meaningfulActivity: boolean;
 	activity: { reads: number; writes: number; commands: number; errors: number };
+	artifactCount: number;
+	artifactSkipped: number;
 	active?: BindResult;
 	context?: string;
 	lastAction?: BindAction;
@@ -68,6 +81,7 @@ type TaskLayerState = {
 
 const DEFAULT_AGENTS_ROOT = "/Users/benjaminshih/.agents";
 const SUPPORTED_TASK_API_VERSION = 1;
+const SUPPORTED_ARTIFACT_API_VERSION = 1;
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const SCRIPT_TIMEOUT_MS = 10_000;
 
@@ -85,6 +99,8 @@ function initialState(): TaskLayerState {
 		currentPromptNeedsTask: false,
 		meaningfulActivity: false,
 		activity: emptyActivity(),
+		artifactCount: 0,
+		artifactSkipped: 0,
 		lastHeartbeatAt: 0,
 	};
 }
@@ -182,6 +198,10 @@ function shortError(result: ExecResult): string {
 	return (result.stderr || result.stdout || `exit ${result.code}`).replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
+function supportsTaskArtifacts(state: TaskLayerState): boolean {
+	return Boolean(state.apiInfo?.capabilities?.includes("task_artifacts"));
+}
+
 function contextBlock(context: string): string {
 	return [
 		"## Active AGENTS Task Context",
@@ -226,6 +246,34 @@ function activityFromTool(state: TaskLayerState, event: ToolResultEvent): void {
 	state.meaningfulActivity ||= Boolean(state.activity.reads || state.activity.writes || state.activity.commands || state.activity.errors);
 }
 
+function pathArtifactFromTool(event: ToolResultEvent): { title: string; path: string } | undefined {
+	if (event.toolName !== "edit" && event.toolName !== "write") return undefined;
+	if (event.isError) return undefined;
+	const candidate = event.input?.path;
+	if (typeof candidate !== "string" || !candidate.trim()) return undefined;
+	return { title: event.toolName === "edit" ? "Edited path" : "Wrote path", path: normalizeCandidatePath(candidate, "") };
+}
+
+function verificationLabel(command: string): string | undefined {
+	const normalized = command.replace(/\s+/g, " ").trim();
+	if (/\bnpm\s+run\s+verify\b/.test(normalized)) return "npm verify";
+	if (/\bnpm\s+run\s+harness:audit\b/.test(normalized)) return "harness audit";
+	if (/\bnpm\s+run\s+skills:audit\b/.test(normalized)) return "skills audit";
+	if (/\bmake\s+verify-(?:ci|local)\b/.test(normalized)) return "agents verify";
+	if (/\bpython3?\s+-m\s+unittest\b/.test(normalized)) return "python unittest";
+	if (/\bgit\s+diff\s+--check\b/.test(normalized)) return "git diff check";
+	return undefined;
+}
+
+function verificationArtifactFromTool(event: ToolResultEvent): { title: string; summary: string } | undefined {
+	if (event.toolName !== "bash") return undefined;
+	const command = typeof event.input?.command === "string" ? event.input.command : "";
+	const label = verificationLabel(command);
+	if (!label) return undefined;
+	const status = event.isError ? "failed" : "completed";
+	return { title: `${label} ${status}`, summary: `Verification command ${status}.` };
+}
+
 export function createAgentsTaskLayer() {
 	const state = initialState();
 
@@ -267,6 +315,8 @@ export function createAgentsTaskLayer() {
 				return payload;
 			}
 			state.active = payload;
+			state.artifactSkipped = 0;
+			await refreshArtifactCount(pi, ctx);
 			await refreshContext(pi, ctx, payload.task_id, bindCwd);
 			return payload;
 		} catch (error) {
@@ -287,6 +337,35 @@ export function createAgentsTaskLayer() {
 		}
 	}
 
+	async function refreshArtifactCount(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+		if (!state.active?.task_id || !supportsTaskArtifacts(state)) return;
+		try {
+			const result = await runScript(pi, "task-artifact-list.sh", [state.active.task_id, "--json", "--limit", "1"], ctx.cwd, 5_000);
+			if (result.code !== 0) return;
+			const payload = parseJson<ArtifactListResult>(result.stdout);
+			if (payload?.artifact_api_version === SUPPORTED_ARTIFACT_API_VERSION) state.artifactCount = payload.count;
+		} catch {
+			// Artifact listing is best-effort; do not affect task binding.
+		}
+	}
+
+	async function recordArtifact(pi: ExtensionAPI, ctx: ExtensionContext, args: string[]): Promise<void> {
+		if (!state.active?.task_id || !supportsTaskArtifacts(state)) return;
+		try {
+			const result = await runScript(pi, "task-artifact-add.sh", [state.active.task_id, ...args, "--runtime", "pi", "--session", state.sessionId], ctx.cwd, 5_000);
+			if (result.code !== 0) {
+				state.artifactSkipped++;
+				return;
+			}
+			const payload = parseJson<ArtifactAddResult>(result.stdout);
+			if (payload?.artifact_api_version !== SUPPORTED_ARTIFACT_API_VERSION) return;
+			if (payload.recorded) state.artifactCount++;
+			else state.artifactSkipped++;
+		} catch {
+			state.artifactSkipped++;
+		}
+	}
+
 	async function heartbeat(pi: ExtensionAPI, ctx: ExtensionContext, force = false): Promise<void> {
 		if (!state.active?.task_id) return;
 		const now = Date.now();
@@ -301,10 +380,12 @@ export function createAgentsTaskLayer() {
 
 	function statusLines(): string[] {
 		if (state.active?.task_id) {
+			const skipped = state.artifactSkipped ? `, ${state.artifactSkipped} skipped` : "";
 			return [
 				`- active task: ${state.active.task_id} (${state.lastAction ?? "bound"})`,
 				`- task project: ${state.active.project_root || "unknown"}`,
 				`- task runtime/session: pi / ${state.sessionId}`,
+				`- task artifacts: ${state.artifactCount} recorded${skipped}`,
 			];
 		}
 		if (state.lastAction === "skipped") return [`- active task: none (${state.lastReason || "binding skipped"})`];
@@ -321,6 +402,8 @@ export function createAgentsTaskLayer() {
 			state.currentPromptNeedsTask = false;
 			state.meaningfulActivity = false;
 			state.activity = emptyActivity();
+			state.artifactCount = 0;
+			state.artifactSkipped = 0;
 			state.lastHeartbeatAt = 0;
 			await ensureTaskApi(pi, state, ctx.cwd);
 		},
@@ -331,6 +414,8 @@ export function createAgentsTaskLayer() {
 			state.context = undefined;
 			state.currentPromptWeight = fallbackWeight;
 			state.activity = emptyActivity();
+			state.artifactCount = 0;
+			state.artifactSkipped = 0;
 			state.meaningfulActivity = false;
 			const classification = await classifyTask(pi, prompt, ctx.cwd, fallbackWeight);
 			if (!classification) {
@@ -353,6 +438,27 @@ export function createAgentsTaskLayer() {
 				const decision = candidate ? await candidateRoot(pi, candidate, ctx.cwd) : undefined;
 				if (decision?.bindable) await bind(pi, ctx, decision.project_root, decision.auto_create);
 			}
+
+			const pathArtifact = pathArtifactFromTool(event);
+			if (pathArtifact) {
+				await recordArtifact(pi, ctx, [
+					"--kind", "file_path",
+					"--title", pathArtifact.title,
+					"--summary", `${pathArtifact.title} during pi turn.`,
+					"--path", pathArtifact.path,
+					"--cwd", ctx.cwd,
+				]);
+			}
+
+			const verificationArtifact = verificationArtifactFromTool(event);
+			if (verificationArtifact) {
+				await recordArtifact(pi, ctx, [
+					"--kind", "verification_summary",
+					"--title", verificationArtifact.title,
+					"--summary", verificationArtifact.summary,
+				]);
+			}
+
 			await heartbeat(pi, ctx);
 		},
 
@@ -390,6 +496,7 @@ export function createAgentsTaskLayer() {
 				`- agents root: ${state.apiInfo?.agents_shared_root ?? agentsRoot()}`,
 				`- prompt task mode: ${state.currentPromptWeight}/${state.currentBindingMode}`,
 				`- current turn activity: reads ${state.activity.reads}, writes ${state.activity.writes}, commands ${state.activity.commands}, errors ${state.activity.errors}`,
+				`- artifact capture: ${state.artifactCount} recorded, ${state.artifactSkipped} skipped this turn`,
 				...(state.lastError ? [`- last task-layer error: ${state.lastError}`] : []),
 			].join("\n");
 		},
