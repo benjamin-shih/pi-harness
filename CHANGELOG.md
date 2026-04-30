@@ -5,29 +5,42 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
-- Aesthetic polish extension with rounded prompt editor and rounded sent-prompt boxes.
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## 0.2.0 - 2026-04-30
+
+### Added
+- Aesthetic polish with rounded prompt editor and rounded sent-prompt boxes.
 - Harness mode command (`/mode`) for fast/default/deep/readonly/full operating modes.
-- Harness status command (`/status`) and visible session checkpoints (`/checkpoint`).
-- Lightweight skill-routing reminder for standard and complex prompts.
+- Harness status command (`/status`), now including harness audit health, plus visible session checkpoints (`/checkpoint`).
+- Lightweight skill-routing reminders for standard and complex prompts.
 - Behavioral safety-gate verification in `npm run verify`.
-- `/skills-audit` command plus `npm run skills:audit` for shared skill graph validation and bloat summaries.
+- `/skills-audit`, `npm run skills:audit`, and `npm run harness:audit` for skill graph, harness bloat, and stale-reference checks.
 - Release-note drafting script and tracked pre-push validation hook.
 - Automatic session-continuity extension with hidden checkpoints, footer memory status, and custom compaction summaries.
 - Optional `ben-pi-latex-preview` package with lazy TeX/math-context activation.
 - Post-change cleanup reminders for coding/file edits plus a one-shot major-change cleanup guard.
 
 ### Changed
+- Bumped package metadata to `0.2.0` for the first real release tag.
+- Split session continuity into a directory module with smaller checkpoint, prompt, redaction, and compaction internals.
 - Folded prompt/card styling and the Catppuccin footer into one `ui-polish` extension module.
 - Folded `/skills-audit` into `harness-commands.ts` and git-finalization checks into `safety-gate.ts` to reduce core extension count.
-- Catppuccin theme now uses blue/sapphire-forward UI accents instead of mauve-heavy defaults.
-- Footer keeps its original mauve/pink segment colors while the rest of the theme stays blue-forward.
-- Bash command titles now use the same blue as startup resource headings.
+- Catppuccin theme now uses blue/sapphire-forward UI accents while the footer keeps its original mauve/pink segment colors.
 - Sent prompt boxes are tighter, terminal-width-responsive rounded cards with blue borders, hot-reloadable styling, and no shaded interior fill.
 - Live prompt editor border now uses Catppuccin green while sent prompt cards keep the existing blue border.
 - Footer token and cost totals now include subagent usage recorded in the current session.
-- CI now uses Node 24 and Node-24-based GitHub actions.
+- CI now uses Node 24, Node-24-based GitHub actions, local harness audit, and package verification.
 - Safety gate is now egress-focused: it blocks secret/private-file output, upload, and sensitive git inclusion, but no longer prompts for ordinary filesystem, package-manager, or destructive commands.
-- CI and local validation now exercise extension loading, prompt/theme metadata, safety-gate behavior, optional LaTeX preview behavior, and local skill graph health when present.
 - LaTeX preview moved out of the core harness extension set into the optional lazy package.
 - Display-equation guidance now asks agents to use `displaymath` environments, and the LaTeX preview renders every display equation in a response instead of stopping after ten.
 - LaTeX preview widget chrome is quieter and no longer shows transient-storage or inline/display policy help text.
@@ -37,7 +50,7 @@ All notable changes to this personal pi harness package are tracked here.
 - LaTeX preview display extraction no longer carries the obsolete inline-render/capped-snippet path now that displaymath rendering is the supported flow.
 - Footer extension statuses are now compact colored chips, and narrow terminal layouts drop state/model detail more aggressively instead of overflowing.
 - Live prompt editor green border now survives pi's custom-editor border-color override during reload and recolors the full top/bottom border lines.
-- Memory-spine custom compaction now strips bulky tool-result/thinking bodies, uses model-aware prompt/output budgets, persists fallback diagnostics, detects default compaction, and returns deterministic harness fallback summaries when model summarization fails.
+- Memory-spine custom compaction now strips bulky tool-result/thinking bodies, uses model-aware prompt/output budgets, sends provider system instructions, serializes structured exception details, persists fallback diagnostics, detects default compaction, and returns deterministic harness fallback summaries when model summarization fails.
 
 ### Breaking
 - None.

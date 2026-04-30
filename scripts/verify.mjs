@@ -205,6 +205,34 @@ async function runHarnessCommandBehaviorTests() {
 	assert(result.systemPrompt.includes("instead of `\\[`"), "harness should discourage bracket display delimiters");
 	assert(!result.systemPrompt.includes("## Post-Change Cleanup Gate"), "harness should not inject cleanup guidance for non-coding prompts");
 
+	const statusCommands = new Map();
+	const statusMessages = [];
+	harnessCommands({
+		on: () => {},
+		registerCommand: (name, command) => statusCommands.set(name, command),
+		getAllTools: () => [],
+		getActiveTools: () => ["read", "bash"],
+		getThinkingLevel: () => "xhigh",
+		exec: async (_cmd, args) => {
+			const key = args.join(" ");
+			if (key === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
+			if (key === "status --porcelain=v1 --untracked-files=all") return { code: 0, stdout: "", stderr: "" };
+			if (key === "scripts/harness-audit.mjs --json" || key.endsWith("scripts/harness-audit.mjs --json")) {
+				return { code: 0, stdout: JSON.stringify({ metrics: { runtimeExtensionEntrypoints: 4, extensionLoc: 2000, optionalLatexLoc: 1300 }, issues: [], warnings: [] }), stderr: "" };
+			}
+			return { code: 1, stdout: "", stderr: "" };
+		},
+		sendMessage: (message) => statusMessages.push(message),
+	});
+	await statusCommands.get("status").handler("", {
+		cwd: root,
+		model: { provider: "test", id: "model" },
+		getContextUsage: () => ({ tokens: 10, contextWindow: 100, percent: 10 }),
+		sessionManager: { getBranch: () => [{ type: "message" }] },
+	});
+	assert(statusMessages[0].content.includes("harness audit: ok"), "/status should include harness audit health");
+	assert(statusMessages[0].content.includes("runtime extensions: 4"), "/status should include runtime extension count");
+
 	const major = createHarness([
 		{ diff: "", untracked: "" },
 		{ diff: "140\t90\textensions/harness-commands.ts\n30\t5\tscripts/verify.mjs\n", untracked: "" },
@@ -696,17 +724,22 @@ async function runLatexPreviewBehaviorTests() {
 await runLatexPreviewBehaviorTests();
 
 async function runSessionContinuityBehaviorTests() {
-	const continuity = loadExtensionModule("extensions/session-continuity.ts");
+	const continuity = loadExtensionModule("extensions/session-continuity/index.ts");
 	assert(typeof continuity.redactSensitiveText === "function", "session-continuity should export redactSensitiveText");
 	assert(typeof continuity.extractContinuityCheckpoints === "function", "session-continuity should export extractContinuityCheckpoints");
 	assert(typeof continuity.buildLedger === "function", "session-continuity should export buildLedger");
 	assert(typeof continuity.buildContinuitySummaryPrompt === "function", "session-continuity should export buildContinuitySummaryPrompt");
 	assert(typeof continuity.buildDeterministicContinuitySummary === "function", "session-continuity should export buildDeterministicContinuitySummary");
 	assert(typeof continuity.createSessionContinuity === "function", "session-continuity should export createSessionContinuity for behavior tests");
+	assert(typeof continuity.formatUnknownError === "function", "session-continuity should export formatUnknownError for diagnostic regression coverage");
 	const fakeToken = textFromCodes(84, 79, 75, 69, 78, 61, 97, 98, 99, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102);
 	assert(
 		continuity.redactSensitiveText(fakeToken) === "TOKEN=[REDACTED]",
 		"session-continuity should redact credential-looking command text",
+	);
+	assert(
+		continuity.formatUnknownError({ detail: "Instructions are required" }) === '{"detail":"Instructions are required"}',
+		"session-continuity should preserve structured object errors in compaction diagnostics",
 	);
 
 	const factory = continuity.default ?? continuity;
@@ -740,13 +773,13 @@ async function runSessionContinuityBehaviorTests() {
 	);
 	await handlers.get("session_start")({ reason: "startup" }, ctx);
 	await handlers.get("before_agent_start")({ prompt: "Implement robust automatic memory spine for the harness." }, ctx);
-	await handlers.get("tool_result")({ toolName: "edit", input: { path: "extensions/session-continuity.ts" }, isError: false }, ctx);
+	await handlers.get("tool_result")({ toolName: "edit", input: { path: "extensions/session-continuity/index.ts" }, isError: false }, ctx);
 	await handlers.get("tool_result")({ toolName: "bash", input: { command: `echo ${fakeToken}` }, isError: false }, ctx);
 	await handlers.get("agent_end")({}, ctx);
 
 	assert(appended.length === 1, "session-continuity should append one hidden checkpoint after a meaningful turn");
 	assert(appended[0].customType === "ben-continuity-checkpoint", "session-continuity should use the checkpoint custom entry type");
-	assert(appended[0].data.filesModified.includes("extensions/session-continuity.ts"), "session-continuity should track modified files");
+	assert(appended[0].data.filesModified.includes("extensions/session-continuity/index.ts"), "session-continuity should track modified files");
 	assert(appended[0].data.commands[0].command.includes("[REDACTED]"), "session-continuity should redact checkpoint commands");
 
 	const entries = [{ type: "custom", customType: appended[0].customType, data: appended[0].data }];
@@ -806,14 +839,18 @@ async function runSessionContinuityBehaviorTests() {
 		turnPrefixMessages: [{ role: "assistant", content: [{ type: "text", text: "Earlier split-turn prefix." }], timestamp: Date.now() }],
 		isSplitTurn: true,
 		previousSummary: "Previous summary.",
-		fileOps: { readFiles: ["README.md"], modifiedFiles: ["extensions/session-continuity.ts"] },
+		fileOps: { readFiles: ["README.md"], modifiedFiles: ["extensions/session-continuity/index.ts"] },
 		firstKeptEntryId: "entry-2",
 		tokensBefore: 123456,
 	};
 	const successHandlers = new Map();
 	const successAppended = [];
+	let successCompleteContext;
 	const successFactory = continuity.createSessionContinuity({
-		completeFn: async () => ({ stopReason: "stop", content: [{ type: "text", text: "## Goal\n- Continue safely." }] }),
+		completeFn: async (_model, context) => {
+			successCompleteContext = context;
+			return { stopReason: "stop", content: [{ type: "text", text: "## Goal\n- Continue safely." }] };
+		},
 	});
 	successFactory({
 		on: (event, handler) => successHandlers.set(event, handler),
@@ -827,6 +864,7 @@ async function runSessionContinuityBehaviorTests() {
 			modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: { test: "1" } }) },
 		},
 	);
+	assert(successCompleteContext?.systemPrompt?.includes("continuity summarizer"), "session-continuity custom compaction should send provider system instructions");
 	assert(successResult?.compaction?.details?.source === "ben-pi-harness/session-continuity", "session-continuity successful compaction should identify harness source");
 	assert(successResult.compaction.details.promptSizing.messagesToSummarize === 1, "session-continuity successful compaction should persist prompt sizing");
 	assert(successResult.compaction.details.promptSizing.promptBudgetChars === 120_000, "session-continuity should cap large-model prompt budget at the harness maximum");
@@ -852,7 +890,7 @@ async function runSessionContinuityBehaviorTests() {
 	});
 	await duplicateHandlers.get("session_start")({ reason: "startup" }, ctx);
 	await duplicateHandlers.get("before_agent_start")({ prompt: "Implement memory spine duplicate checkpoint prevention." }, ctx);
-	await duplicateHandlers.get("tool_result")({ toolName: "edit", input: { path: "extensions/session-continuity.ts" }, isError: false }, ctx);
+	await duplicateHandlers.get("tool_result")({ toolName: "edit", input: { path: "extensions/session-continuity/index.ts" }, isError: false }, ctx);
 	await duplicateHandlers.get("session_before_compact")(
 		{ preparation: fakePreparation, branchEntries: entries, signal: new AbortController().signal },
 		{
@@ -882,6 +920,21 @@ async function runSessionContinuityBehaviorTests() {
 	assert(failureResult?.compaction?.details?.fallbackReason === "exception", "session-continuity should return deterministic fallback on model exceptions");
 	assert(failureAppended.some((entry) => entry.customType === "ben-continuity-compaction-diagnostic" && entry.data.reason === "exception"), "session-continuity should persist exception diagnostics");
 
+	const objectFailureHandlers = new Map();
+	continuity.createSessionContinuity({ completeFn: async () => { throw { detail: "Instructions are required" }; } })({
+		on: (event, handler) => objectFailureHandlers.set(event, handler),
+		appendEntry: () => {},
+		getThinkingLevel: () => "xhigh",
+	});
+	const objectFailureResult = await objectFailureHandlers.get("session_before_compact")(
+		{ preparation: fakePreparation, branchEntries: entries, signal: new AbortController().signal },
+		{
+			...ctx,
+			modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }) },
+		},
+	);
+	assert(objectFailureResult.compaction.details.error.includes("Instructions are required"), "session-continuity should persist structured compaction exception details");
+
 	const stopReasonHandlers = new Map();
 	continuity.createSessionContinuity({
 		completeFn: async () => ({ stopReason: "error", errorMessage: "context_length_exceeded", content: [{ type: "text", text: "not a summary" }] }),
@@ -908,6 +961,16 @@ async function runSessionContinuityBehaviorTests() {
 }
 
 await runSessionContinuityBehaviorTests();
+
+function runHarnessAuditTest() {
+	const stdout = execFileSync(process.execPath, [join(root, "scripts", "harness-audit.mjs"), "--json"], { encoding: "utf8" });
+	const audit = JSON.parse(stdout);
+	assert(audit.issues.length === 0, `harness audit has ${audit.issues.length} issue(s)`);
+	assert(audit.metrics.runtimeExtensionEntrypoints <= 4, "harness audit should enforce compact runtime extension count");
+	assert(audit.extensions.some((extension) => extension.path === "extensions/session-continuity/index.ts"), "harness audit should discover directory-style session-continuity extension");
+}
+
+runHarnessAuditTest();
 
 const localSkillsRoot = "/Users/benjaminshih/.agents/skills";
 if (existsSync(localSkillsRoot)) {

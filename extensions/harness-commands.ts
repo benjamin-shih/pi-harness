@@ -359,6 +359,27 @@ function contextSummary(ctx: ExtensionContext): string {
 	return `${usage.percent.toFixed(1)}% (${usage.tokens}/${usage.contextWindow})`;
 }
 
+async function harnessAuditStatus(pi: ExtensionAPI): Promise<string[]> {
+	try {
+		const script = join(PACKAGE_ROOT, "scripts", "harness-audit.mjs");
+		const result = await pi.exec("node", [script, "--json"], { cwd: PACKAGE_ROOT, timeout: 5_000 });
+		if (result.code !== 0) return [`- harness audit: failed (${result.stderr || result.stdout || `exit ${result.code}`})`];
+		const audit = JSON.parse(result.stdout) as {
+			metrics?: { runtimeExtensionEntrypoints?: number; extensionLoc?: number; optionalLatexLoc?: number };
+			issues?: unknown[];
+			warnings?: unknown[];
+		};
+		return [
+			`- harness audit: ${audit.issues?.length ? "issues" : "ok"} (${audit.issues?.length ?? 0} issue(s), ${audit.warnings?.length ?? 0} warning(s))`,
+			`- runtime extensions: ${audit.metrics?.runtimeExtensionEntrypoints ?? "unknown"}`,
+			`- core extension LOC: ${audit.metrics?.extensionLoc ?? "unknown"}`,
+			`- optional LaTeX LOC: ${audit.metrics?.optionalLatexLoc ?? "unknown"}`,
+		];
+	} catch (error) {
+		return [`- harness audit: unavailable (${error instanceof Error ? error.message : String(error)})`];
+	}
+}
+
 async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string> {
 	const git = await gitSummary(pi, ctx.cwd);
 	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none";
@@ -372,6 +393,7 @@ async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext): Promise<str
 		`- git: ${git.branch ? `${git.branch}, ` : ""}${git.summary}`,
 		`- active tools: ${tools.length ? tools.join(", ") : "none"}`,
 		`- session entries: ${ctx.sessionManager.getBranch().length}`,
+		...(await harnessAuditStatus(pi)),
 	].join("\n");
 }
 

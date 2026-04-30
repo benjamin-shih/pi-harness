@@ -7,6 +7,7 @@ This is a private pi harness package. Release tags are mainly for rollback and c
 ```bash
 npm ci
 npm run verify
+npm run harness:audit
 ```
 
 Install the tracked pre-push hook once per checkout:
@@ -39,6 +40,7 @@ Only tag from a clean worktree after local validation passes and CI is expected 
 ```bash
 git status --short --branch
 npm run verify
+npm run harness:audit
 git tag -a v0.2.0 -m "v0.2.0"
 git push origin main --tags
 ```

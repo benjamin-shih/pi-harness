@@ -23,3 +23,6 @@ jobs:
 
       - name: Verify pi package
         run: npm run verify
+
+      - name: Audit harness structure
+        run: npm run harness:audit

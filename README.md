@@ -18,7 +18,7 @@ extensions/
   ui-polish/            Rounded prompt boxes and responsive Catppuccin footer
   harness-commands.ts   /mode, /status, /checkpoint, /skills-audit, skill routing, and cleanup guards
   safety-gate.ts        Secret/private-file egress guardrails and git finalization checks
-  session-continuity.ts Automatic checkpoints and custom compaction summaries
+  session-continuity/  Automatic checkpoints and custom compaction summaries
 prompts/
   handoff.md            Session/task handoff prompt
   review.md             Review prompt
@@ -27,6 +27,7 @@ themes/
   catppuccin-mocha.json Catppuccin Mocha theme with blue-forward accents
 scripts/
   verify.mjs            Local/CI package verification
+  harness-audit.mjs     Harness structure, bloat, and stale-reference audit
   skills-audit.mjs      Shared skill graph validator and bloat summary
   changelog.mjs         Draft release notes from git commits
 packages/
@@ -92,6 +93,7 @@ After editing package files, reload pi:
 ```bash
 npm ci
 npm run verify
+npm run harness:audit
 npm run skills:audit
 npm run hooks:install
 ```
