@@ -1,4 +1,3 @@
-import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
 
@@ -44,7 +43,7 @@ type TaskLayerState = {
 
 const AGENTS_ROOT = "/Users/benjaminshih/.agents";
 const SCRIPTS_DIR = path.join(AGENTS_ROOT, "scripts");
-const HOME = os.homedir();
+const HOME = path.dirname(AGENTS_ROOT);
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const SCRIPT_TIMEOUT_MS = 10_000;
 
