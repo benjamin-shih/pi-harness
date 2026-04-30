@@ -59,7 +59,11 @@ function extensionEntrypoints() {
 function groupedExtensionStats(entrypoint) {
 	const parent = dirname(entrypoint);
 	const isDirectoryEntrypoint = basename(entrypoint).startsWith("index.") && dirname(parent) === join(root, "extensions");
-	const files = isDirectoryEntrypoint ? walk(parent).filter((file) => [".ts", ".js"].includes(extname(file))) : [entrypoint];
+	let files = isDirectoryEntrypoint ? walk(parent).filter((file) => [".ts", ".js"].includes(extname(file))) : [entrypoint];
+	if (!isDirectoryEntrypoint) {
+		const supportDir = join(parent, basename(entrypoint, extname(entrypoint)));
+		if (existsSync(supportDir)) files = [...files, ...walk(supportDir).filter((file) => [".ts", ".js"].includes(extname(file)))];
+	}
 	return { loc: files.reduce((total, file) => total + linesOf(file), 0), fileCount: files.length };
 }
 

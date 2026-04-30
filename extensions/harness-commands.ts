@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { createAgentsTaskLayer } from "./harness-commands/task-layer";
 import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemorySpineDiagnostics } from "./session-continuity/diagnostics";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -44,6 +45,7 @@ type HarnessAudit = {
 };
 
 type HarnessAuditResult = { ok: true; audit: HarnessAudit } | { ok: false; error: string };
+type AgentsTaskLayer = ReturnType<typeof createAgentsTaskLayer>;
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DEFAULT_SKILLS_ROOT = "/Users/benjaminshih/.agents/skills";
@@ -403,7 +405,7 @@ function memoryStatusLines(diagnostics: MemorySpineDiagnostics): string[] {
 	];
 }
 
-async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string> {
+async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: AgentsTaskLayer): Promise<string> {
 	const git = await gitSummary(pi, ctx.cwd);
 	const audit = await runHarnessAudit(pi);
 	const branch = ctx.sessionManager.getBranch();
@@ -421,25 +423,28 @@ async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext): Promise<str
 		`- session entries: ${branch.length}`,
 		...formatHarnessAuditLines(audit),
 		...memoryStatusLines(memory),
+		...taskLayer.statusLines(),
 	].join("\n");
 }
 
-function doctorRecommendations(audit: HarnessAuditResult, memory: MemorySpineDiagnostics): string[] {
+function doctorRecommendations(audit: HarnessAuditResult, memory: MemorySpineDiagnostics, taskLayer: AgentsTaskLayer): string[] {
 	const recommendations: string[] = [];
 	if (!audit.ok) recommendations.push("Run `npm run harness:audit` in the harness package; the slash-command audit call failed.");
 	else if (audit.audit.issues?.length) recommendations.push("Fix harness audit issues before adding more harness features.");
 	if (memory.health === "warning") recommendations.push("Inspect `/memory`; latest memory-spine diagnostics indicate compaction fallback/default behavior.");
 	if (memory.health === "unknown") recommendations.push("No memory-spine entries yet; run one normal agent turn and check `/memory` again.");
+	if (taskLayer.health() === "warning") recommendations.push("Inspect AGENTS task binding state; pi could not bind or refresh the active task cleanly.");
 	return recommendations.length ? recommendations : ["None; harness checks are green."];
 }
 
-function doctorHealth(audit: HarnessAuditResult, memory: MemorySpineDiagnostics): "ok" | "warning" {
+function doctorHealth(audit: HarnessAuditResult, memory: MemorySpineDiagnostics, taskLayer: AgentsTaskLayer): "ok" | "warning" {
 	if (!audit.ok || (audit.ok && Boolean(audit.audit.issues?.length))) return "warning";
 	if (memory.health === "warning") return "warning";
+	if (taskLayer.health() === "warning") return "warning";
 	return "ok";
 }
 
-async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string> {
+async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: AgentsTaskLayer): Promise<string> {
 	const git = await gitSummary(pi, ctx.cwd);
 	const audit = await runHarnessAudit(pi);
 	const branch = ctx.sessionManager.getBranch();
@@ -448,7 +453,7 @@ async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext): Promise<str
 	const tools = pi.getActiveTools();
 	return [
 		"## Harness doctor",
-		`- health: ${doctorHealth(audit, memory)}`,
+		`- health: ${doctorHealth(audit, memory, taskLayer)}`,
 		`- package: ben-pi-harness ${audit.ok ? audit.audit.packageVersion ?? "unknown" : "unknown"}`,
 		`- cwd: ${ctx.cwd}`,
 		`- model: ${model}`,
@@ -463,8 +468,10 @@ async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext): Promise<str
 		"",
 		formatMemorySpineDiagnostics(memory, { verbose: true }),
 		"",
+		taskLayer.doctorSection(),
+		"",
 		"### Recommendations",
-		...doctorRecommendations(audit, memory).map((recommendation) => `- ${recommendation}`),
+		...doctorRecommendations(audit, memory, taskLayer).map((recommendation) => `- ${recommendation}`),
 	].join("\n");
 }
 
@@ -493,6 +500,7 @@ function formatAudit(stdout: string): string {
 }
 
 export default function harnessCommands(pi: ExtensionAPI) {
+	const taskLayer = createAgentsTaskLayer();
 	let activeMode: string | undefined;
 	let sawFileMutation = false;
 	let currentPromptIsCleanupGuard = false;
@@ -528,23 +536,23 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("status", {
-		description: "Show current harness, model, tool, context, git, audit, and memory status",
+		description: "Show current harness, model, tool, context, git, audit, memory, and task status",
 		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "harness-status", content: await buildStatus(pi, ctx), display: true });
+			pi.sendMessage({ customType: "harness-status", content: await buildStatus(pi, ctx, taskLayer), display: true });
 		},
 	});
 
 	pi.registerCommand("doctor", {
-		description: "Run a read-only harness health check with memory-spine diagnostics",
+		description: "Run a read-only harness health check with memory-spine and AGENTS task diagnostics",
 		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx), display: true });
+			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer), display: true });
 		},
 	});
 
 	pi.registerCommand("doct", {
 		description: "Alias for /doctor",
 		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx), display: true });
+			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer), display: true });
 		},
 	});
 
@@ -562,7 +570,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			const label = args.trim() || new Date().toISOString().replace(/[:.]/g, "-");
 			const leafId = ctx.sessionManager.getLeafId();
 			if (leafId) pi.setLabel(leafId, `checkpoint: ${label}`);
-			const content = [`## Checkpoint: ${label}`, await buildStatus(pi, ctx), "", "Next-step note:", args.trim() || "None provided."].join(
+			const content = [`## Checkpoint: ${label}`, await buildStatus(pi, ctx, taskLayer), "", "Next-step note:", args.trim() || "None provided."].join(
 				"\n",
 			);
 			pi.sendMessage({ customType: "harness-checkpoint", content, display: true, details: { label } });
@@ -582,6 +590,10 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		},
 	});
 
+	pi.on("session_start", async (_event, ctx) => {
+		await taskLayer.sessionStart(pi, ctx);
+	});
+
 	pi.on("before_agent_start", async (event, ctx) => {
 		const weight = classifyPrompt(event.prompt);
 		sawFileMutation = false;
@@ -590,12 +602,14 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		currentPromptWasMajor = promptSuggestsMajorCleanup(event.prompt, weight);
 		initialChangeSnapshot = currentPromptNeedsCleanup ? await gitChangeSnapshot(pi, ctx.cwd) : undefined;
 
+		const taskContext = await taskLayer.beforeAgentStart(pi, event.prompt, weight, ctx);
 		const additions: string[] = [DISPLAY_MATH_RENDERING_INSTRUCTION, MARKDOWN_HEADING_RENDERING_INSTRUCTION];
 		if (activeMode && MODES[activeMode]?.instructions) additions.push(MODES[activeMode].instructions!);
 		const reminder = skillRoutingReminder(weight);
 		if (reminder) additions.push(reminder);
 		const cleanup = cleanupReminder(event.prompt, weight);
 		if (cleanup) additions.push(cleanup);
+		if (taskContext) additions.push(taskContext);
 		if (!additions.length) return undefined;
 		return { systemPrompt: `${event.systemPrompt}\n\n${additions.join("\n\n")}` };
 	});
@@ -610,12 +624,21 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		}
 	});
 
+	pi.on("tool_result", async (event, ctx) => {
+		await taskLayer.toolResult(pi, event, ctx);
+	});
+
 	pi.on("agent_end", async (_event, ctx) => {
+		await taskLayer.agentEnd(pi, ctx);
 		if (currentPromptIsCleanupGuard || !sawFileMutation || !currentPromptNeedsCleanup) return;
 		const currentSnapshot = await gitChangeSnapshot(pi, ctx.cwd);
 		if (!currentSnapshot || currentSnapshot.signature === initialChangeSnapshot?.signature) return;
 		const changedStats = diffDelta(initialChangeSnapshot?.stats, currentSnapshot.stats);
 		if (!currentPromptWasMajor && !diffLooksMajor(changedStats)) return;
 		pi.sendUserMessage(cleanupGuardMessage(changedStats, currentPromptWasMajor), { deliverAs: "followUp" });
+	});
+
+	pi.on("session_shutdown", async (_event, ctx) => {
+		await taskLayer.sessionShutdown(pi, ctx);
 	});
 }

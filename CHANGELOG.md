@@ -5,12 +5,13 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
-- `/doctor` (`/doct` alias) for read-only harness health checks across package audit, model/context/git state, tools, and memory-spine status.
+- Ambient pi binding to the shared `.agents/tasks` control plane: pi can auto-bind/reuse tasks, inject task context, heartbeat leases, checkpoint meaningful turns, and release current-session tasks on shutdown without slash-command usage.
+- `/doctor` (`/doct` alias) for read-only harness health checks across package audit, model/context/git state, tools, memory-spine status, and AGENTS task binding.
 - `/memory` for detailed memory-spine checkpoint, compaction, fallback, and diagnostic inspection.
 
 ### Changed
-- `/status` now includes compact memory-spine health and entry counts.
-- Harness audit now treats internally split directory extensions as healthy up to a higher LOC budget than single-file extensions.
+- `/status` now includes compact memory-spine health, entry counts, and active AGENTS task state.
+- Harness audit now treats internally split directory extensions and same-name support modules as part of their owning runtime extension.
 - System prompt guidance now asks agents to avoid level-3-and-deeper Markdown headings so terminal responses render cleanly.
 
 ### Fixed

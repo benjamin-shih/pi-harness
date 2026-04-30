@@ -16,7 +16,7 @@ Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and ses
 ```text
 extensions/
   ui-polish/            Rounded prompt boxes and responsive Catppuccin footer
-  harness-commands.ts   /mode, /status, /checkpoint, /skills-audit, skill routing, and cleanup guards
+  harness-commands.ts   /mode, /status, /checkpoint, /skills-audit, ambient task binding, skill routing, and cleanup guards
   safety-gate.ts        Secret/private-file egress guardrails and git finalization checks
   session-continuity/   Automatic checkpoints and custom compaction summaries and diagnostics
 prompts/
@@ -48,6 +48,10 @@ To enable it globally while keeping it outside the core harness package:
   ]
 }
 ```
+
+## Ambient task binding
+
+Pi reuses the shared `/Users/benjaminshih/.agents/tasks` control plane. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, and release current-session leases on shutdown. Broad home-directory sessions are reuse-only until concrete project file activity identifies a safer project scope.
 
 ## Commands
 
@@ -101,6 +105,13 @@ npm run hooks:install
 ```
 
 The tracked pre-push hook runs `npm run verify` and `npm run harness:audit`.
+
+Cross-runtime task-script changes live in `/Users/benjaminshih/.agents`; validate them with:
+
+```bash
+cd /Users/benjaminshih/.agents
+bash scripts/smoke-test.sh
+```
 
 ## Remote install later
 

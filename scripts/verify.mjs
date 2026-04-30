@@ -305,6 +305,120 @@ async function runHarnessCommandBehaviorTests() {
 	assert(statusMessages[2].customType === "harness-memory", "/memory should send a memory diagnostics message");
 	assert(statusMessages[2].content.includes("latest diagnostic error: context_length_exceeded"), "/memory should include latest diagnostic errors");
 
+	function createTaskHarness({ bindPayload, bindPayloads, classifyPayload, cwd = root }) {
+		const handlers = new Map();
+		const execCalls = [];
+		const queuedBindPayloads = [...(bindPayloads ?? [])];
+		harnessCommands({
+			on: (event, handler) => handlers.set(event, handler),
+			registerCommand: () => {},
+			getAllTools: () => [],
+			getActiveTools: () => ["read"],
+			getThinkingLevel: () => "xhigh",
+			exec: async (cmd, args, options) => {
+				execCalls.push({ cmd, args, cwd: options?.cwd });
+				const script = args[0] || "";
+				if (cmd === "bash" && script.endsWith("task-classify.sh")) return { code: 0, stdout: JSON.stringify(classifyPayload ?? { weight: "standard", binding_mode: "auto", reasons: [] }), stderr: "" };
+				if (cmd === "bash" && script.endsWith("resolve-project-root.sh")) {
+					const target = args[1] || cwd;
+					if (target.startsWith(root)) return { code: 0, stdout: `${root}\n`, stderr: "" };
+					if (target.startsWith("/Users/benjaminshih/.agents")) return { code: 0, stdout: "/Users/benjaminshih/.agents\n", stderr: "" };
+					return { code: 0, stdout: "/Users/benjaminshih\n", stderr: "" };
+				}
+				if (cmd === "bash" && script.endsWith("task-bind.sh")) return { code: 0, stdout: JSON.stringify(queuedBindPayloads.length ? queuedBindPayloads.shift() : bindPayload), stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-context.sh")) return { code: 0, stdout: "Active task context\n- task_id: pi-task\n- next_action: Continue", stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-heartbeat.sh")) return { code: 0, stdout: "", stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-event.sh")) return { code: 0, stdout: JSON.stringify({ type: "checkpoint" }), stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-status.sh")) return { code: 0, stdout: "{}", stderr: "" };
+				if (cmd === "bash" && script.endsWith("task-gc.sh")) return { code: 0, stdout: "released: pi-task", stderr: "" };
+				return { code: 1, stdout: "", stderr: "" };
+			},
+			sendUserMessage: () => {},
+		});
+		const ctx = {
+			cwd,
+			model: { provider: "test", id: "model" },
+			getContextUsage: () => ({ tokens: 10, contextWindow: 100, percent: 10 }),
+			sessionManager: {
+				getBranch: () => [],
+				getSessionId: () => "session-1",
+				getSessionFile: () => join(root, ".test-session.jsonl"),
+				getLeafId: () => undefined,
+			},
+		};
+		return { handlers, execCalls, ctx };
+	}
+
+	const boundTask = createTaskHarness({
+		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: "/Users/benjaminshih/.agents/tasks/pi-task", runtime: "pi", session: "pi-session-1", project_root: root },
+	});
+	await boundTask.handlers.get("session_start")({ reason: "startup" }, boundTask.ctx);
+	const taskPromptResult = await boundTask.handlers.get("before_agent_start")({ prompt: "Implement ambient task binding", systemPrompt: "base" }, boundTask.ctx);
+	assert(taskPromptResult.systemPrompt.includes("## Active AGENTS Task Context"), "harness should inject bound AGENTS task context");
+	assert(taskPromptResult.systemPrompt.includes("task_id: pi-task"), "harness should include active task id in context");
+	await boundTask.handlers.get("tool_result")({ toolName: "read", input: { path: "README.md" }, isError: false }, boundTask.ctx);
+	await boundTask.handlers.get("agent_end")({}, boundTask.ctx);
+	await boundTask.handlers.get("session_shutdown")({ reason: "quit" }, boundTask.ctx);
+	const bindCall = boundTask.execCalls.find((call) => call.args[0]?.endsWith("task-bind.sh"));
+	assert(bindCall && !bindCall.args.includes("--prompt-text"), "pi task binding should not persist raw prompts by default");
+	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-event.sh") && call.args.includes("checkpoint")), "pi task layer should append a checkpoint event after meaningful turns");
+	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-gc.sh") && call.args.includes("--no-sweep")), "pi task layer should release only current-session tasks on shutdown");
+
+	const homeTask = createTaskHarness({
+		cwd: "/Users/benjaminshih",
+		bindPayload: { action: "skipped", bound: false, created: false, blocked: false, reason: "no matching task", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-home", project_root: "/Users/benjaminshih" },
+	});
+	await homeTask.handlers.get("session_start")({ reason: "startup" }, homeTask.ctx);
+	await homeTask.handlers.get("before_agent_start")({ prompt: "Implement a harness improvement", systemPrompt: "base" }, homeTask.ctx);
+	const homeBindCall = homeTask.execCalls.find((call) => call.args[0]?.endsWith("task-bind.sh"));
+	assert(homeBindCall?.args.includes("--auto-create") && homeBindCall.args[homeBindCall.args.indexOf("--auto-create") + 1] === "never", "pi task layer should not auto-create broad home-root tasks");
+	await homeTask.handlers.get("tool_result")({ toolName: "read", input: { path: join(root, "README.md") }, isError: false }, homeTask.ctx);
+	const lateBindCalls = homeTask.execCalls.filter((call) => call.args[0]?.endsWith("task-bind.sh"));
+	const lateBindCall = lateBindCalls[lateBindCalls.length - 1];
+	assert(lateBindCall.args[lateBindCall.args.indexOf("--auto-create") + 1] === "auto", "pi task layer should late-bind from concrete project file activity");
+
+	const bootstrapTask = createTaskHarness({
+		cwd: "/Users/benjaminshih",
+		bindPayload: { action: "skipped", bound: false, created: false, blocked: false, reason: "no matching task", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-home", project_root: "/Users/benjaminshih" },
+	});
+	await bootstrapTask.handlers.get("session_start")({ reason: "startup" }, bootstrapTask.ctx);
+	await bootstrapTask.handlers.get("before_agent_start")({ prompt: "Implement a harness improvement", systemPrompt: "base" }, bootstrapTask.ctx);
+	await bootstrapTask.handlers.get("tool_result")({ toolName: "read", input: { path: "/Users/benjaminshih/CLAUDE.md" }, isError: false }, bootstrapTask.ctx);
+	await bootstrapTask.handlers.get("tool_result")({ toolName: "read", input: { path: "/Users/benjaminshih/.agents/skills/SKILLS.md" }, isError: false }, bootstrapTask.ctx);
+	await bootstrapTask.handlers.get("tool_result")({ toolName: "read", input: { path: "/Users/benjaminshih/.agents/shared/AGENT_OPERATING_CONTRACT.md" }, isError: false }, bootstrapTask.ctx);
+	assert(bootstrapTask.execCalls.filter((call) => call.args[0]?.endsWith("task-bind.sh")).length === 1, "pi task layer should not late-bind or auto-create from home bootstrap files");
+
+	const staleTask = createTaskHarness({
+		bindPayloads: [
+			{ action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "task-a", task_dir: "/Users/benjaminshih/.agents/tasks/task-a", runtime: "pi", session: "pi-session-1", project_root: root },
+			{ action: "skipped", bound: false, created: false, blocked: false, reason: "home root", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-1", project_root: "/Users/benjaminshih" },
+			{ action: "claimed_existing", bound: true, created: false, blocked: false, reason: "", task_id: "task-b", task_dir: "/Users/benjaminshih/.agents/tasks/task-b", runtime: "pi", session: "pi-session-1", project_root: root },
+		],
+	});
+	await staleTask.handlers.get("session_start")({ reason: "startup" }, staleTask.ctx);
+	await staleTask.handlers.get("before_agent_start")({ prompt: "Implement project A", systemPrompt: "base" }, staleTask.ctx);
+	await staleTask.handlers.get("tool_result")({ toolName: "read", input: { path: "README.md" }, isError: false }, staleTask.ctx);
+	await staleTask.handlers.get("agent_end")({}, staleTask.ctx);
+	staleTask.ctx.cwd = "/Users/benjaminshih";
+	await staleTask.handlers.get("before_agent_start")({ prompt: "Implement another harness improvement", systemPrompt: "base" }, staleTask.ctx);
+	await staleTask.handlers.get("tool_result")({ toolName: "read", input: { path: join(root, "README.md") }, isError: false }, staleTask.ctx);
+	await staleTask.handlers.get("agent_end")({}, staleTask.ctx);
+	const staleTaskEvents = staleTask.execCalls.filter((call) => call.args[0]?.endsWith("task-event.sh"));
+	assert(staleTaskEvents.at(-1).args[1] === "task-b", "pi task layer should not checkpoint a stale prior task after late-binding another project");
+
+	const shutdownTask = createTaskHarness({
+		bindPayloads: [
+			{ action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "task-a", task_dir: "/Users/benjaminshih/.agents/tasks/task-a", runtime: "pi", session: "pi-session-1", project_root: root },
+			{ action: "skipped", bound: false, created: false, blocked: false, reason: "home root", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-1", project_root: "/Users/benjaminshih" },
+		],
+	});
+	await shutdownTask.handlers.get("session_start")({ reason: "startup" }, shutdownTask.ctx);
+	await shutdownTask.handlers.get("before_agent_start")({ prompt: "Implement project A", systemPrompt: "base" }, shutdownTask.ctx);
+	shutdownTask.ctx.cwd = "/Users/benjaminshih";
+	await shutdownTask.handlers.get("before_agent_start")({ prompt: "Tiny follow-up", systemPrompt: "base" }, shutdownTask.ctx);
+	await shutdownTask.handlers.get("session_shutdown")({ reason: "quit" }, shutdownTask.ctx);
+	assert(shutdownTask.execCalls.some((call) => call.args[0]?.endsWith("task-gc.sh") && call.args.includes("--session") && call.args.includes("pi-session-1")), "pi task layer should run current-session cleanup on shutdown even after a no-bind turn");
+
 	const major = createHarness([
 		{ diff: "", untracked: "" },
 		{ diff: "140\t90\textensions/harness-commands.ts\n30\t5\tscripts/verify.mjs\n", untracked: "" },
