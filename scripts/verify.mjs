@@ -598,6 +598,10 @@ async function runLatexPreviewBehaviorTests() {
 		"latex-preview should prettify common accents, roots, and compact fractions",
 	);
 	assert(
+		prettify("Use \\(x_1, \\ldots, x_n\\) and \\(y_1, \\dots, y_n\\) inline.") === "Use x₁,..., xₙ and y₁,..., yₙ inline.",
+		"latex-preview should render inline LaTeX dots as plain ellipses",
+	);
+	assert(
 		prettify("Keep `\\(X_1\\)` code literal.") === "Keep `\\(X_1\\)` code literal.",
 		"latex-preview should not prettify inline code",
 	);

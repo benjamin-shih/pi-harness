@@ -706,8 +706,8 @@ const COMMAND_SYMBOLS: Record<string, string> = {
 	pm: "±",
 	times: "×",
 	cdot: "·",
-	ldots: "…",
-	dots: "…",
+	ldots: "...",
+	dots: "...",
 	mid: "|",
 	vert: "|",
 	lvert: "|",
@@ -896,11 +896,11 @@ function prettifyInlineAtom(tex: string): string | undefined {
 function replaceAccentCommands(text: string): string {
 	const names = Object.keys(COMBINING_ACCENTS).join("|");
 	return text
-		.replace(new RegExp(`\\\\(${names})\\s*\\{([^{}]{1,24})\\}`, "g"), (raw, command: string, body: string) => {
+		.replace(new RegExp(`\\\\(${names})(?![A-Za-z])\\s*\\{([^{}]{1,24})\\}`, "g"), (raw, command: string, body: string) => {
 			const atom = prettifyInlineAtom(body);
 			return atom ? `${atom}${COMBINING_ACCENTS[command]}` : raw;
 		})
-		.replace(new RegExp(`\\\\(${names})\\s*(\\\\[A-Za-z]+|[A-Za-z0-9])`, "g"), (raw, command: string, body: string) => {
+		.replace(new RegExp(`\\\\(${names})(?![A-Za-z])\\s*(\\\\[A-Za-z]+|[A-Za-z0-9])`, "g"), (raw, command: string, body: string) => {
 			const atom = prettifyInlineAtom(body);
 			return atom ? `${atom}${COMBINING_ACCENTS[command]}` : raw;
 		});
