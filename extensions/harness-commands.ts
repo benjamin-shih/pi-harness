@@ -55,6 +55,10 @@ const DISPLAY_MATH_RENDERING_INSTRUCTION = [
 	"## Display Math Rendering",
 	"When writing display equations in assistant responses, use `\\begin{displaymath}` and `\\end{displaymath}` delimiters instead of `\\[` and `\\]` so the local LaTeX preview renderer activates reliably.",
 ].join("\n");
+const MARKDOWN_HEADING_RENDERING_INSTRUCTION = [
+	"## Markdown Heading Rendering",
+	"When formatting assistant responses, use only `#` and `##` Markdown headings. For deeper structure, use bold lead-in labels like `**Subsection.**` instead of `###`, `####`, `#####`, or `######`, because the local terminal renderer displays level-3-and-deeper heading markers literally.",
+].join("\n");
 
 const MODES: Record<string, ModeDefinition> = {
 	fast: {
@@ -586,7 +590,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		currentPromptWasMajor = promptSuggestsMajorCleanup(event.prompt, weight);
 		initialChangeSnapshot = currentPromptNeedsCleanup ? await gitChangeSnapshot(pi, ctx.cwd) : undefined;
 
-		const additions: string[] = [DISPLAY_MATH_RENDERING_INSTRUCTION];
+		const additions: string[] = [DISPLAY_MATH_RENDERING_INSTRUCTION, MARKDOWN_HEADING_RENDERING_INSTRUCTION];
 		if (activeMode && MODES[activeMode]?.instructions) additions.push(MODES[activeMode].instructions!);
 		const reminder = skillRoutingReminder(weight);
 		if (reminder) additions.push(reminder);

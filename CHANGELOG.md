@@ -11,6 +11,7 @@ All notable changes to this personal pi harness package are tracked here.
 ### Changed
 - `/status` now includes compact memory-spine health and entry counts.
 - Harness audit now treats internally split directory extensions as healthy up to a higher LOC budget than single-file extensions.
+- System prompt guidance now asks agents to avoid level-3-and-deeper Markdown headings so terminal responses render cleanly.
 
 ### Fixed
 - None.

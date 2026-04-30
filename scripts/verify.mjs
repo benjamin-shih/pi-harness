@@ -203,6 +203,9 @@ async function runHarnessCommandBehaviorTests() {
 	assert(result?.systemPrompt?.includes("## Display Math Rendering"), "harness should inject displaymath rendering guidance");
 	assert(result.systemPrompt.includes("\\begin{displaymath}"), "harness should ask agents to use displaymath delimiters");
 	assert(result.systemPrompt.includes("instead of `\\[`"), "harness should discourage bracket display delimiters");
+	assert(result.systemPrompt.includes("## Markdown Heading Rendering"), "harness should inject Markdown heading rendering guidance");
+	assert(result.systemPrompt.includes("use only `#` and `##` Markdown headings"), "harness should steer agents away from deeper Markdown headings");
+	assert(result.systemPrompt.includes("instead of `###`"), "harness should recommend bold labels instead of raw level-3 headings");
 	assert(!result.systemPrompt.includes("## Post-Change Cleanup Gate"), "harness should not inject cleanup guidance for non-coding prompts");
 
 	const statusCommands = new Map();
