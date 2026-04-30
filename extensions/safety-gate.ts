@@ -1,8 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import os from "node:os";
 import path from "node:path";
-
-const HOME = os.homedir();
 
 const BLOCKED_OUTPUT =
 	"[safety-gate] Blocked output because it appears to contain credential material or a protected private file.";
@@ -11,9 +8,9 @@ const BLOCKED_GIT =
 const HIDDEN_SENSITIVE_RESULT =
 	"[safety-gate] Sensitive operation completed, but output was hidden to avoid exposing credential material.";
 const GIT_FINALIZATION_MARKER = "PI_GIT_FINALIZATION_GUARD";
-
-const SENSITIVE_DIRS = new Set([".ssh", ".aws", ".gnupg"]);
-const SENSITIVE_FILE_RE = /^(?:\.npmrc|\.pypirc|\.netrc|auth\.json|id_(?:rsa|ed25519|ecdsa|dsa)|(?:credentials|secrets?|tokens?|private-key|service-account)(?:\.(?:json|ya?ml|toml|ini|env|txt))?|.*\.(?:pem|key|p12|pfx))$/i;
+const DEFAULT_AGENTS_ROOT = "/Users/benjaminshih/.agents";
+const POLICY_API_VERSION = 1;
+const pathSafetyCache = new Map<string, PathSafetyResult | null>();
 
 const OUTPUT_COMMAND_RE = /\b(?:cat|bat|less|more|head|tail|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl)\b/i;
 const UPLOAD_COMMAND_RE = /\b(?:curl|wget|scp|sftp|rsync|rclone|aws\s+s3\s+cp|aws\s+s3\s+sync|gh\s+release\s+upload)\b/i;
@@ -34,6 +31,16 @@ type GitFinalizationState = {
 	ahead: number;
 };
 
+type PathSafetyResult = {
+	policy_api_version?: number;
+	action?: "allow" | "warn" | "block";
+	allowed?: boolean;
+	matched?: boolean;
+	reason?: string;
+	rule_path?: string;
+	normalized_path?: string;
+};
+
 const DEFINITE_SECRET_PATTERNS = [
 	/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/i,
 	/\bAKIA[0-9A-Z]{16}\b/,
@@ -43,55 +50,89 @@ const DEFINITE_SECRET_PATTERNS = [
 const GENERIC_SECRET_ASSIGNMENT_RE =
 	/\b(?:api[_-]?key|secret|token|password|passwd|client[_-]?secret|private[_-]?key|credential)\b\s*[:=]\s*["']?([^"'`\s]{12,})/gi;
 
-function isSamplePath(rawPath: string): boolean {
-	const lower = rawPath.toLowerCase();
-	return /(?:^|[./_-])(?:example|sample|template|stub|dummy)(?:$|[./_-])/.test(lower) || lower.endsWith(".dist");
+function agentsRoot(): string {
+	return process.env.AGENTS_SHARED_ROOT || DEFAULT_AGENTS_ROOT;
 }
 
-function normalizePath(rawPath: string, cwd: string): string {
-	let p = rawPath.trim().replace(/^@/, "").replace(/^['\"]|['\"]$/g, "");
-	if (p === "~") p = HOME;
-	else if (p.startsWith("~/")) p = path.join(HOME, p.slice(2));
-	else if (!path.isAbsolute(p)) p = path.resolve(cwd, p);
-	return path.normalize(p);
+function policyScriptPath(scriptName: string): string {
+	return path.join(agentsRoot(), "scripts", scriptName);
 }
 
-function sensitiveReason(rawPath: string | undefined, cwd: string): string | undefined {
-	if (!rawPath || isSamplePath(rawPath)) return undefined;
+function parseJson<T>(text: string): T | undefined {
+	try {
+		return JSON.parse(text) as T;
+	} catch {
+		return undefined;
+	}
+}
 
-	const normalized = normalizePath(rawPath, cwd);
-	const lower = normalized.toLowerCase();
-	const parts = lower.split(path.sep).filter(Boolean);
-	const base = parts.at(-1) ?? "";
+function cleanPathToken(rawPath: string): string {
+	return rawPath.trim().replace(/^@/, "").replace(/^[\'"]|[\'"]$/g, "").replace(/[,:]+$/g, "");
+}
 
-	if (parts.some((part) => SENSITIVE_DIRS.has(part))) return "protected private directory";
-	if (parts.includes(".kube") && base === "config") return "kubernetes credential config";
-	if (lower.includes(`${path.sep}.config${path.sep}gcloud${path.sep}`)) return "gcloud credential config";
-	if (lower.endsWith(`${path.sep}.config${path.sep}gh${path.sep}hosts.yml`)) return "GitHub CLI credential config";
-	if (lower.endsWith(`${path.sep}.docker${path.sep}config.json`)) return "docker credential config";
-	if (base === ".env" || base.startsWith(".env.")) return "environment secret file";
-	if (/[*?\[]/.test(base) && base.startsWith(".env")) return "environment secret glob";
-	if (SENSITIVE_FILE_RE.test(base)) return "credential-bearing filename";
-	return undefined;
+function policyUnavailable(pathToken: string, reason: string): PathSafetyResult {
+	return {
+		action: "block",
+		allowed: false,
+		matched: false,
+		reason: `policy unavailable: ${reason}`,
+		rule_path: "",
+		normalized_path: pathToken,
+	};
+}
+
+async function pathSafety(pi: ExtensionAPI, rawPath: string | undefined, cwd: string, operation: "read" | "write" | "list" | "egress" | "capture" | "git" = "read"): Promise<PathSafetyResult | undefined> {
+	const pathToken = rawPath ? cleanPathToken(rawPath) : "";
+	if (!pathToken) return undefined;
+	const cacheKey = `${agentsRoot()}\0${cwd}\0${operation}\0${pathToken}`;
+	if (pathSafetyCache.has(cacheKey)) return pathSafetyCache.get(cacheKey) ?? undefined;
+	try {
+		const result = await pi.exec("bash", [policyScriptPath("path-safety.sh"), "--path", pathToken, "--cwd", cwd, "--operation", operation], { cwd, timeout: 5_000 });
+		if (result.code !== 0) {
+			const unavailable = policyUnavailable(pathToken, `exit ${result.code}`);
+			pathSafetyCache.set(cacheKey, unavailable);
+			return unavailable;
+		}
+		const payload = parseJson<PathSafetyResult>(result.stdout);
+		if (!payload || payload.policy_api_version !== POLICY_API_VERSION) {
+			const unavailable = policyUnavailable(pathToken, `unsupported API version ${payload?.policy_api_version ?? "missing"}`);
+			pathSafetyCache.set(cacheKey, unavailable);
+			return unavailable;
+		}
+		const value = payload.action === "allow" ? null : payload;
+		pathSafetyCache.set(cacheKey, value);
+		return value ?? undefined;
+	} catch (error) {
+		const unavailable = policyUnavailable(pathToken, error instanceof Error ? error.message : String(error));
+		pathSafetyCache.set(cacheKey, unavailable);
+		return unavailable;
+	}
 }
 
 function extractPathTokens(command: string): string[] {
-	const tokens: string[] = [];
-	const re = /(?:^|[\s"'`=:(])(@?(?:~|\.{1,2}|\/)[^\s"'`;&|)]+)/g;
+	const tokens = new Set<string>();
+	const pathLike = /(?:^|[\s"'`=:(])(@?(?:~|\$HOME|\.{1,2}|\/)[^\s"'`;&|)]+)/g;
 	let match: RegExpExecArray | null;
-	while ((match = re.exec(command))) {
-		const token = match[1]?.replace(/[,:]+$/g, "");
-		if (token) tokens.push(token);
+	while ((match = pathLike.exec(command))) {
+		const token = cleanPathToken(match[1] ?? "");
+		if (token) tokens.add(token);
 	}
-	return tokens;
+
+	for (const token of command.split(/\s+/)) {
+		const cleaned = cleanPathToken(token);
+		if (!cleaned || cleaned.startsWith("-") || /^[A-Z_]+=/.test(cleaned) || /^[a-z]+:\/\//i.test(cleaned)) continue;
+		if (/^(?:cat|bat|less|more|head|tail|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl|curl|wget|scp|sftp|rsync|rclone|git|aws|gh)$/.test(cleaned)) continue;
+		if (/[/~.$]|(?:env|rsa|ed25519|ecdsa|dsa|npmrc|pypirc|netrc|credentials?|secrets?|tokens?|wallet|private-key|service-account|auth\.json|\.pem|\.key|\.p12|\.pfx)$/i.test(cleaned)) tokens.add(cleaned);
+	}
+
+	return [...tokens];
 }
 
-function commandMentionsSensitivePath(command: string, cwd: string): boolean {
-	const withoutSamples = command.replace(/\.env\.(?:example|sample|template|stub|dummy|dist)\b/gi, "");
-	if (/(^|[^\w.-])@?(?:\.\/)?\.env(?:$|[.*?\s\/"'`:;|&)])/i.test(withoutSamples)) return true;
-	if (/(^|[^\w.-])@?(?:~\/|\$HOME\/)?\.ssh(?:$|[\/\s"'`:;|&)])/i.test(withoutSamples)) return true;
-	if (/(^|[\s"'`])(?:id_rsa|id_ed25519|id_ecdsa|id_dsa|\.npmrc|\.pypirc|\.netrc)(?:$|[\s"'`;|&)])/i.test(withoutSamples)) return true;
-	return extractPathTokens(command).some((token) => sensitiveReason(token, cwd));
+async function commandMentionsSensitivePath(pi: ExtensionAPI, command: string, cwd: string, operation: "egress" | "git" = "egress"): Promise<boolean> {
+	for (const token of extractPathTokens(command)) {
+		if (await pathSafety(pi, token, cwd, operation)) return true;
+	}
+	return false;
 }
 
 function looksLikeRealSecretValue(value: string): boolean {
@@ -131,6 +172,14 @@ async function gitLines(pi: ExtensionAPI, cwd: string, args: string[]): Promise<
 	}
 }
 
+async function sensitivePaths(pi: ExtensionAPI, cwd: string, paths: string[], operation: "git" | "egress" = "git"): Promise<string[]> {
+	const matches: string[] = [];
+	for (const p of paths) {
+		if (await pathSafety(pi, p, cwd, operation)) matches.push(p);
+	}
+	return matches;
+}
+
 async function changedSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<string[]> {
 	try {
 		const result = await pi.exec("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
@@ -138,7 +187,7 @@ async function changedSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<str
 			timeout: 5_000,
 		});
 		if (result.code !== 0) return [];
-		return parsePorcelainPaths(result.stdout).filter((p) => sensitiveReason(p, cwd));
+		return sensitivePaths(pi, cwd, parsePorcelainPaths(result.stdout), "git");
 	} catch {
 		return [];
 	}
@@ -146,7 +195,7 @@ async function changedSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<str
 
 async function stagedSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<string[]> {
 	const paths = await gitLines(pi, cwd, ["diff", "--cached", "--name-only"]);
-	return paths.filter((p) => sensitiveReason(p, cwd));
+	return sensitivePaths(pi, cwd, paths, "git");
 }
 
 async function outgoingSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<string[]> {
@@ -158,19 +207,18 @@ async function outgoingSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<st
 		if (upstream.code === 0) {
 			const base = upstream.stdout.trim();
 			const paths = await gitLines(pi, cwd, ["diff", "--name-only", `${base}..HEAD`]);
-			return paths.filter((p) => sensitiveReason(p, cwd));
+			return sensitivePaths(pi, cwd, paths, "git");
 		}
 	} catch {
 		// Fall back below.
 	}
 
-	const tracked = await gitLines(pi, cwd, ["ls-files"]);
-	return tracked.filter((p) => sensitiveReason(p, cwd));
+	return ["no upstream configured; refusing to infer outgoing sensitive paths from full repository contents"];
 }
 
 async function gitBlockReason(pi: ExtensionAPI, cwd: string, command: string): Promise<string | undefined> {
 	if (GIT_ADD_RE.test(command)) {
-		if (commandMentionsSensitivePath(command, cwd)) return BLOCKED_GIT;
+		if (await commandMentionsSensitivePath(pi, command, cwd, "git")) return BLOCKED_GIT;
 		if (BROAD_GIT_ADD_RE.test(command) && (await changedSensitivePaths(pi, cwd)).length > 0) return BLOCKED_GIT;
 	}
 
@@ -278,7 +326,7 @@ async function guardShellCommand(pi: ExtensionAPI, cwd: string, command: string,
 	const gitReason = await gitBlockReason(pi, cwd, command);
 	if (gitReason) return forUserBash ? blockedUserBash(gitReason) : blockedTool(gitReason);
 
-	if (commandMentionsSensitivePath(command, cwd) && (OUTPUT_COMMAND_RE.test(command) || UPLOAD_COMMAND_RE.test(command))) {
+	if ((OUTPUT_COMMAND_RE.test(command) || UPLOAD_COMMAND_RE.test(command)) && await commandMentionsSensitivePath(pi, command, cwd, "egress")) {
 		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
 	}
 
@@ -291,6 +339,7 @@ export default function safetyGate(pi: ExtensionAPI) {
 	let currentPromptIsGuardBounce = false;
 
 	pi.on("before_agent_start", async (event, ctx) => {
+		pathSafetyCache.clear();
 		initialGitState = await getGitFinalizationState(pi, ctx.cwd);
 		sawPotentialMutation = false;
 		currentPromptIsGuardBounce = event.prompt.includes(GIT_FINALIZATION_MARKER);
@@ -301,16 +350,18 @@ export default function safetyGate(pi: ExtensionAPI) {
 
 		if (event.toolName === "edit" || event.toolName === "write") {
 			sawPotentialMutation = true;
+			const writeDecision = await pathSafety(pi, input.path as string | undefined, ctx.cwd, "write");
+			if (writeDecision?.action === "block") return blockedTool(BLOCKED_OUTPUT);
 		}
 
 		if (event.toolName === "read") {
-			if (sensitiveReason(input.path as string | undefined, ctx.cwd)) return blockedTool(BLOCKED_OUTPUT);
+			if (await pathSafety(pi, input.path as string | undefined, ctx.cwd, "read")) return blockedTool(BLOCKED_OUTPUT);
 		}
 
 		if (event.toolName === "grep") {
 			if (
-				sensitiveReason(input.path as string | undefined, ctx.cwd) ||
-				sensitiveReason(input.glob as string | undefined, ctx.cwd)
+				await pathSafety(pi, input.path as string | undefined, ctx.cwd, "list") ||
+				await pathSafety(pi, input.glob as string | undefined, ctx.cwd, "list")
 			) {
 				return blockedTool(BLOCKED_OUTPUT);
 			}
@@ -329,8 +380,8 @@ export default function safetyGate(pi: ExtensionAPI) {
 		const input = event.input as Record<string, unknown> | undefined;
 		if (
 			(event.toolName === "write" || event.toolName === "edit" || event.toolName === "read" || event.toolName === "grep") &&
-			(sensitiveReason(input?.path as string | undefined, ctx.cwd) ||
-				sensitiveReason(input?.glob as string | undefined, ctx.cwd))
+			(await pathSafety(pi, input?.path as string | undefined, ctx.cwd, "egress") ||
+				await pathSafety(pi, input?.glob as string | undefined, ctx.cwd, "egress"))
 		) {
 			return { content: [{ type: "text", text: HIDDEN_SENSITIVE_RESULT }] };
 		}

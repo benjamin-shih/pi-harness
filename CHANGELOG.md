@@ -7,6 +7,7 @@ All notable changes to this personal pi harness package are tracked here.
 ### Added
 - Ambient pi binding to the shared `.agents/tasks` control plane: pi can auto-bind/reuse tasks, inject task context, heartbeat leases, checkpoint meaningful turns, and release current-session tasks on shutdown without slash-command usage.
 - Consumption of the versioned `.agents` task API and candidate-root policy instead of hardcoding bootstrap-path binding rules in TypeScript.
+- Consumption of `.agents` sensitive-path policy via `path-safety.sh`, keeping only Pi-specific UI and git-finalization behavior in the harness.
 - `/doctor` (`/doct` alias) for read-only harness health checks across package audit, model/context/git state, tools, memory-spine status, and AGENTS task binding.
 - `/memory` for detailed memory-spine checkpoint, compaction, fallback, and diagnostic inspection.
 
