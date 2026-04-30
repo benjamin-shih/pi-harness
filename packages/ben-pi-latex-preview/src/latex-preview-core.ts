@@ -9,7 +9,7 @@ import { deflateSync, inflateSync } from "node:zlib";
 const execFileAsync = promisify(execFile);
 const WIDGET_KEY = "latex-preview";
 const LATEX_TIMEOUT_MS = 12_000;
-const PREVIEW_AUTO_CLEAR_MS = 5 * 60_000;
+const PREVIEW_AUTO_CLEAR_MS = 10 * 60_000;
 const MAX_MATH_WIDTH_CELLS = 72;
 const MIN_MATH_WIDTH_CELLS = 8;
 const PREVIEW_PX_PER_CELL = 18;
