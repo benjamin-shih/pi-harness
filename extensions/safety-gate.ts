@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import path from "node:path";
+import { createPathSafetyChecker, type PathSafetyCheck, type PolicyOperation } from "./safety-gate-lib/policy";
+import { extractPathTokens, extractWritePathTokens, looksMutatingBash, looksRecursiveTraversalCommand } from "./safety-gate-lib/shell";
 
 const BLOCKED_OUTPUT =
 	"[safety-gate] Blocked output because it appears to contain credential material or a protected private file.";
@@ -8,9 +9,6 @@ const BLOCKED_GIT =
 const HIDDEN_SENSITIVE_RESULT =
 	"[safety-gate] Sensitive operation completed, but output was hidden to avoid exposing credential material.";
 const GIT_FINALIZATION_MARKER = "PI_GIT_FINALIZATION_GUARD";
-const DEFAULT_AGENTS_ROOT = "/Users/benjaminshih/.agents";
-const POLICY_API_VERSION = 1;
-const pathSafetyCache = new Map<string, PathSafetyResult | null>();
 
 const OUTPUT_COMMAND_RE = /\b(?:cat|bat|less|more|head|tail|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl)\b/i;
 const UPLOAD_COMMAND_RE = /\b(?:curl|wget|scp|sftp|rsync|rclone|aws\s+s3\s+cp|aws\s+s3\s+sync|gh\s+release\s+upload)\b/i;
@@ -31,19 +29,6 @@ type GitFinalizationState = {
 	ahead: number;
 };
 
-type PolicyOperation = "read" | "write" | "list" | "egress" | "capture" | "git";
-
-type PathSafetyResult = {
-	policy_api_version?: number;
-	action?: "allow" | "warn" | "block";
-	allowed?: boolean;
-	matched?: boolean;
-	recursive?: boolean;
-	reason?: string;
-	rule_path?: string;
-	normalized_path?: string;
-};
-
 const DEFINITE_SECRET_PATTERNS = [
 	/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/i,
 	/\bAKIA[0-9A-Z]{16}\b/,
@@ -53,127 +38,16 @@ const DEFINITE_SECRET_PATTERNS = [
 const GENERIC_SECRET_ASSIGNMENT_RE =
 	/\b(?:api[_-]?key|secret|token|password|passwd|client[_-]?secret|private[_-]?key|credential)\b\s*[:=]\s*["']?([^"'`\s]{12,})/gi;
 
-function agentsRoot(): string {
-	return process.env.AGENTS_SHARED_ROOT || DEFAULT_AGENTS_ROOT;
-}
-
-function policyScriptPath(scriptName: string): string {
-	return path.join(agentsRoot(), "scripts", scriptName);
-}
-
-function parseJson<T>(text: string): T | undefined {
-	try {
-		return JSON.parse(text) as T;
-	} catch {
-		return undefined;
-	}
-}
-
-function cleanPathToken(rawPath: string): string {
-	return rawPath
-		.trim()
-		.replace(/^(?:\d?>+|&>|<+)/, "")
-		.replace(/^@/, "")
-		.replace(/^[\'"]|[\'"]$/g, "")
-		.replace(/[,:]+$/g, "");
-}
-
-function policyUnavailable(pathToken: string, reason: string): PathSafetyResult {
-	return {
-		action: "block",
-		allowed: false,
-		matched: false,
-		reason: `policy unavailable: ${reason}`,
-		rule_path: "",
-		normalized_path: pathToken,
-	};
-}
-
-async function pathSafety(pi: ExtensionAPI, rawPath: string | undefined, cwd: string, operation: PolicyOperation = "read", recursive = false): Promise<PathSafetyResult | undefined> {
-	const pathToken = rawPath ? cleanPathToken(rawPath) : "";
-	if (!pathToken) return undefined;
-	const cacheKey = `${agentsRoot()}\0${cwd}\0${operation}\0${recursive ? "recursive" : "direct"}\0${pathToken}`;
-	if (pathSafetyCache.has(cacheKey)) return pathSafetyCache.get(cacheKey) ?? undefined;
-	try {
-		const args = [policyScriptPath("path-safety.sh"), "--path", pathToken, "--cwd", cwd, "--operation", operation];
-		if (recursive) args.push("--recursive");
-		const result = await pi.exec("bash", args, { cwd, timeout: 5_000 });
-		if (result.code !== 0) {
-			const unavailable = policyUnavailable(pathToken, `exit ${result.code}`);
-			pathSafetyCache.set(cacheKey, unavailable);
-			return unavailable;
-		}
-		const payload = parseJson<PathSafetyResult>(result.stdout);
-		if (!payload || payload.policy_api_version !== POLICY_API_VERSION) {
-			const unavailable = policyUnavailable(pathToken, `unsupported API version ${payload?.policy_api_version ?? "missing"}`);
-			pathSafetyCache.set(cacheKey, unavailable);
-			return unavailable;
-		}
-		const value = payload.action === "allow" ? null : payload;
-		pathSafetyCache.set(cacheKey, value);
-		return value ?? undefined;
-	} catch (error) {
-		const unavailable = policyUnavailable(pathToken, error instanceof Error ? error.message : String(error));
-		pathSafetyCache.set(cacheKey, unavailable);
-		return unavailable;
-	}
-}
-
-const SHELL_COMMAND_WORD_RE = /^(?:cat|bat|less|more|head|tail|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl|curl|wget|scp|sftp|rsync|rclone|git|aws|gh|make|npm|pnpm|yarn|cd)$/;
-
-function extractPathTokens(command: string, includePlainOperands = false): string[] {
-	const tokens = new Set<string>();
-	const pathLike = /(?:^|[\s"'`=:(])(@?(?:~|\$HOME|\.{1,2}|\/)[^\s"'`;&|)]+)/g;
-	let match: RegExpExecArray | null;
-	while ((match = pathLike.exec(command))) {
-		const token = cleanPathToken(match[1] ?? "");
-		if (token) tokens.add(token);
-	}
-
-	for (const token of command.split(/\s+/)) {
-		const cleaned = cleanPathToken(token);
-		if (!cleaned || cleaned.startsWith("-") || /^[A-Z_]+=/.test(cleaned) || /^[a-z]+:\/\//i.test(cleaned)) continue;
-		if (SHELL_COMMAND_WORD_RE.test(cleaned)) continue;
-		if (includePlainOperands || /[/~.$]|(?:env|rsa|ed25519|ecdsa|dsa|npmrc|pypirc|netrc|credentials?|secrets?|tokens?|wallet|private-key|service-account|auth\.json|\.pem|\.key|\.p12|\.pfx)$/i.test(cleaned)) tokens.add(cleaned);
-	}
-
-	return [...tokens];
-}
-
-function extractRedirectionTargets(command: string): string[] {
-	const targets = new Set<string>();
-	const re = /(?:\d*(?:>>?|<)|&>)\s*([^\s;&|)]+)/g;
-	let match: RegExpExecArray | null;
-	while ((match = re.exec(command))) {
-		const token = cleanPathToken(match[1] ?? "");
-		if (token) targets.add(token);
-	}
-	return [...targets];
-}
-
-function looksFileMutationCommand(command: string): boolean {
-	return /(^|[;&|()\s])(?:rm|mv|cp|touch|mkdir|rmdir|tee)\b/.test(command)
-		|| /\b(?:sed|perl)\s+[^\n]*\s-i\b/.test(command);
-}
-
-function extractWritePathTokens(command: string): string[] {
-	const tokens = new Set(extractRedirectionTargets(command));
-	if (looksFileMutationCommand(command)) {
-		for (const token of extractPathTokens(command, true)) tokens.add(token);
-	}
-	return [...tokens];
-}
-
-async function commandMentionsSensitivePath(pi: ExtensionAPI, command: string, cwd: string, operation: PolicyOperation = "egress", recursive = false): Promise<boolean> {
+async function commandMentionsSensitivePath(pathSafety: PathSafetyCheck, command: string, cwd: string, operation: PolicyOperation = "egress", recursive = false): Promise<boolean> {
 	for (const token of extractPathTokens(command)) {
-		if (await pathSafety(pi, token, cwd, operation, recursive)) return true;
+		if (await pathSafety(token, cwd, operation, recursive)) return true;
 	}
 	return false;
 }
 
-async function commandMentionsBlockedWritePath(pi: ExtensionAPI, command: string, cwd: string): Promise<boolean> {
+async function commandMentionsBlockedWritePath(pathSafety: PathSafetyCheck, command: string, cwd: string): Promise<boolean> {
 	for (const token of extractWritePathTokens(command)) {
-		if ((await pathSafety(pi, token, cwd, "write", true))?.action === "block") return true;
+		if ((await pathSafety(token, cwd, "write", true))?.action === "block") return true;
 	}
 	return false;
 }
@@ -215,33 +89,33 @@ async function gitLines(pi: ExtensionAPI, cwd: string, args: string[]): Promise<
 	}
 }
 
-async function sensitivePaths(pi: ExtensionAPI, cwd: string, paths: string[], operation: "git" | "egress" = "git"): Promise<string[]> {
+async function sensitivePaths(pathSafety: PathSafetyCheck, cwd: string, paths: string[], operation: "git" | "egress" = "git"): Promise<string[]> {
 	const matches: string[] = [];
 	for (const p of paths) {
-		if (await pathSafety(pi, p, cwd, operation)) matches.push(p);
+		if (await pathSafety(p, cwd, operation)) matches.push(p);
 	}
 	return matches;
 }
 
-async function changedSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<string[]> {
+async function changedSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<string[]> {
 	try {
 		const result = await pi.exec("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
 			cwd,
 			timeout: 5_000,
 		});
 		if (result.code !== 0) return [];
-		return sensitivePaths(pi, cwd, parsePorcelainPaths(result.stdout), "git");
+		return sensitivePaths(pathSafety, cwd, parsePorcelainPaths(result.stdout), "git");
 	} catch {
 		return [];
 	}
 }
 
-async function stagedSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<string[]> {
+async function stagedSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<string[]> {
 	const paths = await gitLines(pi, cwd, ["diff", "--cached", "--name-only"]);
-	return sensitivePaths(pi, cwd, paths, "git");
+	return sensitivePaths(pathSafety, cwd, paths, "git");
 }
 
-async function outgoingSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<string[]> {
+async function outgoingSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<string[]> {
 	try {
 		const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], {
 			cwd,
@@ -250,7 +124,7 @@ async function outgoingSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<st
 		if (upstream.code === 0) {
 			const base = upstream.stdout.trim();
 			const paths = await gitLines(pi, cwd, ["diff", "--name-only", `${base}..HEAD`]);
-			return sensitivePaths(pi, cwd, paths, "git");
+			return sensitivePaths(pathSafety, cwd, paths, "git");
 		}
 	} catch {
 		// Fall back below.
@@ -259,18 +133,18 @@ async function outgoingSensitivePaths(pi: ExtensionAPI, cwd: string): Promise<st
 	return ["no upstream configured; refusing to infer outgoing sensitive paths from full repository contents"];
 }
 
-async function gitBlockReason(pi: ExtensionAPI, cwd: string, command: string): Promise<string | undefined> {
+async function gitBlockReason(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string, command: string): Promise<string | undefined> {
 	if (GIT_ADD_RE.test(command)) {
-		if (await commandMentionsSensitivePath(pi, command, cwd, "git")) return BLOCKED_GIT;
-		if (BROAD_GIT_ADD_RE.test(command) && (await changedSensitivePaths(pi, cwd)).length > 0) return BLOCKED_GIT;
+		if (await commandMentionsSensitivePath(pathSafety, command, cwd, "git")) return BLOCKED_GIT;
+		if (BROAD_GIT_ADD_RE.test(command) && (await changedSensitivePaths(pi, pathSafety, cwd)).length > 0) return BLOCKED_GIT;
 	}
 
 	if (GIT_COMMIT_RE.test(command)) {
-		if ((await stagedSensitivePaths(pi, cwd)).length > 0) return BLOCKED_GIT;
-		if (COMMIT_ALL_RE.test(command) && (await changedSensitivePaths(pi, cwd)).length > 0) return BLOCKED_GIT;
+		if ((await stagedSensitivePaths(pi, pathSafety, cwd)).length > 0) return BLOCKED_GIT;
+		if (COMMIT_ALL_RE.test(command) && (await changedSensitivePaths(pi, pathSafety, cwd)).length > 0) return BLOCKED_GIT;
 	}
 
-	if (GIT_PUSH_RE.test(command) && (await outgoingSensitivePaths(pi, cwd)).length > 0) return BLOCKED_GIT;
+	if (GIT_PUSH_RE.test(command) && (await outgoingSensitivePaths(pi, pathSafety, cwd)).length > 0) return BLOCKED_GIT;
 	return undefined;
 }
 
@@ -320,12 +194,6 @@ function gitFinalizationStateChanged(before: GitFinalizationState | undefined, a
 	);
 }
 
-function looksMutatingBash(command: string): boolean {
-	return looksFileMutationCommand(command)
-		|| /(^|[;&|()\s])(?:python|python3|node|npm|pnpm|yarn|make|lualatex|latexmk|git\s+(?:add|commit|push|reset|checkout|switch|merge|rebase|stash|clean))\b/.test(command)
-		|| /(^|[^<])>{1,2}\s*[^&]/.test(command);
-}
-
 function needsGitFinalization(state: GitFinalizationState, before: GitFinalizationState | undefined): boolean {
 	if (state.dirtyLines.length > 0) return true;
 	if (state.ahead > 0) return true;
@@ -365,32 +233,26 @@ function redactToolContent(content: unknown): { content: unknown; changed: boole
 	return { content: next, changed };
 }
 
-function looksRecursiveTraversalCommand(command: string): boolean {
-	return /\bgrep\b[\s\S]*(?:\s-[A-Za-z]*r[A-Za-z]*\b|\s--(?:dereference-)?recursive\b)/i.test(command)
-		|| /\b(?:rg|ripgrep|fd|find|tree)\b/i.test(command)
-		|| /\bls\b[\s\S]*(?:\s-[A-Za-z]*R[A-Za-z]*\b|\s--recursive\b)/.test(command);
-}
-
-async function guardShellCommand(pi: ExtensionAPI, cwd: string, command: string, forUserBash = false) {
-	const gitReason = await gitBlockReason(pi, cwd, command);
+async function guardShellCommand(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string, command: string, forUserBash = false) {
+	const gitReason = await gitBlockReason(pi, pathSafety, cwd, command);
 	if (gitReason) return forUserBash ? blockedUserBash(gitReason) : blockedTool(gitReason);
 
 	const mutating = looksMutatingBash(command);
 	if (mutating && (
-		(await pathSafety(pi, ".", cwd, "write"))?.action === "block" ||
-		await commandMentionsBlockedWritePath(pi, command, cwd)
+		(await pathSafety(".", cwd, "write"))?.action === "block" ||
+		await commandMentionsBlockedWritePath(pathSafety, command, cwd)
 	)) {
 		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
 	}
 
 	const outputOrUpload = OUTPUT_COMMAND_RE.test(command) || UPLOAD_COMMAND_RE.test(command);
-	if (outputOrUpload && await commandMentionsSensitivePath(pi, command, cwd, "egress")) {
+	if (outputOrUpload && await commandMentionsSensitivePath(pathSafety, command, cwd, "egress")) {
 		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
 	}
 
 	if (looksRecursiveTraversalCommand(command) && (
-		await pathSafety(pi, ".", cwd, "list", true) ||
-		await commandMentionsSensitivePath(pi, command, cwd, "list", true)
+		await pathSafety(".", cwd, "list", true) ||
+		await commandMentionsSensitivePath(pathSafety, command, cwd, "list", true)
 	)) {
 		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
 	}
@@ -399,12 +261,13 @@ async function guardShellCommand(pi: ExtensionAPI, cwd: string, command: string,
 }
 
 export default function safetyGate(pi: ExtensionAPI) {
+	const { pathSafety, clearPathSafetyCache } = createPathSafetyChecker(pi);
 	let initialGitState: GitFinalizationState | undefined;
 	let sawPotentialMutation = false;
 	let currentPromptIsGuardBounce = false;
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		pathSafetyCache.clear();
+		clearPathSafetyCache();
 		initialGitState = await getGitFinalizationState(pi, ctx.cwd);
 		sawPotentialMutation = false;
 		currentPromptIsGuardBounce = event.prompt.includes(GIT_FINALIZATION_MARKER);
@@ -415,19 +278,19 @@ export default function safetyGate(pi: ExtensionAPI) {
 
 		if (event.toolName === "edit" || event.toolName === "write") {
 			sawPotentialMutation = true;
-			const writeDecision = await pathSafety(pi, input.path as string | undefined, ctx.cwd, "write");
+			const writeDecision = await pathSafety(input.path as string | undefined, ctx.cwd, "write");
 			if (writeDecision?.action === "block") return blockedTool(BLOCKED_OUTPUT);
 		}
 
 		if (event.toolName === "read") {
-			if (await pathSafety(pi, input.path as string | undefined, ctx.cwd, "read")) return blockedTool(BLOCKED_OUTPUT);
+			if (await pathSafety(input.path as string | undefined, ctx.cwd, "read")) return blockedTool(BLOCKED_OUTPUT);
 		}
 
 		if (event.toolName === "grep") {
 			const grepPath = typeof input.path === "string" ? input.path : ".";
 			if (
-				await pathSafety(pi, grepPath, ctx.cwd, "list", true) ||
-				await pathSafety(pi, input.glob as string | undefined, ctx.cwd, "list")
+				await pathSafety(grepPath, ctx.cwd, "list", true) ||
+				await pathSafety(input.glob as string | undefined, ctx.cwd, "list")
 			) {
 				return blockedTool(BLOCKED_OUTPUT);
 			}
@@ -436,7 +299,7 @@ export default function safetyGate(pi: ExtensionAPI) {
 		if (event.toolName === "bash") {
 			const command = String(input.command ?? "");
 			if (looksMutatingBash(command)) sawPotentialMutation = true;
-			return guardShellCommand(pi, ctx.cwd, command, false);
+			return guardShellCommand(pi, pathSafety, ctx.cwd, command, false);
 		}
 
 		return undefined;
@@ -446,8 +309,8 @@ export default function safetyGate(pi: ExtensionAPI) {
 		const input = event.input as Record<string, unknown> | undefined;
 		if (
 			(event.toolName === "write" || event.toolName === "edit" || event.toolName === "read" || event.toolName === "grep") &&
-			(await pathSafety(pi, input?.path as string | undefined, ctx.cwd, "egress") ||
-				await pathSafety(pi, input?.glob as string | undefined, ctx.cwd, "egress"))
+			(await pathSafety(input?.path as string | undefined, ctx.cwd, "egress") ||
+				await pathSafety(input?.glob as string | undefined, ctx.cwd, "egress"))
 		) {
 			return { content: [{ type: "text", text: HIDDEN_SENSITIVE_RESULT }] };
 		}
@@ -457,7 +320,7 @@ export default function safetyGate(pi: ExtensionAPI) {
 		return { content, isError: true };
 	});
 
-	pi.on("user_bash", async (event) => guardShellCommand(pi, event.cwd, event.command, true));
+	pi.on("user_bash", async (event) => guardShellCommand(pi, pathSafety, event.cwd, event.command, true));
 
 	pi.on("agent_end", async (_event, ctx) => {
 		const currentState = await getGitFinalizationState(pi, ctx.cwd);
