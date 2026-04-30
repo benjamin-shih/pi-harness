@@ -55,6 +55,10 @@ Pi reuses the shared `/Users/benjaminshih/.agents/tasks` control plane through t
 
 The shared `.agents` scripts own project-root, bootstrap-path, and sensitive-path policy via `task-api.sh info`, `task-candidate-root.sh`, and `path-safety.sh`; the TypeScript harness is only the Pi runtime adapter/UI layer. Set `AGENTS_SHARED_ROOT` to point at an alternate `.agents` checkout. Tests can set `TASKS_ROOT` to isolate task packages.
 
+## UI polish
+
+The UI polish extension keeps the compact `π` terminal title while idle and animates a small braille spinner in the titlebar during active agent turns. Kitty shows this in tabs when tab titles are enabled.
+
 ## Commands
 
 After loading this package in pi:

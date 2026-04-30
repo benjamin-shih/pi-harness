@@ -31,11 +31,14 @@ type GitFinalizationState = {
 	ahead: number;
 };
 
+type PolicyOperation = "read" | "write" | "list" | "egress" | "capture" | "git";
+
 type PathSafetyResult = {
 	policy_api_version?: number;
 	action?: "allow" | "warn" | "block";
 	allowed?: boolean;
 	matched?: boolean;
+	recursive?: boolean;
 	reason?: string;
 	rule_path?: string;
 	normalized_path?: string;
@@ -67,7 +70,12 @@ function parseJson<T>(text: string): T | undefined {
 }
 
 function cleanPathToken(rawPath: string): string {
-	return rawPath.trim().replace(/^@/, "").replace(/^[\'"]|[\'"]$/g, "").replace(/[,:]+$/g, "");
+	return rawPath
+		.trim()
+		.replace(/^(?:\d?>+|&>|<+)/, "")
+		.replace(/^@/, "")
+		.replace(/^[\'"]|[\'"]$/g, "")
+		.replace(/[,:]+$/g, "");
 }
 
 function policyUnavailable(pathToken: string, reason: string): PathSafetyResult {
@@ -81,13 +89,15 @@ function policyUnavailable(pathToken: string, reason: string): PathSafetyResult 
 	};
 }
 
-async function pathSafety(pi: ExtensionAPI, rawPath: string | undefined, cwd: string, operation: "read" | "write" | "list" | "egress" | "capture" | "git" = "read"): Promise<PathSafetyResult | undefined> {
+async function pathSafety(pi: ExtensionAPI, rawPath: string | undefined, cwd: string, operation: PolicyOperation = "read", recursive = false): Promise<PathSafetyResult | undefined> {
 	const pathToken = rawPath ? cleanPathToken(rawPath) : "";
 	if (!pathToken) return undefined;
-	const cacheKey = `${agentsRoot()}\0${cwd}\0${operation}\0${pathToken}`;
+	const cacheKey = `${agentsRoot()}\0${cwd}\0${operation}\0${recursive ? "recursive" : "direct"}\0${pathToken}`;
 	if (pathSafetyCache.has(cacheKey)) return pathSafetyCache.get(cacheKey) ?? undefined;
 	try {
-		const result = await pi.exec("bash", [policyScriptPath("path-safety.sh"), "--path", pathToken, "--cwd", cwd, "--operation", operation], { cwd, timeout: 5_000 });
+		const args = [policyScriptPath("path-safety.sh"), "--path", pathToken, "--cwd", cwd, "--operation", operation];
+		if (recursive) args.push("--recursive");
+		const result = await pi.exec("bash", args, { cwd, timeout: 5_000 });
 		if (result.code !== 0) {
 			const unavailable = policyUnavailable(pathToken, `exit ${result.code}`);
 			pathSafetyCache.set(cacheKey, unavailable);
@@ -128,9 +138,16 @@ function extractPathTokens(command: string): string[] {
 	return [...tokens];
 }
 
-async function commandMentionsSensitivePath(pi: ExtensionAPI, command: string, cwd: string, operation: "egress" | "git" = "egress"): Promise<boolean> {
+async function commandMentionsSensitivePath(pi: ExtensionAPI, command: string, cwd: string, operation: PolicyOperation = "egress", recursive = false): Promise<boolean> {
 	for (const token of extractPathTokens(command)) {
-		if (await pathSafety(pi, token, cwd, operation)) return true;
+		if (await pathSafety(pi, token, cwd, operation, recursive)) return true;
+	}
+	return false;
+}
+
+async function commandMentionsBlockedPath(pi: ExtensionAPI, command: string, cwd: string, operation: PolicyOperation = "write", recursive = false): Promise<boolean> {
+	for (const token of extractPathTokens(command)) {
+		if ((await pathSafety(pi, token, cwd, operation, recursive))?.action === "block") return true;
 	}
 	return false;
 }
@@ -322,11 +339,33 @@ function redactToolContent(content: unknown): { content: unknown; changed: boole
 	return { content: next, changed };
 }
 
+function looksRecursiveTraversalCommand(command: string): boolean {
+	return /\bgrep\b[\s\S]*\s-[A-Za-z]*r[A-Za-z]*\b/i.test(command)
+		|| /\b(?:rg|ripgrep|fd|find|tree)\b/i.test(command)
+		|| /\bls\b[\s\S]*\s-[A-Za-z]*R[A-Za-z]*\b/.test(command);
+}
+
 async function guardShellCommand(pi: ExtensionAPI, cwd: string, command: string, forUserBash = false) {
 	const gitReason = await gitBlockReason(pi, cwd, command);
 	if (gitReason) return forUserBash ? blockedUserBash(gitReason) : blockedTool(gitReason);
 
-	if ((OUTPUT_COMMAND_RE.test(command) || UPLOAD_COMMAND_RE.test(command)) && await commandMentionsSensitivePath(pi, command, cwd, "egress")) {
+	const mutating = looksMutatingBash(command);
+	if (mutating && (
+		(await pathSafety(pi, ".", cwd, "write", true))?.action === "block" ||
+		await commandMentionsBlockedPath(pi, command, cwd, "write", true)
+	)) {
+		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
+	}
+
+	const outputOrUpload = OUTPUT_COMMAND_RE.test(command) || UPLOAD_COMMAND_RE.test(command);
+	if (outputOrUpload && await commandMentionsSensitivePath(pi, command, cwd, "egress")) {
+		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
+	}
+
+	if (looksRecursiveTraversalCommand(command) && (
+		await pathSafety(pi, ".", cwd, "list", true) ||
+		await commandMentionsSensitivePath(pi, command, cwd, "list", true)
+	)) {
 		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
 	}
 
@@ -359,8 +398,9 @@ export default function safetyGate(pi: ExtensionAPI) {
 		}
 
 		if (event.toolName === "grep") {
+			const grepPath = typeof input.path === "string" ? input.path : ".";
 			if (
-				await pathSafety(pi, input.path as string | undefined, ctx.cwd, "list") ||
+				await pathSafety(pi, grepPath, ctx.cwd, "list", true) ||
 				await pathSafety(pi, input.glob as string | undefined, ctx.cwd, "list")
 			) {
 				return blockedTool(BLOCKED_OUTPUT);
