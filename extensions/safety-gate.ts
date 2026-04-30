@@ -89,33 +89,32 @@ async function gitLines(pi: ExtensionAPI, cwd: string, args: string[]): Promise<
 	}
 }
 
-async function sensitiveGitPaths(pathSafety: PathSafetyCheck, cwd: string, paths: string[]): Promise<string[]> {
-	const matches: string[] = [];
+async function hasSensitiveGitPath(pathSafety: PathSafetyCheck, cwd: string, paths: string[]): Promise<boolean> {
 	for (const p of paths) {
-		if (await pathSafety(p, cwd, "git")) matches.push(p);
+		if (await pathSafety(p, cwd, "git")) return true;
 	}
-	return matches;
+	return false;
 }
 
-async function changedSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<string[]> {
+async function hasChangedSensitivePath(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<boolean> {
 	try {
 		const result = await pi.exec("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
 			cwd,
 			timeout: 5_000,
 		});
-		if (result.code !== 0) return [];
-		return sensitiveGitPaths(pathSafety, cwd, parsePorcelainPaths(result.stdout));
+		if (result.code !== 0) return false;
+		return hasSensitiveGitPath(pathSafety, cwd, parsePorcelainPaths(result.stdout));
 	} catch {
-		return [];
+		return false;
 	}
 }
 
-async function stagedSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<string[]> {
+async function hasStagedSensitivePath(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<boolean> {
 	const paths = await gitLines(pi, cwd, ["diff", "--cached", "--name-only"]);
-	return sensitiveGitPaths(pathSafety, cwd, paths);
+	return hasSensitiveGitPath(pathSafety, cwd, paths);
 }
 
-async function outgoingSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<string[]> {
+async function hasOutgoingSensitivePath(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<boolean> {
 	try {
 		const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], {
 			cwd,
@@ -124,27 +123,27 @@ async function outgoingSensitivePaths(pi: ExtensionAPI, pathSafety: PathSafetyCh
 		if (upstream.code === 0) {
 			const base = upstream.stdout.trim();
 			const paths = await gitLines(pi, cwd, ["diff", "--name-only", `${base}..HEAD`]);
-			return sensitiveGitPaths(pathSafety, cwd, paths);
+			return hasSensitiveGitPath(pathSafety, cwd, paths);
 		}
 	} catch {
 		// Fall back below.
 	}
 
-	return ["no upstream configured; refusing to infer outgoing sensitive paths from full repository contents"];
+	return true;
 }
 
 async function gitBlockReason(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string, command: string): Promise<string | undefined> {
 	if (GIT_ADD_RE.test(command)) {
 		if (await commandMentionsSensitivePath(pathSafety, command, cwd, "git")) return BLOCKED_GIT;
-		if (BROAD_GIT_ADD_RE.test(command) && (await changedSensitivePaths(pi, pathSafety, cwd)).length > 0) return BLOCKED_GIT;
+		if (BROAD_GIT_ADD_RE.test(command) && await hasChangedSensitivePath(pi, pathSafety, cwd)) return BLOCKED_GIT;
 	}
 
 	if (GIT_COMMIT_RE.test(command)) {
-		if ((await stagedSensitivePaths(pi, pathSafety, cwd)).length > 0) return BLOCKED_GIT;
-		if (COMMIT_ALL_RE.test(command) && (await changedSensitivePaths(pi, pathSafety, cwd)).length > 0) return BLOCKED_GIT;
+		if (await hasStagedSensitivePath(pi, pathSafety, cwd)) return BLOCKED_GIT;
+		if (COMMIT_ALL_RE.test(command) && await hasChangedSensitivePath(pi, pathSafety, cwd)) return BLOCKED_GIT;
 	}
 
-	if (GIT_PUSH_RE.test(command) && (await outgoingSensitivePaths(pi, pathSafety, cwd)).length > 0) return BLOCKED_GIT;
+	if (GIT_PUSH_RE.test(command) && await hasOutgoingSensitivePath(pi, pathSafety, cwd)) return BLOCKED_GIT;
 	return undefined;
 }
 
