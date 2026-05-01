@@ -26,8 +26,26 @@ function checkpointList(checkpoints: ContinuityLedger["checkpoints"]): string {
 		.join("\n");
 }
 
-function fileOpsList(fileOps: { readFiles?: string[]; modifiedFiles?: string[] } | undefined, key: "readFiles" | "modifiedFiles"): string {
-	return bulletList(uniqueSorted(fileOps?.[key] ?? [], MAX_LEDGER_FILES));
+type SummaryFileOps = { readFiles?: string[]; modifiedFiles?: string[] };
+type PiFileOps = { read?: Iterable<string>; written?: Iterable<string>; edited?: Iterable<string> };
+type FileOpsInput = SummaryFileOps | PiFileOps;
+
+function toArray(value: Iterable<string> | undefined): string[] {
+	return value ? Array.from(value) : [];
+}
+
+function normalizeFileOps(fileOps: FileOpsInput | undefined): SummaryFileOps {
+	if (!fileOps) return {};
+	if ("readFiles" in fileOps || "modifiedFiles" in fileOps) return fileOps;
+	const piFileOps = fileOps as PiFileOps;
+	const modified = new Set([...toArray(piFileOps.written), ...toArray(piFileOps.edited)]);
+	const readFiles = toArray(piFileOps.read).filter((file) => !modified.has(file));
+	return { readFiles, modifiedFiles: Array.from(modified) };
+}
+
+function fileOpsList(fileOps: FileOpsInput | undefined, key: "readFiles" | "modifiedFiles"): string {
+	const normalized = normalizeFileOps(fileOps);
+	return bulletList(uniqueSorted(normalized[key] ?? [], MAX_LEDGER_FILES));
 }
 
 export function buildContinuitySummaryPrompt(args: {
@@ -35,7 +53,7 @@ export function buildContinuitySummaryPrompt(args: {
 	conversationText: string;
 	turnPrefixText?: string;
 	ledger: ContinuityLedger;
-	fileOps?: { readFiles?: string[]; modifiedFiles?: string[] };
+	fileOps?: FileOpsInput;
 	customInstructions?: string;
 	gitStatus?: string;
 	maxPromptChars?: number;
@@ -133,7 +151,7 @@ export function extractSummaryText(response: { content?: Array<{ type: string; t
 
 export function buildDeterministicContinuitySummary(args: {
 	ledger: ContinuityLedger;
-	fileOps?: { readFiles?: string[]; modifiedFiles?: string[] };
+	fileOps?: FileOpsInput;
 	previousSummary?: string;
 	customInstructions?: string;
 	gitStatus?: string;
@@ -163,10 +181,10 @@ ${args.promptSizing ? `- Prompt chars: ${args.promptSizing.promptChars}.` : "- P
 - Custom model compaction did not complete; harness fallback summary was returned instead of pi default compaction.
 
 ## Files Read
-${bulletList(uniqueSorted([...(args.ledger.filesRead ?? []), ...(args.fileOps?.readFiles ?? [])], MAX_LEDGER_FILES))}
+${bulletList(uniqueSorted([...(args.ledger.filesRead ?? []), ...(normalizeFileOps(args.fileOps).readFiles ?? [])], MAX_LEDGER_FILES))}
 
 ## Files Modified
-${bulletList(uniqueSorted([...(args.ledger.filesModified ?? []), ...(args.fileOps?.modifiedFiles ?? [])], MAX_LEDGER_FILES))}
+${bulletList(uniqueSorted([...(args.ledger.filesModified ?? []), ...(normalizeFileOps(args.fileOps).modifiedFiles ?? [])], MAX_LEDGER_FILES))}
 
 ## Commands / Verification
 ${commandList(args.ledger.commands)}

@@ -149,7 +149,7 @@ export function createSessionContinuity(deps: { completeFn?: CompleteFn } = {}) 
 			notify(ctx, "Memory spine: generating continuity summary...", "info");
 			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
 			if (!auth.ok || !auth.apiKey) {
-				const message = auth.ok ? `No API key for ${ctx.model.provider}` : auth.error;
+				const message = auth.ok ? `No API key for ${ctx.model.provider}` : (auth as { error: string }).error;
 				notify(ctx, `Memory spine: ${message}; using deterministic harness fallback`, "warning");
 				return fallback("no_api_key", message);
 			}

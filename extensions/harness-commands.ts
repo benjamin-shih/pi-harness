@@ -262,7 +262,7 @@ async function runHarnessAudit(pi: ExtensionAPI): Promise<HarnessAuditResult> {
 }
 
 function formatHarnessAuditLines(result: HarnessAuditResult): string[] {
-	if (!result.ok) return [`- harness audit: unavailable (${result.error})`];
+	if (result.ok === false) return [`- harness audit: unavailable (${result.error})`];
 	const { audit } = result;
 	return [
 		`- harness audit: ${audit.issues?.length ? "issues" : "ok"} (${audit.issues?.length ?? 0} issue(s), ${audit.warnings?.length ?? 0} warning(s))`,

@@ -7,7 +7,8 @@
   ],
   "description": "Benjamin's personal pi harness package: extensions, prompts, and themes.",
   "scripts": {
-    "verify": "node scripts/verify.mjs",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && node scripts/verify.mjs",
     "harness:audit": "node scripts/harness-audit.mjs",
     "skills:audit": "node scripts/skills-audit.mjs",
     "changelog": "node scripts/changelog.mjs",
@@ -19,7 +20,9 @@
     "@mariozechner/pi-tui": "*"
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "0.71.0"
+    "@mariozechner/pi-coding-agent": "0.71.0",
+    "@types/node": "25.6.0",
+    "typescript": "6.0.3"
   },
   "pi": {
     "extensions": [

@@ -1,6 +1,7 @@
+import { homedir } from "node:os";
 import path from "node:path";
 
-const FALLBACK_AGENTS_ROOT = "/Users/benjaminshih/.agents";
+const FALLBACK_AGENTS_ROOT = path.join(homedir(), ".agents");
 
 export function agentsRoot(): string {
 	return process.env.AGENTS_SHARED_ROOT || FALLBACK_AGENTS_ROOT;

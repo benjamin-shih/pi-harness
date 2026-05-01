@@ -51,7 +51,7 @@ To enable it globally while keeping it outside the core harness package:
 
 ## Ambient task binding
 
-Pi reuses the shared `/Users/benjaminshih/.agents/tasks` control plane through the versioned `.agents` task API. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, capture safe typed task-artifact metadata, and release current-session leases on shutdown.
+Pi reuses the shared `.agents/tasks` control plane through the versioned `.agents` task API. By default the harness looks under `$HOME/.agents`; set `AGENTS_SHARED_ROOT` when using a different checkout. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, capture safe typed task-artifact metadata, and release current-session leases on shutdown.
 
 The shared `.agents` scripts own project-root, bootstrap-path, sensitive-path, and artifact-capture policy via `task-api.sh info`, `task-candidate-root.sh`, `path-safety.sh`, and `task-artifact-*.sh`; the TypeScript harness is only the Pi runtime adapter/UI layer. Set `AGENTS_SHARED_ROOT` to point at an alternate `.agents` checkout, `AGENTS_SKILLS_ROOT` to override the default skills root, and `TASKS_ROOT` to isolate task packages in tests.
 
@@ -104,6 +104,7 @@ After editing package files, reload pi:
 
 ```bash
 npm ci
+npm run typecheck
 npm run verify
 npm run harness:audit
 npm run skills:audit
@@ -112,12 +113,19 @@ npm run hooks:install
 
 The tracked pre-push hook runs `npm run verify` and `npm run harness:audit`.
 
-Cross-runtime task-script changes live in `/Users/benjaminshih/.agents`; validate them with:
+Cross-runtime task-script changes live in your `.agents` checkout; validate them with:
 
 ```bash
-cd /Users/benjaminshih/.agents
+cd "${AGENTS_SHARED_ROOT:-$HOME/.agents}"
 make verify-ci      # portable
 make verify-local   # includes machine-local Codex schema checks
+```
+
+On a new personal macOS/Linux machine, run the `.agents` preflight once the repos are cloned:
+
+```bash
+cd "${AGENTS_SHARED_ROOT:-$HOME/.agents}"
+BEN_PI_HARNESS_ROOT="${BEN_PI_HARNESS_ROOT:-$HOME/.pi/agent/packages/ben-pi-harness}" make personal-preflight
 ```
 
 ## Remote install later

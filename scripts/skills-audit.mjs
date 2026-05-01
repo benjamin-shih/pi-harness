@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
-const DEFAULT_ROOT = "/Users/benjaminshih/.agents/skills";
+const DEFAULT_ROOT = process.env.AGENTS_SKILLS_ROOT || join(process.env.AGENTS_SHARED_ROOT || join(homedir(), ".agents"), "skills");
 
 function parseArgs(argv) {
 	const args = { root: DEFAULT_ROOT, json: false, allowMissing: false };

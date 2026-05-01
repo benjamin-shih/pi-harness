@@ -261,6 +261,7 @@ async function guardShellCommand(pi: ExtensionAPI, pathSafety: PathSafetyCheck, 
 
 export default function safetyGate(pi: ExtensionAPI) {
 	const { pathSafety, clearPathSafetyCache } = createPathSafetyChecker(pi);
+	const on = pi.on as unknown as (event: string, handler: (event: any, ctx: any) => unknown) => void;
 	let initialGitState: GitFinalizationState | undefined;
 	let sawPotentialMutation = false;
 	let currentPromptIsGuardBounce = false;
@@ -272,7 +273,7 @@ export default function safetyGate(pi: ExtensionAPI) {
 		currentPromptIsGuardBounce = event.prompt.includes(GIT_FINALIZATION_MARKER);
 	});
 
-	pi.on("tool_call", async (event, ctx) => {
+	on("tool_call", async (event, ctx) => {
 		const input = event.input as Record<string, unknown>;
 
 		if (event.toolName === "edit" || event.toolName === "write") {
@@ -304,7 +305,7 @@ export default function safetyGate(pi: ExtensionAPI) {
 		return undefined;
 	});
 
-	pi.on("tool_result", async (event, ctx) => {
+	on("tool_result", async (event, ctx) => {
 		const input = event.input as Record<string, unknown> | undefined;
 		if (
 			(event.toolName === "write" || event.toolName === "edit" || event.toolName === "read" || event.toolName === "grep") &&
@@ -319,7 +320,7 @@ export default function safetyGate(pi: ExtensionAPI) {
 		return { content, isError: true };
 	});
 
-	pi.on("user_bash", async (event) => guardShellCommand(pi, pathSafety, event.cwd, event.command, true));
+	on("user_bash", async (event) => guardShellCommand(pi, pathSafety, event.cwd, event.command, true));
 
 	pi.on("agent_end", async (_event, ctx) => {
 		const currentState = await getGitFinalizationState(pi, ctx.cwd);
@@ -334,6 +335,6 @@ export default function safetyGate(pi: ExtensionAPI) {
 		}
 
 		const message = `${GIT_FINALIZATION_MARKER}: Git finalization is incomplete (${summarizeGitFinalizationState(currentState)}). Continue: run the relevant validation, commit, and push before giving the final summary. If finalization is blocked, report the exact blocker and leave the repo state explicit.`;
-		pi.sendUserMessage(message, { deliverAs: "followUp", triggerTurn: true });
+		pi.sendUserMessage(message, { deliverAs: "followUp", triggerTurn: true } as any);
 	});
 }

@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { assert, loadExtensionModule } from "./harness.mjs";
 
@@ -6,6 +7,11 @@ export function runSupportModuleTests() {
 	const previousAgentsRoot = process.env.AGENTS_SHARED_ROOT;
 	const previousSkillsRoot = process.env.AGENTS_SKILLS_ROOT;
 	try {
+		delete process.env.AGENTS_SHARED_ROOT;
+		delete process.env.AGENTS_SKILLS_ROOT;
+		assert(config.agentsRoot() === join(homedir(), ".agents"), "shared config should default agents root under the current home directory");
+		assert(config.skillsRoot() === join(homedir(), ".agents", "skills"), "shared config should default skills root under the current home directory");
+
 		process.env.AGENTS_SHARED_ROOT = "/tmp/pi-agents-root";
 		delete process.env.AGENTS_SKILLS_ROOT;
 		assert(config.agentsRoot() === "/tmp/pi-agents-root", "shared config should honor AGENTS_SHARED_ROOT");

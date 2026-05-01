@@ -1167,7 +1167,7 @@ export function createLatexPreviewController(): LatexPreviewController {
 
 	function showPreview(ctx: ExtensionContext, payload: PreviewPayload): void {
 		clearPreview(ctx);
-		ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => latexPreviewComponent(payload, theme), { placement: "aboveEditor" });
+		ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => latexPreviewComponent(payload, theme) as any, { placement: "aboveEditor" });
 		clearTimer = setTimeout(() => {
 			try {
 				ctx.ui.setWidget(WIDGET_KEY, undefined);
