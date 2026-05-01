@@ -145,3 +145,5 @@ Keep this repository scoped to reusable harness code and UI assets only. Do not 
 The safety gate is intentionally egress-focused: it blocks reading/uploading/outputting protected private files and blocks git operations that would include them, but it does not ask for broad filesystem permissions for normal destructive or package-manager commands.
 
 LaTeX preview is intentionally optional because it depends on local TeX/PDF/image tooling and is orthogonal to the core coding harness.
+
+Shell parsing remains a lightweight conservative guardrail. See [`docs/shell-parsing.md`](docs/shell-parsing.md) for the parser/oracle strategy and why native parsers such as `tree-sitter-bash` are not runtime dependencies today.
