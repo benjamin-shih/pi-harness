@@ -139,7 +139,7 @@ function doctorRecommendations(facts: HarnessFacts, taskLayer: StatusTaskLayer):
 }
 
 function doctorHealth(facts: HarnessFacts, taskLayer: StatusTaskLayer): "ok" | "warning" {
-	if (!facts.audit.ok || (facts.audit.ok && Boolean(facts.audit.audit.issues?.length))) return "warning";
+	if (!facts.audit.ok || facts.audit.audit.issues?.length) return "warning";
 	if (facts.memory.health === "warning") return "warning";
 	if (taskLayer.health() === "warning") return "warning";
 	return "ok";

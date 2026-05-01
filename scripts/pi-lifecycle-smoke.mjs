@@ -13,28 +13,15 @@ function assert(condition, message) {
 	if (!condition) throw new Error(message);
 }
 
-function readPackageJson() {
-	return JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-}
-
-function relativeExtensionPath(extension) {
-	return relative(root, extension.resolvedPath || extension.path).split("\\").join("/");
-}
-
-function extensionByPath(extensions, path) {
-	return extensions.find((extension) => relativeExtensionPath(extension) === path);
-}
-
-function assertExtension(extensions, path, options = {}) {
-	const extension = extensionByPath(extensions, path);
-	assert(extension, `pi package smoke: missing extension ${path}`);
-	for (const command of options.commands ?? []) assert(extension.commands.has(command), `pi package smoke: ${path} did not register /${command}`);
-	for (const event of options.handlers ?? []) assert(extension.handlers.has(event), `pi package smoke: ${path} did not subscribe to ${event}`);
-	return extension;
+function assertExtension(extensions, relativePath, options = {}) {
+	const extension = extensions.find((entry) => relative(root, entry.resolvedPath || entry.path).split("\\").join("/") === relativePath);
+	assert(extension, `pi package smoke: missing extension ${relativePath}`);
+	for (const command of options.commands ?? []) assert(extension.commands.has(command), `pi package smoke: ${relativePath} did not register /${command}`);
+	for (const event of options.handlers ?? []) assert(extension.handlers.has(event), `pi package smoke: ${relativePath} did not subscribe to ${event}`);
 }
 
 try {
-	const packageJson = readPackageJson();
+	const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 	assert(packageJson.keywords?.includes("pi-package"), "pi package smoke: package is missing pi-package keyword");
 	for (const key of ["extensions", "prompts", "themes"]) {
 		assert(Array.isArray(packageJson.pi?.[key]) && packageJson.pi[key].length > 0, `pi package smoke: package.json pi.${key} must be non-empty`);
