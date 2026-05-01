@@ -164,14 +164,14 @@ export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		`- package: ben-pi-harness ${facts.audit.ok ? facts.audit.audit.packageVersion ?? "unknown" : "unknown"}`,
 		...overviewLines(facts),
 		"",
-		"### Harness audit",
+		"## Harness audit",
 		...formatHarnessAuditLines(facts.audit),
 		"",
 		formatMemorySpineDiagnostics(facts.memory, { verbose: true }),
 		"",
 		taskLayer.doctorSection(),
 		"",
-		"### Recommendations",
+		"## Recommendations",
 		...doctorRecommendations(facts, taskLayer).map((recommendation) => `- ${recommendation}`),
 	].join("\n");
 }

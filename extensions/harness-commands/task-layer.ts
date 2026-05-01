@@ -415,8 +415,8 @@ export function createAgentsTaskLayer() {
 		},
 
 		async beforeAgentStart(pi: ExtensionAPI, prompt: string, fallbackWeight: TaskWeight, ctx: ExtensionContext): Promise<string | undefined> {
-			if (!(await ensureTaskApi(pi, state, ctx.cwd))) return undefined;
 			resetPromptState(state, fallbackWeight);
+			if (!(await ensureTaskApi(pi, state, ctx.cwd))) return undefined;
 			const classification = await classifyTask(pi, prompt, ctx.cwd);
 			if (!classification) {
 				state.lastError = "task-classify returned an unsupported AGENTS task API version";
@@ -487,6 +487,10 @@ export function createAgentsTaskLayer() {
 		},
 
 		statusLines,
+
+		currentPromptWeight(): TaskWeight {
+			return state.currentPromptWeight;
+		},
 
 		doctorSection(): string {
 			return [

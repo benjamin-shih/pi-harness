@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { createPathSafetyChecker, type PathSafetyCheck, type PolicyOperation } from "./safety-gate-lib/policy";
-import { extractPathTokens, extractWritePathTokens, looksMutatingBash, looksRecursiveTraversalCommand, parseGitCommands } from "./safety-gate-lib/shell";
+import { extractCopyMoveSourcePathTokens, extractInputPathTokens, extractOutputPathTokens, extractPathTokens, extractWritePathTokens, looksMutatingBash, looksRecursiveTraversalCommand, parseGitCommands } from "./safety-gate-lib/shell";
 
 const BLOCKED_OUTPUT =
 	"[safety-gate] Blocked output because it appears to contain credential material or a protected private file.";
@@ -12,7 +12,7 @@ const HIDDEN_SENSITIVE_RESULT =
 	"[safety-gate] Sensitive operation completed, but output was hidden to avoid exposing credential material.";
 const GIT_FINALIZATION_MARKER = "PI_GIT_FINALIZATION_GUARD";
 
-const OUTPUT_COMMAND_RE = /\b(?:cat|bat|less|more|head|tail|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl)\b/i;
+const OUTPUT_COMMAND_RE = /\b(?:cat|bat|less|more|head|tail|sort|uniq|cut|wc|diff|comm|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl)\b/i;
 const UPLOAD_COMMAND_RE = /\b(?:curl|wget|scp|sftp|rsync|rclone|aws\s+s3\s+cp|aws\s+s3\s+sync|gh\s+release\s+upload)\b/i;
 
 type GitFinalizationState = {
@@ -48,6 +48,20 @@ async function commandMentionsBlockedWritePath(pathSafety: PathSafetyCheck, comm
 	return false;
 }
 
+async function commandMentionsSensitiveEgressOperand(pathSafety: PathSafetyCheck, command: string, cwd: string): Promise<boolean> {
+	for (const token of extractCopyMoveSourcePathTokens(command)) {
+		if (await pathSafety(token, cwd, "egress")) return true;
+	}
+	const outputTargets = new Set(extractOutputPathTokens(command));
+	const inputTargets = new Set(extractInputPathTokens(command));
+	const writeTargets = new Set(extractWritePathTokens(command));
+	for (const token of extractPathTokens(command)) {
+		if (outputTargets.has(token) || inputTargets.has(token) || writeTargets.has(token)) continue;
+		if (await pathSafety(token, cwd, "egress")) return true;
+	}
+	return false;
+}
+
 function looksLikeRealSecretValue(value: string): boolean {
 	const lower = value.toLowerCase();
 	if (["example", "placeholder", "changeme", "dummy", "redacted", "undefined", "null"].some((word) => lower.includes(word))) {
@@ -75,57 +89,59 @@ function parsePorcelainPaths(stdout: string): string[] {
 		.map((file) => file.split(" -> ").at(-1) ?? file);
 }
 
-async function gitLines(pi: ExtensionAPI, cwd: string, args: string[]): Promise<string[]> {
+type GitSafetyStatus = "safe" | "unsafe" | "unknown";
+
+function unsafeIfUnknown(status: GitSafetyStatus): boolean {
+	return status !== "safe";
+}
+
+async function gitLines(pi: ExtensionAPI, cwd: string, args: string[]): Promise<string[] | undefined> {
 	try {
 		const result = await pi.exec("git", args, { cwd, timeout: 5_000 });
-		if (result.code !== 0) return [];
+		if (result.code !== 0) return undefined;
 		return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 	} catch {
-		return [];
+		return undefined;
 	}
 }
 
-async function hasSensitiveGitPath(pathSafety: PathSafetyCheck, cwd: string, paths: string[]): Promise<boolean> {
+async function gitPathStatus(pathSafety: PathSafetyCheck, cwd: string, paths: string[] | undefined): Promise<GitSafetyStatus> {
+	if (!paths) return "unknown";
 	for (const p of paths) {
-		if (await pathSafety(p, cwd, "git")) return true;
+		if (await pathSafety(p, cwd, "git")) return "unsafe";
 	}
-	return false;
+	return "safe";
 }
 
-async function hasChangedSensitivePath(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<boolean> {
+async function changedGitPathStatus(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<GitSafetyStatus> {
 	try {
 		const result = await pi.exec("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
 			cwd,
 			timeout: 5_000,
 		});
-		if (result.code !== 0) return false;
-		return hasSensitiveGitPath(pathSafety, cwd, parsePorcelainPaths(result.stdout));
+		if (result.code !== 0) return "unknown";
+		return gitPathStatus(pathSafety, cwd, parsePorcelainPaths(result.stdout));
 	} catch {
-		return false;
+		return "unknown";
 	}
 }
 
-async function hasStagedSensitivePath(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<boolean> {
-	const paths = await gitLines(pi, cwd, ["diff", "--cached", "--name-only"]);
-	return hasSensitiveGitPath(pathSafety, cwd, paths);
+async function stagedGitPathStatus(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<GitSafetyStatus> {
+	return gitPathStatus(pathSafety, cwd, await gitLines(pi, cwd, ["diff", "--cached", "--name-only"]));
 }
 
-async function hasOutgoingSensitivePath(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<boolean> {
+async function outgoingGitPathStatus(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string): Promise<GitSafetyStatus> {
 	try {
 		const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], {
 			cwd,
 			timeout: 5_000,
 		});
-		if (upstream.code === 0) {
-			const base = upstream.stdout.trim();
-			const paths = await gitLines(pi, cwd, ["diff", "--name-only", `${base}..HEAD`]);
-			return hasSensitiveGitPath(pathSafety, cwd, paths);
-		}
+		if (upstream.code !== 0) return "unknown";
+		const base = upstream.stdout.trim();
+		return gitPathStatus(pathSafety, cwd, await gitLines(pi, cwd, ["diff", "--name-only", `${base}..HEAD`]));
 	} catch {
-		// Fall back below.
+		return "unknown";
 	}
-
-	return true;
 }
 
 function expandShellHome(path: string): string {
@@ -158,15 +174,15 @@ async function gitBlockReason(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd
 		if (writesToIndex && await commandMentionsSensitivePath(pathSafety, command, effectiveCwd, "git")) return BLOCKED_GIT;
 
 		if (git.subcommand === "add") {
-			if (isBroadGitAdd(git.args) && await hasChangedSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
+			if (isBroadGitAdd(git.args) && unsafeIfUnknown(await changedGitPathStatus(pi, pathSafety, effectiveCwd))) return BLOCKED_GIT;
 		}
 
 		if (git.subcommand === "commit") {
-			if (await hasStagedSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
-			if (isCommitAll(git.args) && await hasChangedSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
+			if (unsafeIfUnknown(await stagedGitPathStatus(pi, pathSafety, effectiveCwd))) return BLOCKED_GIT;
+			if (isCommitAll(git.args) && unsafeIfUnknown(await changedGitPathStatus(pi, pathSafety, effectiveCwd))) return BLOCKED_GIT;
 		}
 
-		if (git.subcommand === "push" && await hasOutgoingSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
+		if (git.subcommand === "push" && unsafeIfUnknown(await outgoingGitPathStatus(pi, pathSafety, effectiveCwd))) return BLOCKED_GIT;
 	}
 	return undefined;
 }
@@ -240,6 +256,18 @@ function blockedUserBash(reason: string) {
 	return { result: { output: reason, exitCode: 1, cancelled: false, truncated: false } };
 }
 
+async function contentMentionsSensitivePath(pathSafety: PathSafetyCheck, content: unknown, cwd: string): Promise<boolean> {
+	if (!Array.isArray(content)) return false;
+	for (const part of content) {
+		const text = part && typeof part === "object" && (part as { type?: unknown }).type === "text" ? (part as { text?: unknown }).text : undefined;
+		if (typeof text !== "string") continue;
+		for (const token of extractPathTokens(text)) {
+			if (await pathSafety(token, cwd, "egress")) return true;
+		}
+	}
+	return false;
+}
+
 function redactToolContent(content: unknown): { content: unknown; changed: boolean } {
 	if (!Array.isArray(content)) return { content, changed: false };
 
@@ -256,6 +284,13 @@ function redactToolContent(content: unknown): { content: unknown; changed: boole
 	return { content: next, changed };
 }
 
+async function commandInputsSensitivePath(pathSafety: PathSafetyCheck, command: string, cwd: string): Promise<boolean> {
+	for (const token of extractInputPathTokens(command)) {
+		if (await pathSafety(token, cwd, "egress")) return true;
+	}
+	return false;
+}
+
 async function guardShellCommand(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string, command: string, forUserBash = false) {
 	const block = (reason: string) => forUserBash ? blockedUserBash(reason) : blockedTool(reason);
 	const gitReason = await gitBlockReason(pi, pathSafety, cwd, command);
@@ -269,10 +304,12 @@ async function guardShellCommand(pi: ExtensionAPI, pathSafety: PathSafetyCheck, 
 		return block(BLOCKED_OUTPUT);
 	}
 
+	if ((await pathSafety(".", cwd, "egress"))?.action === "block") return block(BLOCKED_OUTPUT);
+	if (await commandInputsSensitivePath(pathSafety, command, cwd)) return block(BLOCKED_OUTPUT);
+	if (await commandMentionsSensitiveEgressOperand(pathSafety, command, cwd)) return block(BLOCKED_OUTPUT);
+
 	const outputOrUpload = OUTPUT_COMMAND_RE.test(command) || UPLOAD_COMMAND_RE.test(command);
-	if (outputOrUpload && await commandMentionsSensitivePath(pathSafety, command, cwd, "egress")) {
-		return block(BLOCKED_OUTPUT);
-	}
+	if (outputOrUpload && await commandMentionsSensitivePath(pathSafety, command, cwd, "egress")) return block(BLOCKED_OUTPUT);
 
 	if (looksRecursiveTraversalCommand(command) && (
 		await pathSafety(".", cwd, "list", true) ||
@@ -321,6 +358,11 @@ export default function safetyGate(pi: ExtensionAPI) {
 			}
 		}
 
+		if (event.toolName === "find" || event.toolName === "ls") {
+			const listPath = typeof input.path === "string" ? input.path : ".";
+			if (await pathSafety(listPath, ctx.cwd, "list", event.toolName === "find")) return blockedTool(BLOCKED_OUTPUT);
+		}
+
 		if (event.toolName === "bash") {
 			const command = String(input.command ?? "");
 			if (looksMutatingBash(command)) sawPotentialMutation = true;
@@ -332,10 +374,14 @@ export default function safetyGate(pi: ExtensionAPI) {
 
 	on("tool_result", async (event, ctx) => {
 		const input = event.input as Record<string, unknown> | undefined;
+		const resultPath = typeof input?.path === "string" ? input.path : (event.toolName === "find" || event.toolName === "ls" ? "." : undefined);
+		const scansListingContent = event.toolName === "find" || event.toolName === "ls";
+		const resultContentCwd = scansListingContent && typeof input?.path === "string" ? resolve(ctx.cwd, input.path) : ctx.cwd;
 		if (
-			(event.toolName === "write" || event.toolName === "edit" || event.toolName === "read" || event.toolName === "grep") &&
-			(await pathSafety(input?.path as string | undefined, ctx.cwd, "egress") ||
-				await pathSafety(input?.glob as string | undefined, ctx.cwd, "egress"))
+			(event.toolName === "write" || event.toolName === "edit" || event.toolName === "read" || event.toolName === "grep" || scansListingContent) &&
+			(await pathSafety(resultPath, ctx.cwd, "egress") ||
+				await pathSafety(input?.glob as string | undefined, ctx.cwd, "egress") ||
+				(scansListingContent && await contentMentionsSensitivePath(pathSafety, event.content, resultContentCwd)))
 		) {
 			return { content: [{ type: "text", text: HIDDEN_SENSITIVE_RESULT }] };
 		}

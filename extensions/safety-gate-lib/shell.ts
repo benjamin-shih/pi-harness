@@ -114,38 +114,52 @@ export function extractPathTokens(command: string, includePlainOperands = false)
 	return [...tokens];
 }
 
-function extractRedirectionTargetWords(command: string): string[] {
+function extractRedirectionTargetWords(command: string, operators: Set<">" | "<">): string[] {
 	const targets: string[] = [];
 	let current = "";
 	let quote: "'" | '"' | "" = "";
 	let expectingTarget = false;
+	let collectingTarget = false;
 	const finishTarget = () => {
-		const token = cleanPathToken(current);
+		const token = collectingTarget ? cleanPathToken(current) : "";
 		if (token) targets.push(token);
 		current = "";
 		expectingTarget = false;
+		collectingTarget = false;
+	};
+	const startTarget = (operator: ">" | "<") => {
+		current = "";
+		expectingTarget = true;
+		collectingTarget = operators.has(operator);
 	};
 	for (let index = 0; index < command.length; index++) {
 		const char = command[index] ?? "";
 		if (quote) {
 			if (char === quote) quote = "";
-			else current += char;
+			else if (expectingTarget) current += char;
 			continue;
 		}
 		if (char === "'" || char === '"') {
 			quote = char;
 			continue;
 		}
-		if ((char === ">" || char === "<") && !expectingTarget) {
+		if (char === "<" && command[index + 1] === "<") {
+			if (current) finishTarget();
+			expectingTarget = false;
+			collectingTarget = false;
 			current = "";
-			expectingTarget = true;
+			while (command[index + 1] === "<" || command[index + 1] === "-") index++;
+			continue;
+		}
+		if ((char === ">" || char === "<") && !expectingTarget) {
+			startTarget(char);
 			while (command[index + 1] === ">" || command[index + 1] === "&") index++;
 			continue;
 		}
 		if (!expectingTarget) continue;
 		if (char === ">" || char === "<") {
 			if (current) finishTarget();
-			expectingTarget = true;
+			startTarget(char);
 			while (command[index + 1] === ">" || command[index + 1] === "&") index++;
 			continue;
 		}
@@ -261,8 +275,118 @@ function looksFileMutationCommand(command: string, depth = 0): boolean {
 	return false;
 }
 
+function processSubstitutionCommands(command: string): string[] {
+	const commands: string[] = [];
+	let quote: "'" | '"' | "" = "";
+	for (let index = 0; index < command.length - 1; index++) {
+		const char = command[index] ?? "";
+		if (quote) {
+			if (char === quote) quote = "";
+			continue;
+		}
+		if (char === "'" || char === '"') {
+			quote = char;
+			continue;
+		}
+		if (char === "\\") {
+			index++;
+			continue;
+		}
+		if (char !== "<" || command[index + 1] !== "(") continue;
+		let inner = "";
+		let depth = 1;
+		let innerQuote: "'" | '"' | "" = "";
+		index += 2;
+		for (; index < command.length; index++) {
+			const innerChar = command[index] ?? "";
+			if (innerQuote) {
+				if (innerChar === innerQuote) innerQuote = "";
+				inner += innerChar;
+				continue;
+			}
+			if (innerChar === "'" || innerChar === '"') {
+				innerQuote = innerChar;
+				inner += innerChar;
+				continue;
+			}
+			if (innerChar === "(") depth++;
+			if (innerChar === ")" && --depth === 0) break;
+			inner += innerChar;
+		}
+		if (inner.trim()) commands.push(inner.trim());
+	}
+	return commands;
+}
+
+export function extractInputPathTokens(command: string, depth = 0): string[] {
+	const tokens = new Set(extractRedirectionTargetWords(command, new Set(["<"])));
+	if (depth < 2) {
+		for (const innerCommand of processSubstitutionCommands(command)) {
+			for (const token of extractPathTokens(innerCommand)) tokens.add(token);
+			for (const token of extractInputPathTokens(innerCommand, depth + 1)) tokens.add(token);
+		}
+		for (const segment of commandSegments(command)) {
+			const wrappedCommand = shellWrappedCommand(shellWords(segment), depth);
+			if (wrappedCommand) {
+				for (const token of extractInputPathTokens(wrappedCommand, depth + 1)) tokens.add(token);
+			}
+		}
+	}
+	return [...tokens];
+}
+
+export function extractOutputPathTokens(command: string): string[] {
+	return extractRedirectionTargetWords(command, new Set([">"]));
+}
+
+function addPathTokens(tokens: Set<string>, raw: string): void {
+	for (const token of extractPathTokens(raw, true)) tokens.add(token);
+}
+
+export function extractCopyMoveSourcePathTokens(command: string, depth = 0): string[] {
+	const tokens = new Set<string>();
+	for (const segment of commandSegments(command)) {
+		const words = commandWordsAfterPrefixes(shellWords(segment));
+		const wrappedCommand = depth < 2 ? shellWrappedCommand(words, depth) : undefined;
+		if (wrappedCommand) {
+			for (const token of extractCopyMoveSourcePathTokens(wrappedCommand, depth + 1)) tokens.add(token);
+		}
+		const commandName = shellBasename(words[0] ?? "");
+		if (commandName !== "cp" && commandName !== "mv") continue;
+		const operands: string[] = [];
+		let targetDirectoryMode = false;
+		for (let index = 1; index < words.length; index++) {
+			const word = words[index] ?? "";
+			if (word === "--") {
+				operands.push(...words.slice(index + 1));
+				break;
+			}
+			if (word === "-t" || word === "--target-directory") {
+				targetDirectoryMode = true;
+				index++;
+				continue;
+			}
+			if (word.startsWith("--target-directory=")) {
+				targetDirectoryMode = true;
+				continue;
+			}
+			if (/^-[^-].*t/.test(word)) {
+				targetDirectoryMode = true;
+				const afterTargetOption = word.slice(word.indexOf("t") + 1);
+				if (!afterTargetOption) index++;
+				continue;
+			}
+			if (word.startsWith("-")) continue;
+			operands.push(word);
+		}
+		const sources = targetDirectoryMode ? operands : operands.slice(0, -1);
+		for (const source of sources) addPathTokens(tokens, source);
+	}
+	return [...tokens];
+}
+
 export function extractWritePathTokens(command: string): string[] {
-	const tokens = new Set(extractRedirectionTargetWords(command));
+	const tokens = new Set(extractOutputPathTokens(command));
 	if (looksFileMutationCommand(command)) {
 		for (const token of extractPathTokens(command, true)) tokens.add(token);
 	}

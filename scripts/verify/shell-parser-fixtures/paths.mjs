@@ -1,7 +1,26 @@
+export const copyMoveSourceFixtures = [
+	{ command: "cp .env /tmp/leak", expected: ".env" },
+	{ command: "bash -lc 'cp .env /tmp/leak'", expected: ".env" },
+	{ command: "cp -t/tmp/leak .env", expected: ".env" },
+	{ command: "cp -at /tmp/leak .env", expected: ".env" },
+	{ command: "mv -t/tmp/leak .env", expected: ".env" },
+];
+
+export const inputPathAbsentFixtures = [
+	{ command: "printf '%s\\n' '<(sort ~/.ssh/config)'", absent: "~/.ssh/config" },
+	{ command: "printf \"%s\\n\" \"<(sort ~/.ssh/config)\"", absent: "~/.ssh/config" },
+];
+
+export const inputPathFixtures = [
+	{ command: "cat < ~/.ssh/config", expected: "~/.ssh/config" },
+	{ command: "sort < \"$HOME\"/.ssh/config", expected: "$HOME/.ssh/config" },
+	{ command: "bash -lc 'sort < ~/.ssh/config'", expected: "~/.ssh/config" },
+	{ command: "sort < <(sort ~/.ssh/config)", expected: "~/.ssh/config" },
+];
+
 export const writePathTokenFixtures = [
 	{ command: "printf ok>./out.txt", expected: "./out.txt" },
 	{ command: "echo ok 2>../err.log", expected: "../err.log" },
-	{ command: "cat < ~/.ssh/config", expected: "~/.ssh/config" },
 	{ command: "printf ok > './out file.txt'", expected: "./out file.txt" },
 	{ command: "printf ok > \"$HOME\"/.ssh/config", expected: "$HOME/.ssh/config" },
 	{ command: "printf ok > $HOME\"/.ssh/config\"", expected: "$HOME/.ssh/config" },

@@ -1,5 +1,8 @@
 import { assert, loadExtensionModule } from "./harness.mjs";
 import {
+	copyMoveSourceFixtures,
+	inputPathAbsentFixtures,
+	inputPathFixtures,
 	mutatingGitFixtures,
 	mutatingShellFixtures,
 	parsedGitFixtures,
@@ -16,6 +19,18 @@ function assertIncludes(actual, expected, message) {
 
 export function runShellParserTests() {
 	const shell = loadExtensionModule("extensions/safety-gate-lib/shell.ts");
+
+	for (const { command, expected } of copyMoveSourceFixtures) {
+		assertIncludes(shell.extractCopyMoveSourcePathTokens(command), expected, `shell parser should extract copy/move source target ${expected}`);
+	}
+
+	for (const { command, absent } of inputPathAbsentFixtures) {
+		assert(!shell.extractInputPathTokens(command).includes(absent), `shell parser should not inspect quoted process-substitution literal ${absent}`);
+	}
+
+	for (const { command, expected } of inputPathFixtures) {
+		assertIncludes(shell.extractInputPathTokens(command), expected, `shell parser should extract input redirection target ${expected}`);
+	}
 
 	for (const { command, expected } of writePathTokenFixtures) {
 		assertIncludes(shell.extractWritePathTokens(command), expected, `shell parser should extract write/redirection target ${expected}`);
