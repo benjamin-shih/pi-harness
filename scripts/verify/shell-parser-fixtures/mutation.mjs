@@ -11,6 +11,7 @@ export const mutatingShellFixtures = [
 	{ command: "command sed -i 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
 	{ command: "bash -lc 'sed -i \"s/x/y/\" ./app.conf'", expectedWriteTargets: ["./app.conf"] },
 	{ command: "env FOO=bar bash -c 'perl -pi -e \"s/x/y/\" ./app.conf'", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env FOO=bar command bash -c 'sed -i s/x/y/ ./app.conf'", expectedWriteTargets: ["./app.conf"] },
 	{ command: "env -u FOO sed -i 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
 	{ command: "env --unset=FOO perl -pi -e 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
 	{ command: "env -C /tmp bash -c 'sed -i \"s/x/y/\" ./app.conf'", expectedWriteTargets: ["./app.conf"] },

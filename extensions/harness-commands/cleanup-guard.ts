@@ -24,6 +24,7 @@ type DiffStats = {
 export type GitChangeSnapshot = {
 	stats: DiffStats;
 	signature: string;
+	head?: string;
 };
 
 function emptyDiffStats(): DiffStats {
@@ -68,6 +69,7 @@ export async function gitChangeSnapshot(pi: ExtensionAPI, cwd: string): Promise<
 	try {
 		const diff = await pi.exec("git", ["diff", "--numstat", "HEAD", "--"], { cwd, timeout: 5_000 });
 		if (diff.code !== 0) return undefined;
+		const head = await pi.exec("git", ["rev-parse", "HEAD"], { cwd, timeout: 5_000 });
 
 		const untracked = await pi.exec("git", ["ls-files", "--others", "--exclude-standard"], { cwd, timeout: 5_000 });
 		const untrackedFiles = untracked.code === 0 ? untracked.stdout.split(/\r?\n/).filter(Boolean) : [];
@@ -82,10 +84,35 @@ export async function gitChangeSnapshot(pi: ExtensionAPI, cwd: string): Promise<
 			else addFileStat(stats, filePath, 0, 0, true);
 		}
 
-		return { stats, signature: [diff.stdout, untrackedFiles.join("\n"), untrackedNumstats.join("\n")].join("\0") };
+		const headText = head.code === 0 ? head.stdout.trim() : undefined;
+		return { stats, signature: [headText ?? "", diff.stdout, untrackedFiles.join("\n"), untrackedNumstats.join("\n")].join("\0"), head: headText };
 	} catch {
 		return undefined;
 	}
+}
+
+export async function committedDiffStats(pi: ExtensionAPI, cwd: string, fromHead: string | undefined, toHead: string | undefined): Promise<DiffStats | undefined> {
+	if (!fromHead || !toHead || fromHead === toHead) return undefined;
+	try {
+		const diff = await pi.exec("git", ["diff", "--numstat", `${fromHead}..${toHead}`, "--"], { cwd, timeout: 5_000 });
+		if (diff.code !== 0) return undefined;
+		const stats = emptyDiffStats();
+		addNumstat(stats, diff.stdout);
+		return stats;
+	} catch {
+		return undefined;
+	}
+}
+
+export function combineDiffStats(...items: Array<DiffStats | undefined>): DiffStats {
+	const combined = emptyDiffStats();
+	for (const stats of items) {
+		if (!stats) continue;
+		for (const [filePath, stat] of Object.entries(stats.byPath)) {
+			addFileStat(combined, filePath, stat.inserted, stat.deleted, stat.untracked);
+		}
+	}
+	return combined;
 }
 
 export function diffDelta(before: DiffStats | undefined, after: DiffStats): DiffStats {

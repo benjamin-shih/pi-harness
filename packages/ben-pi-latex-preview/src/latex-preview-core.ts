@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const WIDGET_KEY = "latex-preview";
 const LATEX_TIMEOUT_MS = 12_000;
 const PREVIEW_AUTO_CLEAR_MS = 15 * 60_000;
+const MAX_RENDERED_DISPLAY_MATH_BLOCKS = 20;
 const MAX_MATH_WIDTH_CELLS = 72;
 const MIN_MATH_WIDTH_CELLS = 8;
 const PREVIEW_PX_PER_CELL = 18;
@@ -971,6 +972,8 @@ export async function buildPreviewPayload(
 ): Promise<PreviewPayload | undefined> {
 	const blocks: PreviewBlock[] = [];
 	let cursor = 0;
+	let renderedBlocks = 0;
+	let omittedBlocks = 0;
 	for (const span of markdownProseSpans(text)) {
 		const prose = text.slice(span.start, span.end);
 		for (const match of prose.matchAll(DISPLAY_MATH_PATTERN)) {
@@ -980,14 +983,21 @@ export async function buildPreviewPayload(
 			if (!snippet) continue;
 
 			pushMarkdown(blocks, text.slice(cursor, start));
+			if (renderedBlocks >= MAX_RENDERED_DISPLAY_MATH_BLOCKS) {
+				omittedBlocks++;
+				cursor = start + raw.length;
+				continue;
+			}
 			const result = await renderSnippet(snippet, renderOptions);
 			blocks.push({ type: "math", math: { tex: snippet.tex, display: snippet.display, delimiter: snippet.delimiter, ...result } });
+			renderedBlocks++;
 			cursor = start + raw.length;
 		}
 	}
 
 	if (!blocks.some((block) => block.type === "math")) return undefined;
 	pushMarkdown(blocks, text.slice(cursor));
+	if (omittedBlocks > 0) pushMarkdown(blocks, `\n\n_LaTeX preview omitted ${omittedBlocks} additional display equation(s)._`);
 	return { blocks };
 }
 
@@ -1177,6 +1187,7 @@ export function createLatexPreviewController(): LatexPreviewController {
 				clearTimer = undefined;
 			}
 		}, PREVIEW_AUTO_CLEAR_MS);
+		clearTimer.unref?.();
 	}
 
 	async function handleAgentEnd(event: { messages: unknown[] }, ctx: ExtensionContext): Promise<void> {

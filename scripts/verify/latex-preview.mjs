@@ -6,7 +6,7 @@ import { assert, loadExtensionModule, loadModuleAt, readJson, requireFromVerify 
 
 function commandExists(command) {
 	try {
-		execFileSync("command", ["-v", command], { stdio: "ignore" });
+		execFileSync("sh", ["-c", "command -v -- \"$1\"", "sh", command], { stdio: "ignore" });
 		return true;
 	} catch {
 		return false;
@@ -166,6 +166,14 @@ export async function runLatexPreviewBehaviorTests() {
 	const manyPayload = await latexPreview.buildPreviewPayload(manyDisplaymath, { textRgb: { r: 1, g: 2, b: 3 } }, async (snippet) => ({ error: `rendered:${snippet.tex}` }));
 	const manyMathBlocks = manyPayload?.blocks.filter((block) => block.type === "math") ?? [];
 	assert(manyMathBlocks.length === 12, "latex-preview should render every display equation in a response, not just the first ten");
+	let cappedRenderCalls = 0;
+	const cappedDisplaymath = Array.from({ length: 25 }, (_value, index) => String.raw`\begin{displaymath}x_${index}=y_${index}\end{displaymath}`).join("\n\n");
+	const cappedPayload = await latexPreview.buildPreviewPayload(cappedDisplaymath, { textRgb: { r: 1, g: 2, b: 3 } }, async (snippet) => {
+		cappedRenderCalls++;
+		return { error: `rendered:${snippet.tex}` };
+	});
+	assert(cappedRenderCalls === 20, "latex-preview should cap rendered display equations per response");
+	assert(cappedPayload?.blocks.some((block) => block.type === "markdown" && block.text.includes("omitted 5 additional")), "latex-preview should report omitted display equations after the render cap");
 
 	const trickyMarkdownCode = [
 		"~~~ts",

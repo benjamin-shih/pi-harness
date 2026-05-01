@@ -79,6 +79,13 @@ function execSnapshots(snapshots) {
 			index++;
 			return { code: 0, stdout: current.diff ?? "", stderr: "" };
 		}
+		if (key === "rev-parse HEAD") {
+			return { code: 0, stdout: `${current.head ?? "HEAD0"}\n`, stderr: "" };
+		}
+		if (key.startsWith("diff --numstat ") && key.endsWith(" --") && key !== "diff --numstat HEAD --") {
+			const range = args[2];
+			return { code: 0, stdout: current.committedDiffs?.[range] ?? "", stderr: "" };
+		}
 		if (key === "ls-files --others --exclude-standard") {
 			return { code: 0, stdout: current.untracked ?? "", stderr: "" };
 		}
@@ -108,13 +115,15 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ bindPayload, bindPayloads, classifyPayload, classifyResult, cwd = root }) {
+export function createTaskHarness({ bindPayload, bindPayloads, classifyPayload, classifyResult, artifactAddPayload, cwd = root }) {
 	const handlers = new Map();
+	const commands = new Map();
+	const sentMessages = [];
 	const execCalls = [];
 	const queuedBindPayloads = [...(bindPayloads ?? [])];
 	harnessCommands({
 		on: (event, handler) => handlers.set(event, handler),
-		registerCommand: () => {},
+		registerCommand: (name, command) => commands.set(name, command),
 		getAllTools: () => [],
 		getActiveTools: () => ["read"],
 		getThinkingLevel: () => "xhigh",
@@ -139,12 +148,13 @@ export function createTaskHarness({ bindPayload, bindPayloads, classifyPayload, 
 			if (cmd === "bash" && script.endsWith("task-heartbeat.sh")) return { code: 0, stdout: "", stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-event.sh")) return { code: 0, stdout: JSON.stringify({ type: "checkpoint" }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-artifact-list.sh")) return { code: 0, stdout: JSON.stringify({ artifact_api_version: 1, task_id: args[1], count: 0, artifacts: [] }), stderr: "" };
-			if (cmd === "bash" && script.endsWith("task-artifact-add.sh")) return { code: 0, stdout: JSON.stringify({ artifact_api_version: 1, task_id: args[1], recorded: true, artifact: { id: "artifact-1" } }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-artifact-add.sh")) return { code: 0, stdout: JSON.stringify(artifactAddPayload ?? { artifact_api_version: 1, task_id: args[1], recorded: true, artifact: { id: "artifact-1" } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-status.sh")) return { code: 0, stdout: "{}", stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-gc.sh")) return { code: 0, stdout: "released: pi-task", stderr: "" };
 			return { code: 1, stdout: "", stderr: "" };
 		},
 		sendUserMessage: () => {},
+		sendMessage: (message) => sentMessages.push(message),
 	});
 	const ctx = {
 		cwd,
@@ -157,5 +167,5 @@ export function createTaskHarness({ bindPayload, bindPayloads, classifyPayload, 
 			getLeafId: () => undefined,
 		},
 	};
-	return { handlers, execCalls, ctx };
+	return { handlers, commands, sentMessages, execCalls, ctx };
 }

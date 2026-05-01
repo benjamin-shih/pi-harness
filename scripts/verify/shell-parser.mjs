@@ -9,6 +9,8 @@ import {
 	pathTokenFixtures,
 	readOnlyGitFixtures,
 	readOnlyShellMutationFixtures,
+	recursiveEgressAbsentFixtures,
+	recursiveEgressSourceFixtures,
 	recursiveTraversalFixtures,
 	writePathTokenFixtures,
 } from "./shell-parser-fixtures/index.mjs";
@@ -30,6 +32,14 @@ export function runShellParserTests() {
 
 	for (const { command, expected } of inputPathFixtures) {
 		assertIncludes(shell.extractInputPathTokens(command), expected, `shell parser should extract input redirection target ${expected}`);
+	}
+
+	for (const { command, absent } of recursiveEgressAbsentFixtures) {
+		assert(!shell.extractRecursiveEgressSourcePathTokens(command).includes(absent), `shell parser should not treat recursive egress destination ${absent} as a source`);
+	}
+
+	for (const { command, expected } of recursiveEgressSourceFixtures) {
+		assertIncludes(shell.extractRecursiveEgressSourcePathTokens(command), expected, `shell parser should extract recursive egress source ${expected}`);
 	}
 
 	for (const { command, expected } of writePathTokenFixtures) {

@@ -14,6 +14,15 @@ export async function runSupportModuleTests() {
 		assert(config.skillsRoot() === join("/tmp/pi-agents-root", "skills"), "shared config should derive skills root from AGENTS_SHARED_ROOT");
 	});
 
+	await withEnv({ AGENTS_SHARED_ROOT: "~/.agents", AGENTS_SKILLS_ROOT: undefined }, async () => {
+		assert(config.agentsRoot() === join(homedir(), ".agents"), "shared config should expand tilde agents roots");
+		assert(config.agentsScriptPath("task-api.sh") === join(homedir(), ".agents", "scripts", "task-api.sh"), "shared config should build script paths from expanded roots");
+	});
+
+	await withEnv({ AGENTS_SKILLS_ROOT: "${HOME}/pi-skills-root" }, async () => {
+		assert(config.skillsRoot() === join(homedir(), "pi-skills-root"), "shared config should expand home variables in skill roots");
+	});
+
 	await withEnv({ AGENTS_SKILLS_ROOT: "/tmp/pi-skills-root" }, async () => {
 		assert(config.skillsRoot() === "/tmp/pi-skills-root", "shared config should honor AGENTS_SKILLS_ROOT");
 	});

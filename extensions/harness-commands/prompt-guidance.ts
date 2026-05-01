@@ -15,13 +15,7 @@ export function classifyPrompt(prompt: string): TaskWeight {
 		lower.includes("all of them") ||
 		lower.includes("end-to-end") ||
 		lower.includes("full fledged") ||
-		lower.includes("release") ||
-		lower.includes("workflow") ||
-		lower.includes("ci") ||
-		lower.includes("multi-step") ||
-		lower.includes("research") ||
-		lower.includes("package") ||
-		lower.includes("safety gate")
+		/\b(?:release|workflow|ci|multi-step|research|package|safety gate)\b/.test(lower)
 	) {
 		return "complex";
 	}

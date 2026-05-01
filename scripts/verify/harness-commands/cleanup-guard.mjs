@@ -15,6 +15,15 @@ export async function runCleanupGuardTests() {
 	assert(major.sentUserMessages[0].message.includes("gpt-5.2"), "cleanup guard should call out stale model/version identifiers");
 	assert(major.sentUserMessages[0].options?.deliverAs === "followUp", "cleanup guard should be delivered as a follow-up turn");
 
+	const committedMajor = createHarness([
+		{ diff: "", untracked: "", head: "HEAD0" },
+		{ diff: "", untracked: "", head: "HEAD1", committedDiffs: { "HEAD0..HEAD1": "220\t0\tsrc/committed.ts\n" } },
+	]);
+	await committedMajor.beforeAgentStart({ prompt: "Fix bug in src/foo.ts", systemPrompt: "base" }, { cwd: root });
+	await committedMajor.toolCall({ toolName: "bash", input: { command: "git add src/committed.ts && git commit -m test" } }, {});
+	await committedMajor.agentEnd({}, { cwd: root });
+	assert(committedMajor.sentUserMessages.length === 1, "cleanup guard should fire for major changes committed before agent_end");
+
 	const continuation = createHarness([{ diff: "", untracked: "" }]);
 	const continuationResult = await continuation.beforeAgentStart({ prompt: "Go ahead and do this", systemPrompt: "base" }, { cwd: root });
 	assert(continuationResult.systemPrompt.includes("## Post-Change Cleanup Gate"), "harness should inject cleanup guidance for execution follow-up prompts");

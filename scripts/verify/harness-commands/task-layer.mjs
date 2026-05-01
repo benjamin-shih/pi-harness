@@ -21,6 +21,17 @@ export async function runTaskLayerTests() {
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-event.sh") && call.args.includes("checkpoint")), "pi task layer should append a checkpoint event after meaningful turns");
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-gc.sh") && call.args.includes("--no-sweep")), "pi task layer should release only current-session tasks on shutdown");
 
+	const skippedArtifactTask = createTaskHarness({
+		artifactAddPayload: { artifact_api_version: 2, recorded: false },
+		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
+	});
+	await skippedArtifactTask.handlers.get("session_start")({ reason: "startup" }, skippedArtifactTask.ctx);
+	await skippedArtifactTask.handlers.get("before_agent_start")({ prompt: "Implement artifact accounting", systemPrompt: "base" }, skippedArtifactTask.ctx);
+	await skippedArtifactTask.handlers.get("tool_result")({ toolName: "edit", input: { path: "src/foo.ts" }, isError: false }, skippedArtifactTask.ctx);
+	assert(skippedArtifactTask.execCalls.some((call) => call.args[0]?.endsWith("task-artifact-add.sh")), "pi task layer should attempt artifact capture before counting skipped artifacts");
+	await skippedArtifactTask.commands.get("status").handler("", skippedArtifactTask.ctx);
+	assert(skippedArtifactTask.sentMessages.at(-1).content.includes("0 recorded, 1 skipped"), "pi task layer should count unsupported artifact responses as skipped");
+
 	const incompatibleClassify = createTaskHarness({
 		classifyPayload: { task_api_version: 2, weight: "standard", binding_mode: "auto", reasons: [] },
 		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "bad", task_dir: "/tmp/bad", runtime: "pi", session: "pi-session-1", project_root: root },

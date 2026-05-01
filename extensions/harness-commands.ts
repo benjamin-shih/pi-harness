@@ -4,6 +4,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
 	CLEANUP_GUARD_MARKER,
 	cleanupGuardMessage,
+	combineDiffStats,
+	committedDiffStats,
 	diffDelta,
 	diffLooksMajor,
 	gitChangeSnapshot,
@@ -135,7 +137,9 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		if (currentPromptIsCleanupGuard || !sawFileMutation || !currentPromptNeedsCleanup) return;
 		const currentSnapshot = await gitChangeSnapshot(pi, ctx.cwd);
 		if (!currentSnapshot || currentSnapshot.signature === initialChangeSnapshot?.signature) return;
-		const changedStats = diffDelta(initialChangeSnapshot?.stats, currentSnapshot.stats);
+		const uncommittedStats = diffDelta(initialChangeSnapshot?.stats, currentSnapshot.stats);
+		const committedStats = await committedDiffStats(pi, ctx.cwd, initialChangeSnapshot?.head, currentSnapshot.head);
+		const changedStats = combineDiffStats(uncommittedStats, committedStats);
 		if (!currentPromptWasMajor && !diffLooksMajor(changedStats)) return;
 		pi.sendUserMessage(cleanupGuardMessage(changedStats, currentPromptWasMajor), { deliverAs: "followUp" });
 	});

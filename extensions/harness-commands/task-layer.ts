@@ -1,11 +1,9 @@
+import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
 import { agentsRoot, agentsScriptPath } from "../shared/config";
-
 export type TaskWeight = "trivial" | "standard" | "complex";
-
 type BindAction = "created" | "claimed_existing" | "refreshed_existing" | "skipped" | "blocked" | "error";
-
 type BindResult = {
 	task_api_version?: number;
 	action: BindAction;
@@ -19,16 +17,13 @@ type BindResult = {
 	session: string;
 	project_root: string;
 };
-
 type TaskClassification = {
 	task_api_version?: number;
 	weight: TaskWeight;
 	binding_mode: "auto" | "skip" | "reuse_only";
 	reasons: string[];
 };
-
 type ExecResult = Awaited<ReturnType<ExtensionAPI["exec"]>>;
-
 type TaskApiInfo = {
 	task_api_version: number;
 	agents_shared_root: string;
@@ -36,18 +31,15 @@ type TaskApiInfo = {
 	scripts_dir: string;
 	capabilities: string[];
 };
-
 type ArtifactAddResult = {
 	artifact_api_version?: number;
 	recorded: boolean;
 	reason?: string;
 };
-
 type ArtifactListResult = {
 	artifact_api_version?: number;
 	count: number;
 };
-
 type CandidateRootResult = {
 	task_api_version: number;
 	candidate: string;
@@ -59,7 +51,6 @@ type CandidateRootResult = {
 	auto_create: "auto" | "never";
 	reason: string;
 };
-
 type TaskLayerState = {
 	sessionId: string;
 	apiChecked: boolean;
@@ -79,16 +70,13 @@ type TaskLayerState = {
 	lastError?: string;
 	lastHeartbeatAt: number;
 };
-
 const SUPPORTED_TASK_API_VERSION = 1;
 const SUPPORTED_ARTIFACT_API_VERSION = 1;
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const SCRIPT_TIMEOUT_MS = 10_000;
-
 function emptyActivity() {
 	return { reads: 0, writes: 0, commands: 0, errors: 0 };
 }
-
 function initialState(): TaskLayerState {
 	return {
 		sessionId: "pi-unknown-session",
@@ -104,7 +92,6 @@ function initialState(): TaskLayerState {
 		lastHeartbeatAt: 0,
 	};
 }
-
 function resetSessionState(state: TaskLayerState): void {
 	state.currentPromptWeight = "standard";
 	state.currentBindingMode = "auto";
@@ -115,7 +102,6 @@ function resetSessionState(state: TaskLayerState): void {
 	state.artifactSkipped = 0;
 	state.lastHeartbeatAt = 0;
 }
-
 function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): void {
 	state.active = undefined;
 	state.context = undefined;
@@ -125,11 +111,9 @@ function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): vo
 	state.artifactSkipped = 0;
 	state.meaningfulActivity = false;
 }
-
 function modelSummary(ctx: ExtensionContext): string | undefined {
 	return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
 }
-
 function safeSessionId(ctx: ExtensionContext): string {
 	try {
 		const id = ctx.sessionManager.getSessionId();
@@ -141,7 +125,6 @@ function safeSessionId(ctx: ExtensionContext): string {
 	if (sessionFile) return `pi-${path.basename(sessionFile).replace(/[^A-Za-z0-9_-]/g, "-")}`;
 	return `pi-${process.pid}`;
 }
-
 function parseJson<T>(text: string): T | undefined {
 	try {
 		return JSON.parse(text) as T;
@@ -149,11 +132,9 @@ function parseJson<T>(text: string): T | undefined {
 		return undefined;
 	}
 }
-
 async function runScript(pi: ExtensionAPI, scriptName: string, args: string[], cwd: string, timeout = SCRIPT_TIMEOUT_MS): Promise<ExecResult> {
 	return pi.exec("bash", [agentsScriptPath(scriptName), ...args], { cwd, timeout });
 }
-
 async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd: string): Promise<boolean> {
 	if (state.apiChecked) return state.apiAvailable;
 	state.apiChecked = true;
@@ -176,7 +157,6 @@ async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd: strin
 		return false;
 	}
 }
-
 async function candidateRoot(pi: ExtensionAPI, candidate: string, cwd: string): Promise<CandidateRootResult | undefined> {
 	try {
 		const result = await runScript(pi, "task-candidate-root.sh", ["--candidate", candidate, "--cwd", cwd], cwd, 5_000);
@@ -188,7 +168,6 @@ async function candidateRoot(pi: ExtensionAPI, candidate: string, cwd: string): 
 		return undefined;
 	}
 }
-
 async function classifyTask(pi: ExtensionAPI, prompt: string, cwd: string): Promise<TaskClassification | undefined> {
 	try {
 		const result = await runScript(pi, "task-classify.sh", ["--prompt-text", prompt, "--cwd", cwd], cwd, 5_000);
@@ -200,21 +179,17 @@ async function classifyTask(pi: ExtensionAPI, prompt: string, cwd: string): Prom
 		return undefined;
 	}
 }
-
 function bindAutoCreateMode(state: TaskLayerState, suggested: "auto" | "never"): "auto" | "never" {
 	if (state.currentBindingMode === "skip" || state.currentBindingMode === "reuse_only") return "never";
 	if (state.currentPromptWeight === "trivial") return "never";
 	return suggested;
 }
-
 function shortError(result: ExecResult): string {
 	return (result.stderr || result.stdout || `exit ${result.code}`).replace(/\s+/g, " ").trim().slice(0, 500);
 }
-
 function supportsTaskArtifacts(state: TaskLayerState): boolean {
 	return Boolean(state.apiInfo?.capabilities?.includes("task_artifacts"));
 }
-
 function contextBlock(context: string): string {
 	return [
 		"## Active AGENTS Task Context",
@@ -226,17 +201,15 @@ function contextBlock(context: string): string {
 		"- If durable decisions, questions, lessons, or repo-convention candidates arise, mention them clearly in the final response so they can be promoted or captured in the next artifact layer.",
 	].join("\n");
 }
-
 function shellUnquote(value: string): string {
 	return value.replace(/^['"]|['"]$/g, "");
 }
-
 function normalizeCandidatePath(candidate: string): string {
-	// Keep candidate-root normalization in `.agents` so home/bootstrap policy has
-	// one owner. In particular, do not expand `~` with process.env.HOME here.
-	return shellUnquote(candidate.trim());
+	let value = shellUnquote(candidate.trim()).replace(/\\([\\\s;&|])/g, "$1");
+	if (value === "${HOME}") value = homedir();
+	else if (value.startsWith("${HOME}/")) value = path.join(homedir(), value.slice(8));
+	return value;
 }
-
 function pathFromTool(event: ToolResultEvent, fallbackCwd: string): string | undefined {
 	const input = event.input ?? {};
 	for (const key of ["path", "cwd"] as const) {
@@ -245,12 +218,11 @@ function pathFromTool(event: ToolResultEvent, fallbackCwd: string): string | und
 	}
 	if (event.toolName === "bash") {
 		const command = typeof input.command === "string" ? input.command : "";
-		const cdMatch = command.match(/(?:^|[;&|])\s*cd\s+((?:"[^"]+")|(?:'[^']+')|[^\s;&|]+)/);
+		const cdMatch = command.match(/(?:^|[;&|])\s*cd\s+(?:--\s+)?((?:"[^"]+")|(?:'[^']+')|(?:\\.|[^\s;&|])+)/);
 		if (cdMatch?.[1]) return normalizeCandidatePath(cdMatch[1]);
 	}
 	return fallbackCwd;
 }
-
 function activityFromTool(state: TaskLayerState, event: ToolResultEvent): void {
 	if (event.toolName === "read" || event.toolName === "grep" || event.toolName === "find" || event.toolName === "ls") state.activity.reads++;
 	else if (event.toolName === "edit" || event.toolName === "write") state.activity.writes++;
@@ -258,7 +230,6 @@ function activityFromTool(state: TaskLayerState, event: ToolResultEvent): void {
 	if (event.isError) state.activity.errors++;
 	state.meaningfulActivity ||= Boolean(state.activity.reads || state.activity.writes || state.activity.commands || state.activity.errors);
 }
-
 function pathArtifactFromTool(event: ToolResultEvent): { title: string; path: string } | undefined {
 	if (event.toolName !== "edit" && event.toolName !== "write") return undefined;
 	if (event.isError) return undefined;
@@ -266,7 +237,6 @@ function pathArtifactFromTool(event: ToolResultEvent): { title: string; path: st
 	if (typeof candidate !== "string" || !candidate.trim()) return undefined;
 	return { title: event.toolName === "edit" ? "Edited path" : "Wrote path", path: normalizeCandidatePath(candidate) };
 }
-
 function verificationLabel(command: string): string | undefined {
 	const normalized = command.replace(/\s+/g, " ").trim();
 	if (/\bnpm\s+run\s+verify\b/.test(normalized)) return "npm verify";
@@ -277,7 +247,6 @@ function verificationLabel(command: string): string | undefined {
 	if (/\bgit\s+diff\s+--check\b/.test(normalized)) return "git diff check";
 	return undefined;
 }
-
 function verificationArtifactFromTool(event: ToolResultEvent): { title: string; summary: string } | undefined {
 	if (event.toolName !== "bash") return undefined;
 	const command = typeof event.input?.command === "string" ? event.input.command : "";
@@ -286,10 +255,8 @@ function verificationArtifactFromTool(event: ToolResultEvent): { title: string; 
 	const status = event.isError ? "failed" : "completed";
 	return { title: `${label} ${status}`, summary: `Verification command ${status}.` };
 }
-
 export function createAgentsTaskLayer() {
 	const state = initialState();
-
 	async function bind(pi: ExtensionAPI, ctx: ExtensionContext, bindCwd: string, suggestedAutoCreate: "auto" | "never" = "auto"): Promise<BindResult | undefined> {
 		const autoCreate = bindAutoCreateMode(state, suggestedAutoCreate);
 		try {
@@ -338,7 +305,6 @@ export function createAgentsTaskLayer() {
 			return undefined;
 		}
 	}
-
 	async function refreshContext(pi: ExtensionAPI, ctx: ExtensionContext, taskId = state.active?.task_id, cwd = ctx.cwd): Promise<void> {
 		if (!taskId) return;
 		try {
@@ -349,7 +315,6 @@ export function createAgentsTaskLayer() {
 			state.lastError = error instanceof Error ? error.message : String(error);
 		}
 	}
-
 	async function refreshArtifactCount(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 		if (!state.active?.task_id || !supportsTaskArtifacts(state)) return;
 		try {
@@ -361,7 +326,6 @@ export function createAgentsTaskLayer() {
 			// Artifact listing is best-effort; do not affect task binding.
 		}
 	}
-
 	async function recordArtifact(pi: ExtensionAPI, ctx: ExtensionContext, args: string[]): Promise<void> {
 		if (!state.active?.task_id || !supportsTaskArtifacts(state)) return;
 		try {
@@ -371,14 +335,16 @@ export function createAgentsTaskLayer() {
 				return;
 			}
 			const payload = parseJson<ArtifactAddResult>(result.stdout);
-			if (payload?.artifact_api_version !== SUPPORTED_ARTIFACT_API_VERSION) return;
+			if (payload?.artifact_api_version !== SUPPORTED_ARTIFACT_API_VERSION) {
+				state.artifactSkipped++;
+				return;
+			}
 			if (payload.recorded) state.artifactCount++;
 			else state.artifactSkipped++;
 		} catch {
 			state.artifactSkipped++;
 		}
 	}
-
 	async function heartbeat(pi: ExtensionAPI, ctx: ExtensionContext, force = false): Promise<void> {
 		if (!state.active?.task_id) return;
 		const now = Date.now();
@@ -390,7 +356,6 @@ export function createAgentsTaskLayer() {
 			// Heartbeat is best-effort; do not block the user turn.
 		}
 	}
-
 	function statusLines(): string[] {
 		if (state.active?.task_id) {
 			const skipped = state.artifactSkipped ? `, ${state.artifactSkipped} skipped` : "";
@@ -406,14 +371,12 @@ export function createAgentsTaskLayer() {
 		if (state.lastError) return [`- active task: unavailable (${state.lastError})`];
 		return ["- active task: none"];
 	}
-
 	return {
 		async sessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 			state.sessionId = safeSessionId(ctx);
 			resetSessionState(state);
 			await ensureTaskApi(pi, state, ctx.cwd);
 		},
-
 		async beforeAgentStart(pi: ExtensionAPI, prompt: string, fallbackWeight: TaskWeight, ctx: ExtensionContext): Promise<string | undefined> {
 			resetPromptState(state, fallbackWeight);
 			if (!(await ensureTaskApi(pi, state, ctx.cwd))) return undefined;
@@ -430,7 +393,6 @@ export function createAgentsTaskLayer() {
 			await bind(pi, ctx, decision?.project_root || ctx.cwd, decision?.auto_create || "never");
 			return state.context ? contextBlock(state.context) : undefined;
 		},
-
 		async toolResult(pi: ExtensionAPI, event: ToolResultEvent, ctx: ExtensionContext): Promise<void> {
 			activityFromTool(state, event);
 			if (!state.active && state.currentPromptNeedsTask && state.apiAvailable) {
@@ -438,7 +400,6 @@ export function createAgentsTaskLayer() {
 				const decision = candidate ? await candidateRoot(pi, candidate, ctx.cwd) : undefined;
 				if (decision?.bindable) await bind(pi, ctx, decision.project_root, decision.auto_create);
 			}
-
 			const pathArtifact = pathArtifactFromTool(event);
 			if (pathArtifact) {
 				await recordArtifact(pi, ctx, [
@@ -449,7 +410,6 @@ export function createAgentsTaskLayer() {
 					"--cwd", ctx.cwd,
 				]);
 			}
-
 			const verificationArtifact = verificationArtifactFromTool(event);
 			if (verificationArtifact) {
 				await recordArtifact(pi, ctx, [
@@ -458,10 +418,8 @@ export function createAgentsTaskLayer() {
 					"--summary", verificationArtifact.summary,
 				]);
 			}
-
 			await heartbeat(pi, ctx);
 		},
-
 		async agentEnd(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 			if (!state.active?.task_id || !state.meaningfulActivity) return;
 			await heartbeat(pi, ctx, true);
@@ -481,17 +439,13 @@ export function createAgentsTaskLayer() {
 			await runScript(pi, "task-status.sh", [state.active.task_id, "status=in_progress", "runtime=pi", `owner=${process.env.USER || "unknown"}`, "next_action=Continue from latest pi checkpoint."], ctx.cwd).catch((): undefined => undefined);
 			await refreshContext(pi, ctx);
 		},
-
 		async sessionShutdown(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 			await runScript(pi, "task-gc.sh", ["--runtime", "pi", "--session", state.sessionId, "--cwd", ctx.cwd, "--no-sweep"], ctx.cwd, 8_000).catch((): undefined => undefined);
 		},
-
 		statusLines,
-
 		currentPromptWeight(): TaskWeight {
 			return state.currentPromptWeight;
 		},
-
 		doctorSection(): string {
 			return [
 				"## AGENTS task binding",
@@ -504,7 +458,6 @@ export function createAgentsTaskLayer() {
 				...(state.lastError ? [`- last task-layer error: ${state.lastError}`] : []),
 			].join("\n");
 		},
-
 		health(): "ok" | "warning" {
 			return state.lastError || state.lastAction === "blocked" ? "warning" : "ok";
 		},
