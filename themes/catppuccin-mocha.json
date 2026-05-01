@@ -49,8 +49,8 @@
     "customMessageText": "text",
     "customMessageLabel": "sapphire",
     "toolPendingBg": "mantle",
-    "toolSuccessBg": "surface0",
-    "toolErrorBg": "surface0",
+    "toolSuccessBg": "green",
+    "toolErrorBg": "red",
     "toolTitle": "blue",
     "toolOutput": "subtext1",
 
