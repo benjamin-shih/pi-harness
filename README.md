@@ -105,11 +105,14 @@ After editing package files, reload pi:
 ```bash
 npm ci
 npm run typecheck
+npm run smoke:pi
 npm run verify
 npm run harness:audit
 npm run skills:audit
 npm run hooks:install
 ```
+
+`npm run smoke:pi` performs a local, no-agent-turn Pi package lifecycle smoke check: it loads this package through Pi's `DefaultResourceLoader`, verifies extension registration, and confirms prompt/theme discovery without requiring API keys.
 
 The tracked pre-push hook runs `npm run verify` and `npm run harness:audit`.
 

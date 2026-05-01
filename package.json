@@ -8,7 +8,8 @@
   "description": "Benjamin's personal pi harness package: extensions, prompts, and themes.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && node scripts/verify.mjs",
+    "verify": "npm run typecheck && node scripts/verify.mjs && npm run smoke:pi",
+    "smoke:pi": "node scripts/pi-lifecycle-smoke.mjs",
     "harness:audit": "node scripts/harness-audit.mjs",
     "skills:audit": "node scripts/skills-audit.mjs",
     "changelog": "node scripts/changelog.mjs",
