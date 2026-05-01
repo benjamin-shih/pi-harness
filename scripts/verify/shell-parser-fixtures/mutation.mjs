@@ -1,0 +1,33 @@
+export const mutatingShellFixtures = [
+	{ command: "sed -i 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "sed -i.bak 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "sed -Ei 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "sed --in-place 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "sed --expression 's/x/y/' --in-place ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "sed --file script.sed --in-place ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "perl -pi -e 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "perl -0pi -e 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "perl -0777pi -e 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "command sed -i 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "bash -lc 'sed -i \"s/x/y/\" ./app.conf'", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env FOO=bar bash -c 'perl -pi -e \"s/x/y/\" ./app.conf'", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env -u FOO sed -i 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env --unset=FOO perl -pi -e 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env -C /tmp bash -c 'sed -i \"s/x/y/\" ./app.conf'", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env --ignore-signal=PIPE sed -i 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env --default-signal=PIPE sed -i 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env --debug sed -i 's/x/y/' ./app.conf", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env -S 'sed -i s/x/y/ ./app.conf'", expectedWriteTargets: ["./app.conf"] },
+	{ command: "env -S sed -i s/x/y/ ./app.conf", expectedWriteTargets: ["./app.conf"] },
+];
+
+export const readOnlyShellMutationFixtures = [
+	"sed 's/a/b/' file.txt | grep -i needle",
+	"sed 's/a/b/' -- -ignore",
+	"perl script.pl -input data.txt",
+	"perl -Ilib script.pl ./input.txt",
+	"perl -Mstrict script.pl ./input.txt",
+	"bash -lc 'sed \"s/a/b/\" file.txt | grep -i needle'",
+	"env FOO=bar bash -c 'perl script.pl -input data.txt'",
+	"env -u FOO bash -c 'sed \"s/a/b/\" file.txt | grep -i needle'",
+];

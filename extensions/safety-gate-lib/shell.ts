@@ -159,9 +159,106 @@ function extractRedirectionTargetWords(command: string): string[] {
 	return targets;
 }
 
-function looksFileMutationCommand(command: string): boolean {
-	return /(^|[;&|()\s])(?:rm|mv|cp|touch|mkdir|rmdir|tee)\b/.test(command)
-		|| /\b(?:sed|perl)\s+[^\n]*\s-i\b/.test(command);
+function commandWordsAfterPrefixes(words: string[]): string[] {
+	let index = 0;
+	while (shellBasename(words[index] ?? "") === "command") index++;
+	if (shellBasename(words[index] ?? "") === "env") {
+		index++;
+		while (index < words.length) {
+			const word = words[index] ?? "";
+			if (word === "--") {
+				index++;
+				break;
+			}
+			if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word) || ["-i", "-", "-0", "--ignore-environment", "--null", "--debug", "--list-signal-handling"].includes(word)) {
+				index++;
+				continue;
+			}
+			if (word === "-S" || word === "--split-string") return [...shellWords(words[index + 1] ?? ""), ...words.slice(index + 2)];
+			if (word.startsWith("-S") && word.length > 2) return [...shellWords(word.slice(2)), ...words.slice(index + 1)];
+			if (word.startsWith("--split-string=")) return [...shellWords(word.slice("--split-string=".length)), ...words.slice(index + 1)];
+			if (["-u", "--unset", "-C", "--chdir", "--argv0"].includes(word)) {
+				index += 2;
+				continue;
+			}
+			if (word.startsWith("-u") || word.startsWith("-C") || word.startsWith("--unset=") || word.startsWith("--chdir=") || word.startsWith("--argv0=") || word.startsWith("--ignore-signal") || word.startsWith("--default-signal") || word.startsWith("--block-signal")) {
+				index++;
+				continue;
+			}
+			break;
+		}
+	}
+	return words.slice(index);
+}
+
+function shellWrappedCommand(words: string[], depth: number): string | undefined {
+	const commandWords = commandWordsAfterPrefixes(words);
+	if (depth >= 2 || !/^(?:bash|sh|zsh)$/.test(shellBasename(commandWords[0] ?? ""))) return undefined;
+	let optionIndex = 1;
+	while (optionIndex < commandWords.length - 1) {
+		const option = commandWords[optionIndex] ?? "";
+		if (!option.startsWith("-") && !option.startsWith("+")) break;
+		const shortOptionHasCommand = /^-[^-]/.test(option) && option.slice(1).includes("c");
+		if (option === "-c" || shortOptionHasCommand) return commandWords[optionIndex + 1];
+		if ((/^-[^-]/.test(option) && option.slice(1).includes("o")) || option === "-o" || option === "-O" || option === "+O" || option === "--rcfile" || option === "--init-file") {
+			optionIndex += 2;
+			continue;
+		}
+		optionIndex++;
+	}
+	return undefined;
+}
+
+function hasSedInPlaceEditOption(words: string[]): boolean {
+	for (let index = 1; index < words.length; index++) {
+		const word = words[index] ?? "";
+		if (word === "--") return false;
+		if (!word.startsWith("-") || word === "-") return false;
+		if (word === "--in-place" || word.startsWith("--in-place=") || /^-[A-Za-z]*i[A-Za-z]*(?:\..*)?$/.test(word)) return true;
+		if (["-e", "-f", "--expression", "--file"].includes(word)) index++;
+	}
+	return false;
+}
+
+function hasPerlInPlaceEditOption(words: string[]): boolean {
+	for (let index = 1; index < words.length; index++) {
+		const word = words[index] ?? "";
+		if (word === "--") return false;
+		if (!word.startsWith("-") || word === "-") return false;
+		if (["-e", "-E", "-M", "-m", "-I"].includes(word)) {
+			index++;
+			continue;
+		}
+		let consumesAttachedArgument = false;
+		for (const char of word.slice(1)) {
+			if (char === "i") return true;
+			if (["e", "E", "M", "m", "I"].includes(char)) {
+				consumesAttachedArgument = true;
+				break;
+			}
+		}
+		if (consumesAttachedArgument) continue;
+	}
+	return false;
+}
+
+function hasInPlaceEditOption(words: string[]): boolean {
+	const commandWords = commandWordsAfterPrefixes(words);
+	const command = shellBasename(commandWords[0] ?? "");
+	if (command === "sed") return hasSedInPlaceEditOption(commandWords);
+	if (command === "perl") return hasPerlInPlaceEditOption(commandWords);
+	return false;
+}
+
+function looksFileMutationCommand(command: string, depth = 0): boolean {
+	if (/(^|[;&|()\s])(?:rm|mv|cp|touch|mkdir|rmdir|tee)\b/.test(command)) return true;
+	for (const segment of commandSegments(command)) {
+		const words = shellWords(segment);
+		if (hasInPlaceEditOption(words)) return true;
+		const wrappedCommand = shellWrappedCommand(words, depth);
+		if (wrappedCommand && looksFileMutationCommand(wrappedCommand, depth + 1)) return true;
+	}
+	return false;
 }
 
 export function extractWritePathTokens(command: string): string[] {
