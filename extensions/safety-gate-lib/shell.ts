@@ -159,34 +159,13 @@ function extractRedirectionTargetWords(command: string): string[] {
 	return targets;
 }
 
-function extractRedirectionTargets(command: string): string[] {
-	const targets = new Set<string>(extractRedirectionTargetWords(command));
-	for (const pattern of [
-		/(?:\d*(?:>>?|<)|&>)\s*"([^"]+)"/g,
-		/(?:\d*(?:>>?|<)|&>)\s*'([^']+)'/g,
-	]) {
-		let quotedMatch: RegExpExecArray | null;
-		while ((quotedMatch = pattern.exec(command))) {
-			const token = cleanPathToken(quotedMatch[1] ?? "");
-			if (token) targets.add(token);
-		}
-	}
-	const re = /(?:\d*(?:>>?|<)|&>)\s*([^\s;&|)]+)/g;
-	let match: RegExpExecArray | null;
-	while ((match = re.exec(command))) {
-		const token = cleanPathToken(match[1] ?? "");
-		if (token) targets.add(token);
-	}
-	return [...targets];
-}
-
 function looksFileMutationCommand(command: string): boolean {
 	return /(^|[;&|()\s])(?:rm|mv|cp|touch|mkdir|rmdir|tee)\b/.test(command)
 		|| /\b(?:sed|perl)\s+[^\n]*\s-i\b/.test(command);
 }
 
 export function extractWritePathTokens(command: string): string[] {
-	const tokens = new Set(extractRedirectionTargets(command));
+	const tokens = new Set(extractRedirectionTargetWords(command));
 	if (looksFileMutationCommand(command)) {
 		for (const token of extractPathTokens(command, true)) tokens.add(token);
 	}
@@ -266,10 +245,6 @@ export function parseGitCommands(command: string, depth = 0): ParsedGitCommand[]
 		}
 	}
 	return commands;
-}
-
-export function parseGitCommand(command: string): ParsedGitCommand | undefined {
-	return parseGitCommands(command)[0];
 }
 
 function looksMutatingGitCommand(command: string): boolean {

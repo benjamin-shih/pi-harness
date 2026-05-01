@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { AssistantMessage, TextContent } from "@mariozechner/pi-ai";
+import type { AssistantMessage } from "@mariozechner/pi-ai";
 
 const TIMER_STATUS_KEY = "turn-timer";
 const TIMER_UPDATE_MS = 1_000;
@@ -19,19 +19,9 @@ function isAssistantMessage(message: unknown): message is AssistantMessage {
 	return Boolean(message && typeof message === "object" && (message as { role?: unknown }).role === "assistant");
 }
 
-function elapsedFooter(elapsed: string): string {
-	return `\n\n_${TIMER_FOOTER_PREFIX} ${elapsed}_`;
-}
-
 export function appendElapsedToAssistantMessage(message: AssistantMessage, elapsed: string): AssistantMessage {
-	const footer = elapsedFooter(elapsed);
-	const existingFooterIndex = message.content.findIndex(
-		(block) => block.type === "text" && block.text.includes(TIMER_FOOTER_PREFIX),
-	);
-	if (existingFooterIndex >= 0) {
-		return message;
-	}
-	const elapsedBlock: TextContent = { type: "text", text: footer };
+	if (message.content.some((block) => block.type === "text" && block.text.includes(TIMER_FOOTER_PREFIX))) return message;
+	const elapsedBlock = { type: "text" as const, text: `\n\n_${TIMER_FOOTER_PREFIX} ${elapsed}_` };
 	return { ...message, content: [...message.content, elapsedBlock] };
 }
 
@@ -68,12 +58,12 @@ export function installTurnTimer(pi: ExtensionAPI): void {
 	});
 
 	pi.on("message_end", async (event) => {
-		if (!agentStartMs || !isAssistantMessage(event.message) || event.message.stopReason === "toolUse") return;
+		if (agentStartMs === undefined || !isAssistantMessage(event.message) || event.message.stopReason === "toolUse") return;
 		return { message: appendElapsedToAssistantMessage(event.message, formatElapsed(Date.now() - agentStartMs)) };
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
-		const elapsed = formatElapsed(agentStartMs ? Date.now() - agentStartMs : 0);
+		const elapsed = formatElapsed(agentStartMs === undefined ? 0 : Date.now() - agentStartMs);
 		stopTimer();
 		agentStartMs = undefined;
 		if (ctx.hasUI) clearTimerUi(ctx, elapsed);

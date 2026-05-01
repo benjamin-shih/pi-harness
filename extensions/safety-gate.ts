@@ -154,13 +154,14 @@ async function gitBlockReason(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd
 	const gitCommands = parseGitCommands(command);
 	for (const git of gitCommands) {
 		const effectiveCwd = gitEffectiveCwd(cwd, git.cwd);
+		const writesToIndex = git.subcommand === "add" || git.subcommand === "commit";
+		if (writesToIndex && await commandMentionsSensitivePath(pathSafety, command, effectiveCwd, "git")) return BLOCKED_GIT;
+
 		if (git.subcommand === "add") {
-			if (await commandMentionsSensitivePath(pathSafety, command, effectiveCwd, "git")) return BLOCKED_GIT;
 			if (isBroadGitAdd(git.args) && await hasChangedSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
 		}
 
 		if (git.subcommand === "commit") {
-			if (await commandMentionsSensitivePath(pathSafety, command, effectiveCwd, "git")) return BLOCKED_GIT;
 			if (await hasStagedSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
 			if (isCommitAll(git.args) && await hasChangedSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
 		}
@@ -256,27 +257,28 @@ function redactToolContent(content: unknown): { content: unknown; changed: boole
 }
 
 async function guardShellCommand(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string, command: string, forUserBash = false) {
+	const block = (reason: string) => forUserBash ? blockedUserBash(reason) : blockedTool(reason);
 	const gitReason = await gitBlockReason(pi, pathSafety, cwd, command);
-	if (gitReason) return forUserBash ? blockedUserBash(gitReason) : blockedTool(gitReason);
+	if (gitReason) return block(gitReason);
 
 	const mutating = looksMutatingBash(command);
 	if (mutating && (
 		(await pathSafety(".", cwd, "write"))?.action === "block" ||
 		await commandMentionsBlockedWritePath(pathSafety, command, cwd)
 	)) {
-		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
+		return block(BLOCKED_OUTPUT);
 	}
 
 	const outputOrUpload = OUTPUT_COMMAND_RE.test(command) || UPLOAD_COMMAND_RE.test(command);
 	if (outputOrUpload && await commandMentionsSensitivePath(pathSafety, command, cwd, "egress")) {
-		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
+		return block(BLOCKED_OUTPUT);
 	}
 
 	if (looksRecursiveTraversalCommand(command) && (
 		await pathSafety(".", cwd, "list", true) ||
 		await commandMentionsSensitivePath(pathSafety, command, cwd, "list", true)
 	)) {
-		return forUserBash ? blockedUserBash(BLOCKED_OUTPUT) : blockedTool(BLOCKED_OUTPUT);
+		return block(BLOCKED_OUTPUT);
 	}
 
 	return undefined;
