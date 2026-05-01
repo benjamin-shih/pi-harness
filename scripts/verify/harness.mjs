@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Module from "node:module";
 
@@ -57,13 +57,49 @@ export function loadExtension(relativePath) {
 	return factory;
 }
 
+export async function withEnv(overrides, fn) {
+	const previous = new Map();
+	for (const key of Object.keys(overrides)) {
+		previous.set(key, process.env[key]);
+		const value = overrides[key];
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	}
+	try {
+		return await fn();
+	} finally {
+		for (const [key, value] of previous) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+	}
+}
+
 export function extensionEntrypoints() {
 	return readdirSync(join(root, "extensions"), { withFileTypes: true })
 		.flatMap((entry) => {
-			if (entry.isFile() && /\.[cm]?[jt]s$/.test(entry.name)) return [join("extensions", entry.name)];
+			const relativeDir = join("extensions", entry.name);
+			const full = join(root, relativeDir);
+			if (entry.isFile() && [".ts", ".js"].includes(extname(entry.name))) return [relativeDir];
 			if (!entry.isDirectory()) return [];
-			const indexPath = join("extensions", entry.name, "index.ts");
-			return existsSync(join(root, indexPath)) ? [indexPath] : [];
+
+			const packageJson = join(full, "package.json");
+			if (existsSync(packageJson)) {
+				try {
+					const manifest = JSON.parse(readFileSync(packageJson, "utf8"));
+					return (manifest.pi?.extensions ?? [])
+						.map((entryPath) => join(relativeDir, entryPath))
+						.filter((entryPath) => existsSync(join(root, entryPath)));
+				} catch {
+					return [];
+				}
+			}
+
+			for (const indexFile of ["index.ts", "index.js"]) {
+				const indexPath = join(relativeDir, indexFile);
+				if (existsSync(join(root, indexPath))) return [indexPath];
+			}
+			return [];
 		})
 		.sort();
 }

@@ -105,6 +105,27 @@ function initialState(): TaskLayerState {
 	};
 }
 
+function resetSessionState(state: TaskLayerState): void {
+	state.currentPromptWeight = "standard";
+	state.currentBindingMode = "auto";
+	state.currentPromptNeedsTask = false;
+	state.meaningfulActivity = false;
+	state.activity = emptyActivity();
+	state.artifactCount = 0;
+	state.artifactSkipped = 0;
+	state.lastHeartbeatAt = 0;
+}
+
+function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): void {
+	state.active = undefined;
+	state.context = undefined;
+	state.currentPromptWeight = fallbackWeight;
+	state.activity = emptyActivity();
+	state.artifactCount = 0;
+	state.artifactSkipped = 0;
+	state.meaningfulActivity = false;
+}
+
 function modelSummary(ctx: ExtensionContext): string | undefined {
 	return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
 }
@@ -168,7 +189,7 @@ async function candidateRoot(pi: ExtensionAPI, candidate: string, cwd: string): 
 	}
 }
 
-async function classifyTask(pi: ExtensionAPI, prompt: string, cwd: string, fallbackWeight: TaskWeight): Promise<TaskClassification | undefined> {
+async function classifyTask(pi: ExtensionAPI, prompt: string, cwd: string): Promise<TaskClassification | undefined> {
 	try {
 		const result = await runScript(pi, "task-classify.sh", ["--prompt-text", prompt, "--cwd", cwd], cwd, 5_000);
 		if (result.code !== 0) return undefined;
@@ -210,7 +231,7 @@ function shellUnquote(value: string): string {
 	return value.replace(/^['"]|['"]$/g, "");
 }
 
-function normalizeCandidatePath(candidate: string, _cwd: string): string {
+function normalizeCandidatePath(candidate: string): string {
 	// Keep candidate-root normalization in `.agents` so home/bootstrap policy has
 	// one owner. In particular, do not expand `~` with process.env.HOME here.
 	return shellUnquote(candidate.trim());
@@ -220,12 +241,12 @@ function pathFromTool(event: ToolResultEvent, fallbackCwd: string): string | und
 	const input = event.input ?? {};
 	for (const key of ["path", "cwd"] as const) {
 		const value = input[key];
-		if (typeof value === "string" && value.trim()) return normalizeCandidatePath(value, fallbackCwd);
+		if (typeof value === "string" && value.trim()) return normalizeCandidatePath(value);
 	}
 	if (event.toolName === "bash") {
 		const command = typeof input.command === "string" ? input.command : "";
 		const cdMatch = command.match(/(?:^|[;&|])\s*cd\s+((?:"[^"]+")|(?:'[^']+')|[^\s;&|]+)/);
-		if (cdMatch?.[1]) return normalizeCandidatePath(cdMatch[1], fallbackCwd);
+		if (cdMatch?.[1]) return normalizeCandidatePath(cdMatch[1]);
 	}
 	return fallbackCwd;
 }
@@ -243,7 +264,7 @@ function pathArtifactFromTool(event: ToolResultEvent): { title: string; path: st
 	if (event.isError) return undefined;
 	const candidate = event.input?.path;
 	if (typeof candidate !== "string" || !candidate.trim()) return undefined;
-	return { title: event.toolName === "edit" ? "Edited path" : "Wrote path", path: normalizeCandidatePath(candidate, "") };
+	return { title: event.toolName === "edit" ? "Edited path" : "Wrote path", path: normalizeCandidatePath(candidate) };
 }
 
 function verificationLabel(command: string): string | undefined {
@@ -389,27 +410,14 @@ export function createAgentsTaskLayer() {
 	return {
 		async sessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 			state.sessionId = safeSessionId(ctx);
-			state.currentPromptWeight = "standard";
-			state.currentBindingMode = "auto";
-			state.currentPromptNeedsTask = false;
-			state.meaningfulActivity = false;
-			state.activity = emptyActivity();
-			state.artifactCount = 0;
-			state.artifactSkipped = 0;
-			state.lastHeartbeatAt = 0;
+			resetSessionState(state);
 			await ensureTaskApi(pi, state, ctx.cwd);
 		},
 
 		async beforeAgentStart(pi: ExtensionAPI, prompt: string, fallbackWeight: TaskWeight, ctx: ExtensionContext): Promise<string | undefined> {
 			if (!(await ensureTaskApi(pi, state, ctx.cwd))) return undefined;
-			state.active = undefined;
-			state.context = undefined;
-			state.currentPromptWeight = fallbackWeight;
-			state.activity = emptyActivity();
-			state.artifactCount = 0;
-			state.artifactSkipped = 0;
-			state.meaningfulActivity = false;
-			const classification = await classifyTask(pi, prompt, ctx.cwd, fallbackWeight);
+			resetPromptState(state, fallbackWeight);
+			const classification = await classifyTask(pi, prompt, ctx.cwd);
 			if (!classification) {
 				state.lastError = "task-classify returned an unsupported AGENTS task API version";
 				return undefined;

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { assert, loadExtension, root } from "./harness.mjs";
+import { assert, loadExtension, root, withEnv } from "./harness.mjs";
 
 export async function runHarnessCommandBehaviorTests() {
 	const harnessCommands = loadExtension("extensions/harness-commands.ts");
@@ -19,57 +19,51 @@ export async function runHarnessCommandBehaviorTests() {
 		mkdirSync(projectRoot, { recursive: true });
 		writeFileSync(join(projectRoot, "AGENTS.md"), "# test project\n");
 		writeFileSync(join(projectRoot, "README.md"), "hello\n");
-		const previousAgentsRoot = process.env.AGENTS_SHARED_ROOT;
-		const previousTasksRoot = process.env.TASKS_ROOT;
-		process.env.AGENTS_SHARED_ROOT = realAgentsRoot;
-		process.env.TASKS_ROOT = tasksRoot;
 		try {
-			const handlers = new Map();
-			harnessCommands({
-				on: (event, handler) => handlers.set(event, handler),
-				registerCommand: () => {},
-				getAllTools: () => [],
-				getActiveTools: () => ["read", "bash"],
-				getThinkingLevel: () => "xhigh",
-				exec: async (cmd, args, options) => {
-					try {
-						const stdout = execFileSync(cmd, args, { cwd: options?.cwd || projectRoot, env: process.env, encoding: "utf8", timeout: options?.timeout || 10_000 });
-						return { code: 0, stdout, stderr: "", killed: false };
-					} catch (error) {
-						return { code: error.status ?? 1, stdout: String(error.stdout || ""), stderr: String(error.stderr || error.message || ""), killed: false };
-					}
-				},
-				sendUserMessage: () => {},
+			await withEnv({ AGENTS_SHARED_ROOT: realAgentsRoot, TASKS_ROOT: tasksRoot }, async () => {
+				const handlers = new Map();
+				harnessCommands({
+					on: (event, handler) => handlers.set(event, handler),
+					registerCommand: () => {},
+					getAllTools: () => [],
+					getActiveTools: () => ["read", "bash"],
+					getThinkingLevel: () => "xhigh",
+					exec: async (cmd, args, options) => {
+						try {
+							const stdout = execFileSync(cmd, args, { cwd: options?.cwd || projectRoot, env: process.env, encoding: "utf8", timeout: options?.timeout || 10_000 });
+							return { code: 0, stdout, stderr: "", killed: false };
+						} catch (error) {
+							return { code: error.status ?? 1, stdout: String(error.stdout || ""), stderr: String(error.stderr || error.message || ""), killed: false };
+						}
+					},
+					sendUserMessage: () => {},
+				});
+				const ctx = {
+					cwd: projectRoot,
+					model: { provider: "test", id: "model" },
+					getContextUsage: () => ({ tokens: 10, contextWindow: 100, percent: 10 }),
+					sessionManager: {
+						getBranch: () => [],
+						getSessionId: () => "real-script-session",
+						getSessionFile: () => join(tempRoot, "session.jsonl"),
+						getLeafId: () => undefined,
+					},
+				};
+				await handlers.get("session_start")({ reason: "startup" }, ctx);
+				const result = await handlers.get("before_agent_start")({ prompt: "Analyze real AGENTS task layer integration", systemPrompt: "base" }, ctx);
+				assert(result?.systemPrompt.includes("## Active AGENTS Task Context"), "real .agents task-layer test should inject task context");
+				await handlers.get("tool_result")({ toolName: "read", input: { path: join(projectRoot, "README.md") }, isError: false }, ctx);
+				await handlers.get("agent_end")({}, ctx);
+				await handlers.get("session_shutdown")({ reason: "quit" }, ctx);
+				const taskDirs = readdirSync(tasksRoot).filter((name) => !name.startsWith("."));
+				assert(taskDirs.length === 1, "real .agents task-layer test should create exactly one temp task");
+				const taskDir = join(tasksRoot, taskDirs[0]);
+				const events = readFileSync(join(taskDir, "events.jsonl"), "utf8");
+				assert(events.includes('"type": "checkpoint"'), "real .agents task-layer test should checkpoint through real scripts");
+				const lease = JSON.parse(readFileSync(join(taskDir, "lease.json"), "utf8"));
+				assert(Boolean(lease.released_at), "real .agents task-layer test should release the temp task lease on shutdown");
 			});
-			const ctx = {
-				cwd: projectRoot,
-				model: { provider: "test", id: "model" },
-				getContextUsage: () => ({ tokens: 10, contextWindow: 100, percent: 10 }),
-				sessionManager: {
-					getBranch: () => [],
-					getSessionId: () => "real-script-session",
-					getSessionFile: () => join(tempRoot, "session.jsonl"),
-					getLeafId: () => undefined,
-				},
-			};
-			await handlers.get("session_start")({ reason: "startup" }, ctx);
-			const result = await handlers.get("before_agent_start")({ prompt: "Analyze real AGENTS task layer integration", systemPrompt: "base" }, ctx);
-			assert(result?.systemPrompt.includes("## Active AGENTS Task Context"), "real .agents task-layer test should inject task context");
-			await handlers.get("tool_result")({ toolName: "read", input: { path: join(projectRoot, "README.md") }, isError: false }, ctx);
-			await handlers.get("agent_end")({}, ctx);
-			await handlers.get("session_shutdown")({ reason: "quit" }, ctx);
-			const taskDirs = readdirSync(tasksRoot).filter((name) => !name.startsWith("."));
-			assert(taskDirs.length === 1, "real .agents task-layer test should create exactly one temp task");
-			const taskDir = join(tasksRoot, taskDirs[0]);
-			const events = readFileSync(join(taskDir, "events.jsonl"), "utf8");
-			assert(events.includes('"type": "checkpoint"'), "real .agents task-layer test should checkpoint through real scripts");
-			const lease = JSON.parse(readFileSync(join(taskDir, "lease.json"), "utf8"));
-			assert(Boolean(lease.released_at), "real .agents task-layer test should release the temp task lease on shutdown");
 		} finally {
-			if (previousAgentsRoot === undefined) delete process.env.AGENTS_SHARED_ROOT;
-			else process.env.AGENTS_SHARED_ROOT = previousAgentsRoot;
-			if (previousTasksRoot === undefined) delete process.env.TASKS_ROOT;
-			else process.env.TASKS_ROOT = previousTasksRoot;
 			rmSync(tempRoot, { recursive: true, force: true });
 		}
 	}
@@ -123,16 +117,11 @@ export async function runHarnessCommandBehaviorTests() {
 	assert(result.systemPrompt.includes("instead of `###`"), "harness should recommend bold labels instead of raw level-3 headings");
 	assert(!result.systemPrompt.includes("## Post-Change Cleanup Gate"), "harness should not inject cleanup guidance for non-coding prompts");
 
-	const previousSkillsRootForPrompt = process.env.AGENTS_SKILLS_ROOT;
-	try {
-		process.env.AGENTS_SKILLS_ROOT = "/tmp/pi-custom-skills";
+	await withEnv({ AGENTS_SKILLS_ROOT: "/tmp/pi-custom-skills" }, async () => {
 		const routed = createHarness([]);
 		const routedResult = await routed.beforeAgentStart({ prompt: "Implement config cleanup", systemPrompt: "base" }, { cwd: root });
 		assert(routedResult.systemPrompt.includes("/tmp/pi-custom-skills/SKILLS.md"), "skill-routing guidance should honor AGENTS_SKILLS_ROOT");
-	} finally {
-		if (previousSkillsRootForPrompt === undefined) delete process.env.AGENTS_SKILLS_ROOT;
-		else process.env.AGENTS_SKILLS_ROOT = previousSkillsRootForPrompt;
-	}
+	});
 
 	const statusCommands = new Map();
 	const statusMessages = [];
