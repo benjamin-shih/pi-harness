@@ -10,9 +10,10 @@ import {
 	looksFileMutatingCommand,
 	type GitChangeSnapshot,
 } from "./harness-commands/cleanup-guard";
+import { buildDoctor, buildStatus } from "./harness-commands/status";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
 import { skillsRoot } from "./shared/config";
-import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemorySpineDiagnostics } from "./session-continuity/diagnostics";
+import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics } from "./session-continuity/diagnostics";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 type TaskWeight = "trivial" | "standard" | "complex";
@@ -25,17 +26,6 @@ type ModeDefinition = {
 	tools: "all" | string[];
 	instructions?: string;
 };
-
-type HarnessAudit = {
-	root: string;
-	packageVersion: string;
-	metrics?: { runtimeExtensionEntrypoints?: number; extensionLoc?: number; optionalLatexLoc?: number; sharedSupportLoc?: number };
-	issues?: unknown[];
-	warnings?: unknown[];
-};
-
-type HarnessAuditResult = { ok: true; audit: HarnessAudit } | { ok: false; error: string };
-type AgentsTaskLayer = ReturnType<typeof createAgentsTaskLayer>;
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DISPLAY_MATH_RENDERING_INSTRUCTION = [
@@ -212,141 +202,6 @@ async function applyMode(name: string, mode: ModeDefinition, pi: ExtensionAPI, c
 	ctx.ui.setStatus("mode", ctx.ui.theme.fg("accent", `mode:${name}`));
 	ctx.ui.notify(`Mode ${name} activated`, "info");
 	return true;
-}
-
-async function gitOutput(pi: ExtensionAPI, cwd: string, args: string[]): Promise<string | undefined> {
-	try {
-		const result = await pi.exec("git", args, { cwd, timeout: 5_000 });
-		if (result.code !== 0) return undefined;
-		return result.stdout.trim();
-	} catch {
-		return undefined;
-	}
-}
-
-async function gitSummary(pi: ExtensionAPI, cwd: string): Promise<{ branch?: string; summary: string }> {
-	const branch = await gitOutput(pi, cwd, ["branch", "--show-current"]);
-	const status = await gitOutput(pi, cwd, ["status", "--porcelain=v1", "--untracked-files=all"]);
-	if (status === undefined) return { branch: undefined, summary: "not a git repo" };
-	if (!status) return { branch, summary: "clean" };
-
-	let staged = 0;
-	let unstaged = 0;
-	let untracked = 0;
-	for (const line of status.split(/\r?\n/)) {
-		if (line.startsWith("??")) {
-			untracked++;
-			continue;
-		}
-		if (line[0] && line[0] !== " ") staged++;
-		if (line[1] && line[1] !== " ") unstaged++;
-	}
-	return { branch, summary: `${staged} staged, ${unstaged} unstaged, ${untracked} untracked` };
-}
-
-function contextSummary(ctx: ExtensionContext): string {
-	const usage = ctx.getContextUsage();
-	if (!usage || usage.percent === null) return "unknown";
-	return `${usage.percent.toFixed(1)}% (${usage.tokens}/${usage.contextWindow})`;
-}
-
-async function runHarnessAudit(pi: ExtensionAPI): Promise<HarnessAuditResult> {
-	try {
-		const script = join(PACKAGE_ROOT, "scripts", "harness-audit.mjs");
-		const result = await pi.exec("node", [script, "--json"], { cwd: PACKAGE_ROOT, timeout: 5_000 });
-		if (result.code !== 0) return { ok: false, error: result.stderr || result.stdout || `exit ${result.code}` };
-		return { ok: true, audit: JSON.parse(result.stdout) as HarnessAudit };
-	} catch (error) {
-		return { ok: false, error: error instanceof Error ? error.message : String(error) };
-	}
-}
-
-function formatHarnessAuditLines(result: HarnessAuditResult): string[] {
-	if (result.ok === false) return [`- harness audit: unavailable (${result.error})`];
-	const { audit } = result;
-	return [
-		`- harness audit: ${audit.issues?.length ? "issues" : "ok"} (${audit.issues?.length ?? 0} issue(s), ${audit.warnings?.length ?? 0} warning(s))`,
-		`- runtime extensions: ${audit.metrics?.runtimeExtensionEntrypoints ?? "unknown"}`,
-		`- core extension LOC: ${audit.metrics?.extensionLoc ?? "unknown"}`,
-		`- optional LaTeX LOC: ${audit.metrics?.optionalLatexLoc ?? "unknown"}`,
-	];
-}
-
-function memoryStatusLines(diagnostics: MemorySpineDiagnostics): string[] {
-	return [
-		`- memory spine: ${diagnostics.health} (${diagnostics.status})`,
-		`- memory entries: ${diagnostics.checkpointCount} checkpoint(s), ${diagnostics.harnessCompactionCount}/${diagnostics.compactionCount} harness compaction(s), ${diagnostics.diagnosticCount} diagnostic(s)`,
-	];
-}
-
-async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: AgentsTaskLayer): Promise<string> {
-	const git = await gitSummary(pi, ctx.cwd);
-	const audit = await runHarnessAudit(pi);
-	const branch = ctx.sessionManager.getBranch();
-	const memory = buildMemorySpineDiagnostics(branch);
-	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none";
-	const tools = pi.getActiveTools();
-	return [
-		"## Harness status",
-		`- cwd: ${ctx.cwd}`,
-		`- model: ${model}`,
-		`- thinking: ${pi.getThinkingLevel()}`,
-		`- context: ${contextSummary(ctx)}`,
-		`- git: ${git.branch ? `${git.branch}, ` : ""}${git.summary}`,
-		`- active tools: ${tools.length ? tools.join(", ") : "none"}`,
-		`- session entries: ${branch.length}`,
-		...formatHarnessAuditLines(audit),
-		...memoryStatusLines(memory),
-		...taskLayer.statusLines(),
-	].join("\n");
-}
-
-function doctorRecommendations(audit: HarnessAuditResult, memory: MemorySpineDiagnostics, taskLayer: AgentsTaskLayer): string[] {
-	const recommendations: string[] = [];
-	if (!audit.ok) recommendations.push("Run `npm run harness:audit` in the harness package; the slash-command audit call failed.");
-	else if (audit.audit.issues?.length) recommendations.push("Fix harness audit issues before adding more harness features.");
-	if (memory.health === "warning") recommendations.push("Inspect `/memory`; latest memory-spine diagnostics indicate compaction fallback/default behavior.");
-	if (memory.health === "unknown") recommendations.push("No memory-spine entries yet; run one normal agent turn and check `/memory` again.");
-	if (taskLayer.health() === "warning") recommendations.push("Inspect AGENTS task binding state; pi could not bind or refresh the active task cleanly.");
-	return recommendations.length ? recommendations : ["None; harness checks are green."];
-}
-
-function doctorHealth(audit: HarnessAuditResult, memory: MemorySpineDiagnostics, taskLayer: AgentsTaskLayer): "ok" | "warning" {
-	if (!audit.ok || (audit.ok && Boolean(audit.audit.issues?.length))) return "warning";
-	if (memory.health === "warning") return "warning";
-	if (taskLayer.health() === "warning") return "warning";
-	return "ok";
-}
-
-async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: AgentsTaskLayer): Promise<string> {
-	const git = await gitSummary(pi, ctx.cwd);
-	const audit = await runHarnessAudit(pi);
-	const branch = ctx.sessionManager.getBranch();
-	const memory = buildMemorySpineDiagnostics(branch);
-	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none";
-	const tools = pi.getActiveTools();
-	return [
-		"## Harness doctor",
-		`- health: ${doctorHealth(audit, memory, taskLayer)}`,
-		`- package: ben-pi-harness ${audit.ok ? audit.audit.packageVersion ?? "unknown" : "unknown"}`,
-		`- cwd: ${ctx.cwd}`,
-		`- model: ${model}`,
-		`- thinking: ${pi.getThinkingLevel()}`,
-		`- context: ${contextSummary(ctx)}`,
-		`- git: ${git.branch ? `${git.branch}, ` : ""}${git.summary}`,
-		`- active tools: ${tools.length ? tools.join(", ") : "none"}`,
-		`- session entries: ${branch.length}`,
-		"",
-		"### Harness audit",
-		...formatHarnessAuditLines(audit),
-		"",
-		formatMemorySpineDiagnostics(memory, { verbose: true }),
-		"",
-		taskLayer.doctorSection(),
-		"",
-		"### Recommendations",
-		...doctorRecommendations(audit, memory, taskLayer).map((recommendation) => `- ${recommendation}`),
-	].join("\n");
 }
 
 function formatAudit(stdout: string): string {
