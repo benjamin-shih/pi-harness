@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { homedir } from "node:os";
+import { isAbsolute, resolve } from "node:path";
 import { createPathSafetyChecker, type PathSafetyCheck, type PolicyOperation } from "./safety-gate-lib/policy";
-import { extractPathTokens, extractWritePathTokens, looksMutatingBash, looksRecursiveTraversalCommand } from "./safety-gate-lib/shell";
+import { extractPathTokens, extractWritePathTokens, looksMutatingBash, looksRecursiveTraversalCommand, parseGitCommands } from "./safety-gate-lib/shell";
 
 const BLOCKED_OUTPUT =
 	"[safety-gate] Blocked output because it appears to contain credential material or a protected private file.";
@@ -12,12 +14,6 @@ const GIT_FINALIZATION_MARKER = "PI_GIT_FINALIZATION_GUARD";
 
 const OUTPUT_COMMAND_RE = /\b(?:cat|bat|less|more|head|tail|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl)\b/i;
 const UPLOAD_COMMAND_RE = /\b(?:curl|wget|scp|sftp|rsync|rclone|aws\s+s3\s+cp|aws\s+s3\s+sync|gh\s+release\s+upload)\b/i;
-
-const GIT_ADD_RE = /\bgit\b[\s\S]*?\badd\b/i;
-const GIT_COMMIT_RE = /\bgit\b[\s\S]*?\bcommit\b/i;
-const GIT_PUSH_RE = /\bgit\b[\s\S]*?\bpush\b/i;
-const BROAD_GIT_ADD_RE = /\bgit\b[\s\S]*?\badd\b[\s\S]*(?:\s(?:-A|--all|-u|--update|\.|:\/?|\*)\b|$)/i;
-const COMMIT_ALL_RE = /\bgit\b[\s\S]*?\bcommit\b[\s\S]*(?:\s-a\b|\s--all\b)/i;
 
 type GitFinalizationState = {
 	root: string;
@@ -132,18 +128,45 @@ async function hasOutgoingSensitivePath(pi: ExtensionAPI, pathSafety: PathSafety
 	return true;
 }
 
+function expandShellHome(path: string): string {
+	if (path === "~" || path === "$HOME" || path === "${HOME}") return homedir();
+	if (path.startsWith("~/")) return resolve(homedir(), path.slice(2));
+	if (path.startsWith("$HOME/")) return resolve(homedir(), path.slice(6));
+	if (path.startsWith("${HOME}/")) return resolve(homedir(), path.slice(8));
+	return path;
+}
+
+function gitEffectiveCwd(baseCwd: string, gitCwd: string | undefined): string {
+	if (!gitCwd) return baseCwd;
+	const expanded = expandShellHome(gitCwd);
+	return isAbsolute(expanded) ? expanded : resolve(baseCwd, expanded);
+}
+
+function isBroadGitAdd(args: string[]): boolean {
+	return args.length === 0 || args.some((arg) => arg === "-A" || arg === "--all" || arg === "-u" || arg === "--update" || arg === "." || arg === ":/" || arg === ":" || arg === "*");
+}
+
+function isCommitAll(args: string[]): boolean {
+	return args.some((arg) => arg === "--all" || arg === "-a" || /^-[^-].*a/.test(arg));
+}
+
 async function gitBlockReason(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd: string, command: string): Promise<string | undefined> {
-	if (GIT_ADD_RE.test(command)) {
-		if (await commandMentionsSensitivePath(pathSafety, command, cwd, "git")) return BLOCKED_GIT;
-		if (BROAD_GIT_ADD_RE.test(command) && await hasChangedSensitivePath(pi, pathSafety, cwd)) return BLOCKED_GIT;
-	}
+	const gitCommands = parseGitCommands(command);
+	for (const git of gitCommands) {
+		const effectiveCwd = gitEffectiveCwd(cwd, git.cwd);
+		if (git.subcommand === "add") {
+			if (await commandMentionsSensitivePath(pathSafety, command, effectiveCwd, "git")) return BLOCKED_GIT;
+			if (isBroadGitAdd(git.args) && await hasChangedSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
+		}
 
-	if (GIT_COMMIT_RE.test(command)) {
-		if (await hasStagedSensitivePath(pi, pathSafety, cwd)) return BLOCKED_GIT;
-		if (COMMIT_ALL_RE.test(command) && await hasChangedSensitivePath(pi, pathSafety, cwd)) return BLOCKED_GIT;
-	}
+		if (git.subcommand === "commit") {
+			if (await commandMentionsSensitivePath(pathSafety, command, effectiveCwd, "git")) return BLOCKED_GIT;
+			if (await hasStagedSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
+			if (isCommitAll(git.args) && await hasChangedSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
+		}
 
-	if (GIT_PUSH_RE.test(command) && await hasOutgoingSensitivePath(pi, pathSafety, cwd)) return BLOCKED_GIT;
+		if (git.subcommand === "push" && await hasOutgoingSensitivePath(pi, pathSafety, effectiveCwd)) return BLOCKED_GIT;
+	}
 	return undefined;
 }
 

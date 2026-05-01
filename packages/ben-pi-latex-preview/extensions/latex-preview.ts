@@ -132,7 +132,7 @@ export default function latexPreviewLazy(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		texProject = isDirectory(ctx.cwd) && looksLikeTexProject(ctx.cwd);
 		setStatus(ctx);
-		if (texProject) void loadController(ctx).catch(() => undefined);
+		if (texProject) void loadController(ctx).catch((): undefined => undefined);
 	});
 
 	pi.on("input", async (_event, ctx) => {

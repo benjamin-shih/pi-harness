@@ -10,6 +10,7 @@ export async function runSafetyGateBehaviorTests() {
 	const protectedEnv = textFromCodes(46, 101, 110, 118);
 	const protectedGlob = `${protectedEnv}*`;
 	const protectedSshPath = textFromCodes(126, 47, 46, 115, 115, 104, 47, 105, 100, 95, 114, 115, 97);
+	const protectedHomeSshPath = textFromCodes(36, 72, 79, 77, 69, 47, 46, 115, 115, 104, 47, 105, 100, 95, 114, 115, 97);
 	const protectedSshDir = textFromCodes(126, 47, 46, 115, 115, 104);
 	const tokenLine = textFromCodes(
 		84,
@@ -51,8 +52,8 @@ export async function runSafetyGateBehaviorTests() {
 				const recursive = args.includes("--recursive");
 				const recursiveSensitive = recursive && checkedPath === "." && operation === "list";
 				const sensitiveCwdWrite = checkedPath === "." && operation === "write" && checkedCwd === protectedSshDir;
-				const isSensitive = checkedPath === protectedEnv || checkedPath === protectedGlob || checkedPath === protectedSshPath || recursiveSensitive || sensitiveCwdWrite;
-				const action = checkedPath === protectedSshPath || recursiveSensitive || sensitiveCwdWrite ? "block" : (isSensitive ? "warn" : "allow");
+				const isSensitive = checkedPath === protectedEnv || checkedPath === protectedGlob || checkedPath === protectedSshPath || checkedPath === protectedHomeSshPath || recursiveSensitive || sensitiveCwdWrite;
+				const action = checkedPath === protectedSshPath || checkedPath === protectedHomeSshPath || recursiveSensitive || sensitiveCwdWrite ? "block" : (isSensitive ? "warn" : "allow");
 				return { code: 0, stdout: JSON.stringify({ policy_api_version: 1, action, allowed: action !== "block", matched: isSensitive, recursive, reason: isSensitive ? "test sensitive path" : "", rule_path: isSensitive ? checkedPath : "", normalized_path: checkedPath }), stderr: "" };
 			}
 			if (key.startsWith("status")) return { code: 0, stdout: `?? ${protectedEnv}\n`, stderr: "" };
@@ -85,6 +86,8 @@ export async function runSafetyGateBehaviorTests() {
 	assert(await blocked({ toolName: "bash", input: { command: `echo x > ${protectedSshPath}` } }), "safety-gate should block shell writes to block-level protected paths");
 	assert(await blocked({ toolName: "bash", input: { command: `echo x >${protectedSshPath}` } }), "safety-gate should block no-space shell redirections to protected paths");
 	assert(await blocked({ toolName: "bash", input: { command: `echo x>${protectedSshPath}` } }), "safety-gate should block fully adjacent shell redirections to protected paths");
+	assert(await blocked({ toolName: "bash", input: { command: "echo x > \"$HOME\"/.ssh/id_rsa" } }), "safety-gate should block quoted shell redirections to protected home paths");
+	assert(await blocked({ toolName: "bash", input: { command: "echo x > $HOME\"/.ssh/id_rsa\"" } }), "safety-gate should block concatenated quoted shell redirections to protected home paths");
 	assert(Boolean((await toolCall({ toolName: "bash", input: { command: "touch config" } }, { ...ctx, cwd: protectedSshDir }))?.block), "safety-gate should block bare shell writes from a block-level sensitive cwd");
 	assert(await blocked({ toolName: "bash", input: { command: "grep -R TOKEN ." } }), "safety-gate should block recursive shell traversal over sensitive descendants");
 	assert(await blocked({ toolName: "bash", input: { command: "grep --recursive TOKEN ." } }), "safety-gate should block long-form recursive grep traversal over sensitive descendants");
@@ -100,6 +103,21 @@ export async function runSafetyGateBehaviorTests() {
 	assert(await blocked({ toolName: "bash", input: { command: "git add ." } }), "safety-gate should block broad git add with sensitive changes");
 	assert(await blocked({ toolName: "bash", input: { command: "git commit -m test" } }), "safety-gate should block commit with staged sensitive changes");
 	assert(await blocked({ toolName: "bash", input: { command: "git push" } }), "safety-gate should block push with sensitive outgoing changes");
+	assert(await blocked({ toolName: "bash", input: { command: "git status && git add ." } }), "safety-gate should block mutating git commands after shell separators");
+	assert(await blocked({ toolName: "bash", input: { command: "cd /tmp/other-repo && git add ." } }), "safety-gate should carry simple cd cwd into mutating git checks");
+	assert(await blocked({ toolName: "bash", input: { command: "git log --grep commit; git push" } }), "safety-gate should block mutating git push after read-only git command");
+	assert(await blocked({ toolName: "bash", input: { command: "bash -lc 'git status && git add .'" } }), "safety-gate should inspect mutating git commands inside shell -c wrappers");
+	assert(await blocked({ toolName: "bash", input: { command: "/bin/bash -lc 'git add .'" } }), "safety-gate should inspect mutating git commands inside path-qualified shell wrappers");
+	assert(await blocked({ toolName: "bash", input: { command: "bash --norc -c 'git add .'" } }), "safety-gate should inspect shell -c after long shell options");
+	assert(await blocked({ toolName: "bash", input: { command: "bash -O extglob -c 'git add .'" } }), "safety-gate should inspect shell -c after shell -O options");
+	assert(await blocked({ toolName: "bash", input: { command: "bash +O extglob -c 'git add .'" } }), "safety-gate should inspect shell -c after shell +O options");
+	assert(await blocked({ toolName: "bash", input: { command: "git --git-dir /tmp/other/.git --work-tree /tmp/other add ." } }), "safety-gate should inspect mutating git commands against explicit work trees");
+	assert(await blocked({ toolName: "bash", input: { command: "bash -o pipefail -c 'git commit -am test'" } }), "safety-gate should inspect shell -c after shell options with arguments");
+	assert(await blocked({ toolName: "bash", input: { command: "bash -euo pipefail -c 'git add .'" } }), "safety-gate should inspect shell -c after clustered shell options with -o arguments");
+	assert(await blocked({ toolName: "bash", input: { command: "git commit -am test" } }), "safety-gate should block commit -am with sensitive changed paths");
+	assert(await blocked({ toolName: "bash", input: { command: `git commit ${protectedEnv} -m test` } }), "safety-gate should block git commit pathspecs that mention sensitive files");
+	assert(await allowed({ toolName: "bash", input: { command: "git log --grep commit" } }), "safety-gate should not block read-only git log because of words that look mutating");
+	assert(await allowed({ toolName: "bash", input: { command: "git diff -- README.md | grep add" } }), "safety-gate should not block read-only git diff pipelines because of downstream words");
 
 	const hiddenEdit = await toolResult(
 		{ toolName: "edit", input: { path: protectedEnv }, content: [{ type: "text", text: "sensitive diff" }] },

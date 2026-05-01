@@ -468,14 +468,14 @@ export function createAgentsTaskLayer() {
 				`commands=${state.activity.commands}`,
 				`errors=${state.activity.errors}`,
 			];
-			const eventResult = await runScript(pi, "task-event.sh", args, ctx.cwd).catch(() => undefined);
+			const eventResult = await runScript(pi, "task-event.sh", args, ctx.cwd).catch((): undefined => undefined);
 			if (eventResult && eventResult.code !== 0) state.lastError = shortError(eventResult);
-			await runScript(pi, "task-status.sh", [state.active.task_id, "status=in_progress", "runtime=pi", `owner=${process.env.USER || "unknown"}`, "next_action=Continue from latest pi checkpoint."], ctx.cwd).catch(() => undefined);
+			await runScript(pi, "task-status.sh", [state.active.task_id, "status=in_progress", "runtime=pi", `owner=${process.env.USER || "unknown"}`, "next_action=Continue from latest pi checkpoint."], ctx.cwd).catch((): undefined => undefined);
 			await refreshContext(pi, ctx);
 		},
 
 		async sessionShutdown(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
-			await runScript(pi, "task-gc.sh", ["--runtime", "pi", "--session", state.sessionId, "--cwd", ctx.cwd, "--no-sweep"], ctx.cwd, 8_000).catch(() => undefined);
+			await runScript(pi, "task-gc.sh", ["--runtime", "pi", "--session", state.sessionId, "--cwd", ctx.cwd, "--no-sweep"], ctx.cwd, 8_000).catch((): undefined => undefined);
 		},
 
 		statusLines,

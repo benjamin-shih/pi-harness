@@ -5,6 +5,8 @@
     "moduleResolution": "Bundler",
     "noEmit": true,
     "strict": false,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
