@@ -5,9 +5,24 @@ export function runFooterUsageTests() {
 	assert(typeof footer.calculateFooterUsage === "function", "ui-polish should export calculateFooterUsage");
 	assert(typeof footer.compactExtensionStatusItems === "function", "ui-polish should export compactExtensionStatusItems");
 	assert(typeof footer.piTitle === "function", "ui-polish should export piTitle");
+	assert(typeof footer.formatElapsed === "function", "ui-polish should export formatElapsed");
+	assert(typeof footer.appendElapsedToAssistantMessage === "function", "ui-polish should export appendElapsedToAssistantMessage");
 	assert(footer.piTitle("/tmp/project", "session", "⠋") === "⠋ π - session - project", "ui-polish should format active titlebar spinner titles");
 	assert(footer.piTitle("/tmp/project", "session") === "π - session - project", "ui-polish should format idle titlebar titles");
 	assert(Array.isArray(footer.TITLE_SPINNER_FRAMES) && footer.TITLE_SPINNER_FRAMES.length > 0, "ui-polish should expose titlebar spinner frames");
+	assert(footer.formatElapsed(65_432) === "1:05", "ui-polish should format minute elapsed times");
+	assert(footer.formatElapsed(3_661_000) === "1:01:01", "ui-polish should format hour elapsed times");
+	const timedMessage = footer.appendElapsedToAssistantMessage({
+		role: "assistant",
+		content: [{ type: "text", text: "Done" }],
+		api: "test",
+		provider: "test",
+		model: "test",
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "stop",
+		timestamp: Date.now(),
+	}, "1:05");
+	assert(timedMessage.content.at(-1)?.text?.includes("Elapsed wall time: 1:05"), "ui-polish should append final elapsed time to assistant messages");
 	const usage = footer.calculateFooterUsage([
 		{
 			type: "message",

@@ -57,7 +57,7 @@ The shared `.agents` scripts own project-root, bootstrap-path, sensitive-path, a
 
 ## UI polish
 
-The UI polish extension keeps the compact `π` terminal title while idle and animates a small braille spinner in the titlebar during active agent turns. Kitty shows this in tabs when tab titles are enabled.
+The UI polish extension keeps the compact `π` terminal title while idle and animates a small braille spinner in the titlebar during active agent turns. Kitty shows this in tabs when tab titles are enabled. It also displays live elapsed wall-clock time in the working indicator and appends the elapsed time to each final assistant response.
 
 ## Commands
 
