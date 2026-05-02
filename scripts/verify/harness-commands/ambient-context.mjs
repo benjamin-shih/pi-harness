@@ -23,6 +23,8 @@ export async function runAmbientContextTests() {
 	assert(memoryContext.memoryAdminGuidance("Remember this project preference: use scoped candidates by default")?.includes("candidate by default"), "remember prompts should get memory admin guidance");
 	assert(memoryContext.memoryAdminGuidance("Remember: I prefer concise answers")?.includes("candidate by default"), "remember-colon preference prompts should get memory admin guidance");
 	assert(memoryContext.memoryAdminGuidance("Remember I prefer scoped candidates")?.includes("candidate by default"), "remember preference prompts should get memory admin guidance");
+	assert(memoryContext.memoryAdminGuidance("Remember I prefer running tests before final")?.includes("candidate by default"), "first-person remember preference prompts should override code-word suppression");
+	assert(memoryContext.memoryAdminGuidance("Remember I use pnpm")?.includes("candidate by default"), "non-code remember-use prompts should get memory admin guidance");
 	assert(memoryContext.memoryAdminGuidance("Remember this project preference: always run tests before final")?.includes("candidate by default"), "durable project preference prompts should override code-word suppression");
 	assert(memoryContext.memoryAdminGuidance("Remember this repo convention: put helpers in shared files")?.includes("candidate by default"), "durable repo convention prompts should override code-word suppression");
 	assert(memoryContext.memoryAdminGuidance("Remember: use pnpm")?.includes("candidate by default"), "remember-colon prompts should get memory admin guidance");
@@ -57,6 +59,10 @@ export async function runAmbientContextTests() {
 	assert(!memoryContext.memoryAdminGuidance("Remember to update README"), "ordinary remember-to file prompts should not get memory admin guidance");
 	assert(!memoryContext.memoryAdminGuidance("Remember to fix the parser"), "ordinary remember-to coding prompts should not get memory admin guidance");
 	assert(!memoryContext.memoryAdminGuidance("Please remember to check git diff"), "ordinary remember-to process prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remember I need to update memory-context.ts tests"), "transient need-to-code prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remember we need to fix parser tests"), "transient need-to-test prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remember we use parser tests"), "remember-use code prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remember we use memory-context.ts tests"), "remember-use memory-context code prompts should not get memory admin guidance");
 	assert(!memoryContext.memoryAdminGuidance("Remember to update memory-context.ts tests"), "remember-to code prompts should not get memory admin guidance");
 	assert(!memoryContext.memoryAdminGuidance("Remember to inspect memory record serialization code"), "remember-to code inspection prompts should not get memory admin guidance");
 
@@ -105,4 +111,12 @@ export async function runAmbientContextTests() {
 	assert(rememberResult.systemPrompt.includes("create a candidate by default"), "remember guidance should default to candidate memory, not approved injection");
 	assert(rememberResult.systemPrompt.includes("memory_admin: included"), "ambient receipt should expose memory-admin guidance inclusion");
 	assert(!rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-add.sh")), "ambient memory-admin guidance should not write memory during prompt assembly");
+
+	const omittedMemoryTask = createTaskHarness({
+		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
+		memoryContextPayload: { memory_api_version: 1, included: [], omitted: [{ reason: "credential-like metadata" }], context: "" },
+	});
+	await omittedMemoryTask.handlers.get("session_start")({ reason: "startup" }, omittedMemoryTask.ctx);
+	const omittedResult = await omittedMemoryTask.handlers.get("before_agent_start")({ prompt: "Implement memory context", systemPrompt: "base" }, omittedMemoryTask.ctx);
+	assert(omittedResult.systemPrompt.includes("memory: skipped, memory API returned 0 included records; 1 omitted by filter/safety/budget"), "ambient receipt should distinguish omitted memory from absent memory without overstating the cause");
 }

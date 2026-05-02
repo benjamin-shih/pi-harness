@@ -65,8 +65,9 @@ function explicitMemoryAction(prompt: string): "add" | "list" | "promote" | "for
 		if (!looksLikeCode && near("approve|promote")) return "promote";
 		if (!looksLikeCode && near("list|show")) return "list";
 		const strongRemember = /\bremember\s*[:\-]\s*\S/.test(clause) || /\bremember\b[^\n]{0,120}\b(?:(?:project|repo|repository|task)\s+)?(?:preference|convention|decision)\b/.test(clause);
-		const directRemember = strongRemember || /\bremember\b[^\n]{0,80}\b(?:i|we)\s+(?:prefer|like|want|use|need)\b/.test(clause) || /^\s*(?:(?:can|could|would)\s+you\s+(?:please\s+)?|please\s+)?remember\s+my\b/.test(clause);
-		if (strongRemember || (!looksLikeCode && directRemember)) return "add";
+		const preferenceRemember = /\bremember\b[^\n]{0,80}\b(?:i|we)\s+(?:prefer|like)\b/.test(clause);
+		const broadRemember = /\bremember\b[^\n]{0,80}\b(?:i|we)\s+(?:use|want|need)\b/.test(clause) || /^\s*(?:(?:can|could|would)\s+you\s+(?:please\s+)?|please\s+)?remember\s+my\b/.test(clause);
+		if (strongRemember || preferenceRemember || (!looksLikeCode && broadRemember)) return "add";
 		if (!looksLikeCode && near("add|create|save|store|record")) return "add";
 	}
 	return undefined;
@@ -144,7 +145,8 @@ export async function buildMemoryContext(pi: ExtensionAPI, cwd: string, scope: M
 		const content = payload.context?.trim() || undefined;
 		const included = Array.isArray(payload.included) ? payload.included.length : 0;
 		const omitted = Array.isArray(payload.omitted) ? payload.omitted.length : 0;
-		return { content, reason: content ? undefined : "no approved scoped memory", included, omitted };
+		const reason = content ? undefined : (omitted > 0 ? `memory API returned 0 included records; ${omitted} omitted by filter/safety/budget` : "no approved scoped memory");
+		return { content, reason, included, omitted };
 	} catch {
 		return { reason: "memory API unavailable", included: 0, omitted: 0 };
 	}

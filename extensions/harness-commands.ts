@@ -82,7 +82,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		},
 	});
 	pi.registerCommand("memory", {
-		description: "Show memory-spine checkpoint and compaction diagnostics",
+		description: "Show session memory-spine checkpoint and compaction diagnostics",
 		handler: async (_args, ctx) => {
 			const content = formatMemorySpineDiagnostics(buildMemorySpineDiagnostics(ctx.sessionManager.getBranch()), { verbose: true });
 			pi.sendMessage({ customType: "harness-memory", content, display: true });
