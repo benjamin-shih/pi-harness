@@ -45,10 +45,14 @@ export async function runAmbientContextTests() {
 	assert(result.systemPrompt.includes("## Approved Scoped Memory"), "standard scoped prompts should include approved memory from the .agents API");
 	assert(result.systemPrompt.includes("memory: included"), "ambient receipt should show approved memory inclusion");
 	assert(result.systemPrompt.includes("personal_context: auto_scoped"), "ambient receipt should report scoped memory auto-consideration");
+	assert(result.systemPrompt.includes("## Durable Memory Candidate Discipline"), "standard prompts should include candidate-memory final-response discipline");
+	assert(result.systemPrompt.includes("memory_candidates: included"), "ambient receipt should show candidate-memory discipline inclusion");
 	assert(result.systemPrompt.includes("## Repo Context"), "standard prompts should include passive repo metadata");
 	assert(result.systemPrompt.includes("repo: included"), "ambient receipt should show repo metadata inclusion");
 	await boundTask.commands.get("status").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("ambient context:"), "/status should expose the last ambient context decision");
+	assert(boundTask.sentMessages.at(-1).content.includes("scoped memory API:"), "/status should expose scoped memory API diagnostics");
 	await boundTask.commands.get("doctor").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Ambient context"), "/doctor should include ambient context diagnostics");
+	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");
 }

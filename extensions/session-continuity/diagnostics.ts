@@ -155,6 +155,13 @@ function compactPrompt(prompt: string | undefined): string | undefined {
 	return prompt.length <= 160 ? prompt : `${prompt.slice(0, 159)}…`;
 }
 
+export function memorySpineStatusLines(diagnostics: MemorySpineDiagnostics): string[] {
+	return [
+		`- memory spine: ${diagnostics.health} (${diagnostics.status})`,
+		`- memory entries: ${diagnostics.checkpointCount} checkpoint(s), ${diagnostics.harnessCompactionCount}/${diagnostics.compactionCount} harness compaction(s), ${diagnostics.diagnosticCount} diagnostic(s)`,
+	];
+}
+
 export function formatMemorySpineDiagnostics(diagnostics: MemorySpineDiagnostics, options: { verbose?: boolean } = {}): string {
 	const lines = [
 		"## Memory spine",

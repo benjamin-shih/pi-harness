@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { assembleAmbientContext, type AmbientContextSnapshot } from "./shared/ambient-context";
 import { decideAmbientPolicy, shouldIncludeMemoryContext, shouldIncludeRepoContext } from "./shared/ambient-policy";
-import { buildMemoryContext } from "./shared/memory-context";
+import { buildMemoryContext, memoryCandidateReminder } from "./shared/memory-context";
 import { buildRepoContextSummary, formatRepoContext } from "./shared/repo-context";
 import {
 	CLEANUP_GUARD_MARKER,
@@ -117,6 +117,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		const activeModeInstructions = modeInstructions(activeMode);
 		const reminder = skillRoutingReminder(weight);
 		const cleanup = cleanupReminder(event.prompt, weight);
+		const memoryCandidates = memoryCandidateReminder(weight !== "trivial");
 		const policy = decideAmbientPolicy(weight);
 		const repoSummary = shouldIncludeRepoContext(policy) ? await buildRepoContextSummary(pi, ctx.cwd) : undefined;
 		const taskScope = taskLayer.ambientScope();
@@ -130,6 +131,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			{ id: "cleanup", title: "Post-change cleanup gate", priority: 50, content: cleanup, reason: "non-coding prompt" },
 			{ id: "agents_task", title: "Active AGENTS task context", priority: 60, content: taskContext, reason: "no scoped active task context" },
 			{ id: "memory", title: "Approved scoped memory", priority: 65, content: memoryContext?.content, reason: memoryContext?.reason ?? "memory disabled" },
+			{ id: "memory_candidates", title: "Durable memory candidates", priority: 66, content: memoryCandidates, reason: "trivial prompt" },
 			{ id: "repo", title: "Repo metadata", priority: 70, content: repoSummary ? formatRepoContext(repoSummary) : undefined, reason: repoSummary?.summary ?? "trivial prompt" },
 		], policy);
 		lastAmbientContext = ambient.snapshot;
