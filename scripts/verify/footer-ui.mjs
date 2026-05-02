@@ -57,9 +57,12 @@ export function runFooterUsageTests() {
 	const statuses = footer.compactExtensionStatusItems(new Map([
 		["memory", "\u001b[2mmemory:ready:12\u001b[22m"],
 		["latex-preview", "latex:auto"],
+		["turn-timer", "\u001b[2mlast:1:05\u001b[22m"],
 	]));
-	assert(statuses.length === 2, "footer should keep memory and latex statuses as separate compact chips");
+	assert(statuses.length === 3, "footer should keep memory, latex, and timer statuses as separate compact chips");
 	assert(statuses[0].label === "mem" && statuses[0].value === "r12", "footer should compact memory status values");
 	assert(statuses[1].label === "tex" && statuses[1].value === "auto", "footer should compact latex status values");
+	assert(statuses[2].label === "time" && statuses[2].value === "1:05", "footer should render turn timer as a clear time chip");
+	assert(statuses[2].bg === "selectedBg" && statuses[2].labelColor === "text", "footer timer chip should use an explicit readable background and label color");
 	assert(!statuses.some((status) => status.label === "state"), "footer should not collapse extension statuses into a long state segment");
 }

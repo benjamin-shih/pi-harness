@@ -36,7 +36,9 @@ type UsageLike = {
 type StatusItem = {
 	label: string;
 	value: string;
-	color: string;
+	color: FooterColor;
+	labelColor?: FooterColor;
+	bg?: string;
 };
 
 function mauve(text: string): string {
@@ -57,11 +59,11 @@ function fgFromBg(theme: any, bgColor: string, text: string): string {
 	return `${fgAnsi}${text}\x1b[39m`;
 }
 
-function segment(theme: any, label: string, value: string, color: FooterColor = "text"): string {
+function segment(theme: any, label: string, value: string, color: FooterColor = "text", bgColor = SEGMENT_BG, labelColor: FooterColor = pink): string {
 	return (
-		fgFromBg(theme, SEGMENT_BG, "") +
-		theme.bg(SEGMENT_BG, pink(` ${label} `) + applyFooterColor(theme, color, ` ${value} `)) +
-		fgFromBg(theme, SEGMENT_BG, "")
+		fgFromBg(theme, bgColor, "") +
+		theme.bg(bgColor, applyFooterColor(theme, labelColor, ` ${label} `) + applyFooterColor(theme, color, ` ${value} `)) +
+		fgFromBg(theme, bgColor, "")
 	);
 }
 
@@ -120,6 +122,10 @@ function compactMemoryValue(value: string): string {
 	return `${shortLabel[label] ?? truncateToWidth(label, 6, "…")}${count}`;
 }
 
+function compactTimerValue(value: string): string {
+	return truncateToWidth(value.replace(/^(?:elapsed|last):/i, ""), 8, "…");
+}
+
 export function compactExtensionStatusItems(statuses: ReadonlyMap<string, unknown> | Iterable<[string, unknown]>): StatusItem[] {
 	const entries = statuses instanceof Map ? [...statuses.entries()] : [...statuses];
 	const items: StatusItem[] = [];
@@ -128,6 +134,10 @@ export function compactExtensionStatusItems(statuses: ReadonlyMap<string, unknow
 		if (!value) continue;
 		if (key === "memory" || value.startsWith("memory:")) {
 			items.push({ label: "mem", value: compactMemoryValue(value), color: memoryStatusColor(value) });
+			continue;
+		}
+		if (key === "turn-timer" || /^(?:elapsed|last):/i.test(value)) {
+			items.push({ label: "time", value: compactTimerValue(value), color: "syntaxNumber", labelColor: "text", bg: "selectedBg" });
 			continue;
 		}
 		if (key === "latex-preview" || value.startsWith("latex:") || value.startsWith("tex:")) {
@@ -290,7 +300,7 @@ export function installCatppuccinFooter(pi: ExtensionAPI) {
 						theme.fg("dim", `$${cost.toFixed(3)}`),
 					].join(sep);
 
-					const statusSegments = statusItems.map((item) => segment(theme, item.label, item.value, item.color)).join(sep);
+					const statusSegments = statusItems.map((item) => segment(theme, item.label, item.value, item.color, item.bg, item.labelColor)).join(sep);
 					const modelSegment = segment(theme, "model", model, mauve);
 					const thinkSegment = segment(theme, "think", thinkingLevel, thinkingLevel === "off" ? "dim" : "warning");
 					const modelAndThinking = [modelSegment, thinkSegment].join(sep);
