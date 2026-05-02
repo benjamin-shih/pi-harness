@@ -8,6 +8,7 @@ export async function runAmbientContextTests() {
 	assert(typeof ambient.assembleAmbientContext === "function", "ambient context module should export assembler");
 	assert(typeof ambient.ambientStatusLines === "function", "ambient context module should export status lines");
 	assert(ambientPolicy.decideAmbientPolicy("trivial").receipt === "off", "ambient policy should suppress receipts for trivial prompts");
+	assert(ambientPolicy.decideAmbientPolicy("standard").personalContext === "auto_scoped", "ambient policy should auto-consider scoped approved memory for nontrivial prompts");
 	assert(ambientPolicy.shouldIncludeRepoContext(ambientPolicy.decideAmbientPolicy("standard")), "ambient policy should include repo context for nontrivial prompts");
 
 	const cleanRepo = await repoContext.buildRepoContextSummary({ exec: async (_cmd, args) => {
@@ -35,11 +36,15 @@ export async function runAmbientContextTests() {
 
 	const boundTask = createTaskHarness({
 		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
+		memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep ambient behavior command-light." },
 	});
 	await boundTask.handlers.get("session_start")({ reason: "startup" }, boundTask.ctx);
 	const result = await boundTask.handlers.get("before_agent_start")({ prompt: "Implement ambient context receipts", systemPrompt: "base" }, boundTask.ctx);
 	assert(result.systemPrompt.includes("## Ambient Context Receipt"), "standard prompts should include compact ambient context receipt");
 	assert(result.systemPrompt.includes("agents_task: included"), "ambient receipt should show task context inclusion");
+	assert(result.systemPrompt.includes("## Approved Scoped Memory"), "standard scoped prompts should include approved memory from the .agents API");
+	assert(result.systemPrompt.includes("memory: included"), "ambient receipt should show approved memory inclusion");
+	assert(result.systemPrompt.includes("personal_context: auto_scoped"), "ambient receipt should report scoped memory auto-consideration");
 	assert(result.systemPrompt.includes("## Repo Context"), "standard prompts should include passive repo metadata");
 	assert(result.systemPrompt.includes("repo: included"), "ambient receipt should show repo metadata inclusion");
 	await boundTask.commands.get("status").handler("", boundTask.ctx);

@@ -446,6 +446,9 @@ export function createAgentsTaskLayer() {
 		currentPromptWeight(): TaskWeight {
 			return state.currentPromptWeight;
 		},
+		ambientScope(): { taskId?: string; projectRoot?: string } {
+			return { taskId: state.active?.task_id, projectRoot: state.active?.project_root };
+		},
 		doctorSection(): string {
 			return [
 				"## AGENTS task binding",
