@@ -51,7 +51,7 @@ To enable it globally while keeping it outside the core harness package:
 
 ## Ambient-first context
 
-The normal workflow is to ask naturally; slash commands are inspect/override/admin/debug surfaces, not the primary UX. On each agent turn, the harness runs a deterministic ambient context assembler over ordered lanes such as rendering guidance, active mode, skill routing, cleanup guidance, and active `.agents` task context. Standard/complex turns include a compact Ambient Context Receipt so the inferred context remains visible without requiring a command.
+The normal workflow is to ask naturally; slash commands are inspect/override/admin/debug surfaces, not the primary UX. On each agent turn, the harness runs a deterministic ambient context assembler over ordered lanes such as rendering guidance, active mode, skill routing, cleanup guidance, active `.agents` task context, and bounded repo metadata. Standard/complex turns include a compact Ambient Context Receipt so the inferred context remains visible without requiring a command.
 
 Pi reuses the shared `.agents/tasks` control plane through the versioned `.agents` task API. By default the harness looks under `$HOME/.agents`; set `AGENTS_SHARED_ROOT` when using a different checkout. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, capture safe typed task-artifact metadata, and release current-session leases on shutdown.
 

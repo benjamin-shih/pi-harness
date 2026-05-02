@@ -2,6 +2,8 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { assembleAmbientContext, type AmbientContextSnapshot } from "./shared/ambient-context";
+import { decideAmbientPolicy, shouldIncludeRepoContext } from "./shared/ambient-policy";
+import { buildRepoContextSummary, formatRepoContext } from "./shared/repo-context";
 import {
 	CLEANUP_GUARD_MARKER,
 	cleanupGuardMessage,
@@ -114,6 +116,8 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		const activeModeInstructions = modeInstructions(activeMode);
 		const reminder = skillRoutingReminder(weight);
 		const cleanup = cleanupReminder(event.prompt, weight);
+		const policy = decideAmbientPolicy(weight);
+		const repoSummary = shouldIncludeRepoContext(policy) ? await buildRepoContextSummary(pi, ctx.cwd) : undefined;
 		const ambient = assembleAmbientContext(event.systemPrompt, weight, [
 			{ id: "display_math", title: "Display math rendering", priority: 10, content: DISPLAY_MATH_RENDERING_INSTRUCTION },
 			{ id: "markdown_heading", title: "Markdown heading rendering", priority: 20, content: MARKDOWN_HEADING_RENDERING_INSTRUCTION },
@@ -121,7 +125,8 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			{ id: "skill_routing", title: "Skill routing", priority: 40, content: reminder, reason: "trivial prompt" },
 			{ id: "cleanup", title: "Post-change cleanup gate", priority: 50, content: cleanup, reason: "non-coding prompt" },
 			{ id: "agents_task", title: "Active AGENTS task context", priority: 60, content: taskContext, reason: "no scoped active task context" },
-		]);
+			{ id: "repo", title: "Repo metadata", priority: 70, content: repoSummary ? formatRepoContext(repoSummary) : undefined, reason: repoSummary?.summary ?? "trivial prompt" },
+		], policy);
 		lastAmbientContext = ambient.snapshot;
 		return ambient.systemPrompt === event.systemPrompt ? undefined : { systemPrompt: ambient.systemPrompt };
 	});

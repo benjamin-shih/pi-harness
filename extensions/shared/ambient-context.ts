@@ -1,3 +1,4 @@
+import { decideAmbientPolicy, type AmbientPolicy } from "./ambient-policy";
 import type { TaskWeight } from "../harness-commands/prompt-guidance";
 
 export type AmbientLaneStatus = "included" | "skipped";
@@ -22,8 +23,9 @@ export type AmbientContextSnapshot = {
 	version: "v0";
 	weight: TaskWeight;
 	lanes: AmbientContextLaneSnapshot[];
-	personalContext: "not_enabled";
-	advisorySubagents: "not_enabled";
+	policyReasons: string[];
+	personalContext: AmbientPolicy["personalContext"];
+	advisorySubagents: AmbientPolicy["advisorySubagents"];
 	vectorMemory: false;
 };
 
@@ -69,6 +71,7 @@ export function formatAmbientReceipt(snapshot: AmbientContextSnapshot): string {
 		`- prompt weight: ${snapshot.weight}`,
 		"- lanes:",
 		...snapshot.lanes.map(formatLaneReceipt),
+		`- policy: ${snapshot.policyReasons.join(", ") || "none"}`,
 		`- personal_context: ${snapshot.personalContext}`,
 		`- advisory_subagents: ${snapshot.advisorySubagents}`,
 		`- vector_memory: ${snapshot.vectorMemory ? "yes" : "no"}`,
@@ -77,18 +80,19 @@ export function formatAmbientReceipt(snapshot: AmbientContextSnapshot): string {
 	return receipt.length <= RECEIPT_MAX_CHARS ? receipt : `${receipt.slice(0, RECEIPT_MAX_CHARS - 2)}…`;
 }
 
-export function assembleAmbientContext(baseSystemPrompt: string, weight: TaskWeight, lanes: AmbientContextLane[]): AmbientContextAssembly {
+export function assembleAmbientContext(baseSystemPrompt: string, weight: TaskWeight, lanes: AmbientContextLane[], policy = decideAmbientPolicy(weight)): AmbientContextAssembly {
 	const ordered = [...lanes].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
 	const additions = ordered.map(includedContent).filter((content): content is string => Boolean(content));
 	const snapshot: AmbientContextSnapshot = {
 		version: "v0",
 		weight,
 		lanes: ordered.map(laneSnapshot),
-		personalContext: "not_enabled",
-		advisorySubagents: "not_enabled",
-		vectorMemory: false,
+		policyReasons: policy.reasons,
+		personalContext: policy.personalContext,
+		advisorySubagents: policy.advisorySubagents,
+		vectorMemory: policy.vectorMemory,
 	};
-	const receipt = weight === "trivial" ? undefined : formatAmbientReceipt(snapshot);
+	const receipt = policy.receipt === "compact" ? formatAmbientReceipt(snapshot) : undefined;
 	const promptAdditions = receipt ? [...additions, receipt] : additions;
 	return {
 		systemPrompt: promptAdditions.length ? `${baseSystemPrompt}\n\n${promptAdditions.join("\n\n")}` : baseSystemPrompt,
@@ -116,6 +120,7 @@ export function ambientDoctorSection(snapshot: AmbientContextSnapshot | undefine
 		`- prompt weight: ${snapshot.weight}`,
 		"- lanes:",
 		...snapshot.lanes.map(formatLaneReceipt),
+		`- policy: ${snapshot.policyReasons.join(", ") || "none"}`,
 		`- personal context: ${snapshot.personalContext}`,
 		`- advisory subagents: ${snapshot.advisorySubagents}`,
 		`- vector memory: ${snapshot.vectorMemory ? "enabled" : "disabled"}`,

@@ -31,6 +31,9 @@ export async function runRealAgentsTaskLayerTest() {
 				getThinkingLevel: () => "xhigh",
 				exec: async (cmd, args, options) => {
 					try {
+						if (cmd === "git" && args.join(" ") === "rev-parse --show-toplevel") return { code: 0, stdout: `${projectRoot}\n`, stderr: "", killed: false };
+						if (cmd === "git" && args.join(" ") === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "", killed: false };
+						if (cmd === "git" && args.join(" ") === "status --porcelain=v1 --untracked-files=no") return { code: 0, stdout: "", stderr: "", killed: false };
 						const stdout = execFileSync(cmd, args, { cwd: options?.cwd || projectRoot, env: process.env, encoding: "utf8", timeout: options?.timeout || 10_000 });
 						return { code: 0, stdout, stderr: "", killed: false };
 					} catch (error) {
@@ -129,6 +132,9 @@ export function createTaskHarness({ bindPayload, bindPayloads, classifyPayload, 
 		getThinkingLevel: () => "xhigh",
 		exec: async (cmd, args, options) => {
 			execCalls.push({ cmd, args, cwd: options?.cwd });
+			if (cmd === "git" && args.join(" ") === "rev-parse --show-toplevel") return { code: 0, stdout: `${root}\n`, stderr: "" };
+			if (cmd === "git" && args.join(" ") === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
+			if (cmd === "git" && args.join(" ") === "status --porcelain=v1 --untracked-files=no") return { code: 0, stdout: "", stderr: "" };
 			const script = args[0] || "";
 			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts"] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-classify.sh")) {
