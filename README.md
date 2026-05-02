@@ -49,11 +49,13 @@ To enable it globally while keeping it outside the core harness package:
 }
 ```
 
-## Ambient task binding
+## Ambient-first context
+
+The normal workflow is to ask naturally; slash commands are inspect/override/admin/debug surfaces, not the primary UX. On each agent turn, the harness runs a deterministic ambient context assembler over ordered lanes such as rendering guidance, active mode, skill routing, cleanup guidance, and active `.agents` task context. Standard/complex turns include a compact Ambient Context Receipt so the inferred context remains visible without requiring a command.
 
 Pi reuses the shared `.agents/tasks` control plane through the versioned `.agents` task API. By default the harness looks under `$HOME/.agents`; set `AGENTS_SHARED_ROOT` when using a different checkout. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, capture safe typed task-artifact metadata, and release current-session leases on shutdown.
 
-The shared `.agents` scripts own project-root, bootstrap-path, sensitive-path, and artifact-capture policy via `task-api.sh info`, `task-candidate-root.sh`, `path-safety.sh`, and `task-artifact-*.sh`; the TypeScript harness is only the Pi runtime adapter/UI layer. Set `AGENTS_SHARED_ROOT` to point at an alternate `.agents` checkout, `AGENTS_SKILLS_ROOT` to override the default skills root, and `TASKS_ROOT` to isolate task packages in tests.
+The shared `.agents` scripts own project-root, bootstrap-path, sensitive-path, and artifact-capture policy via `task-api.sh info`, `task-candidate-root.sh`, `path-safety.sh`, and `task-artifact-*.sh`; the TypeScript harness is only the Pi runtime adapter/UI layer. Set `AGENTS_SHARED_ROOT` to point at an alternate `.agents` checkout, `AGENTS_SKILLS_ROOT` to override the default skills root, and `TASKS_ROOT` to isolate task packages in tests. Personal memory and advisory subagents are intentionally not enabled in the first assembler slice; they should be added as scoped ambient lanes with receipts rather than as command-first workflows.
 
 ## UI polish
 
@@ -61,7 +63,7 @@ The UI polish extension keeps the compact `π` terminal title while idle and ani
 
 ## Commands
 
-After loading this package in pi:
+After loading this package in pi, these commands provide explicit overrides and diagnostics for the ambient workflow:
 
 ```text
 /mode [fast|default|deep|readonly|full]

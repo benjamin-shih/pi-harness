@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { ambientDoctorSection, ambientStatusLines, type AmbientContextSnapshot } from "../shared/ambient-context";
 import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemorySpineDiagnostics } from "../session-continuity/diagnostics";
 
 type HarnessAudit = {
@@ -145,7 +146,7 @@ function doctorHealth(facts: HarnessFacts, taskLayer: StatusTaskLayer): "ok" | "
 	return "ok";
 }
 
-export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer): Promise<string> {
+export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): Promise<string> {
 	const facts = await buildHarnessFacts(pi, ctx);
 	return [
 		"## Harness status",
@@ -153,10 +154,11 @@ export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		...formatHarnessAuditLines(facts.audit),
 		...memoryStatusLines(facts.memory),
 		...taskLayer.statusLines(),
+		...ambientStatusLines(ambientContext),
 	].join("\n");
 }
 
-export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer): Promise<string> {
+export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): Promise<string> {
 	const facts = await buildHarnessFacts(pi, ctx);
 	return [
 		"## Harness doctor",
@@ -170,6 +172,8 @@ export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		formatMemorySpineDiagnostics(facts.memory, { verbose: true }),
 		"",
 		taskLayer.doctorSection(),
+		"",
+		ambientDoctorSection(ambientContext),
 		"",
 		"## Recommendations",
 		...doctorRecommendations(facts, taskLayer).map((recommendation) => `- ${recommendation}`),

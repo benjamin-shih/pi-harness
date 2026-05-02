@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { assembleAmbientContext, type AmbientContextSnapshot } from "./shared/ambient-context";
 import {
 	CLEANUP_GUARD_MARKER,
 	cleanupGuardMessage,
@@ -35,6 +36,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	let currentPromptNeedsCleanup = false;
 	let currentPromptWasMajor = false;
 	let initialChangeSnapshot: GitChangeSnapshot | undefined;
+	let lastAmbientContext: AmbientContextSnapshot | undefined;
 	pi.registerCommand("mode", {
 		description: "Switch harness mode: fast, default, deep, readonly, full",
 		getArgumentCompletions: (prefix: string) => {
@@ -61,19 +63,19 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	pi.registerCommand("status", {
 		description: "Show current harness, model, tool, context, git, audit, memory, and task status",
 		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "harness-status", content: await buildStatus(pi, ctx, taskLayer), display: true });
+			pi.sendMessage({ customType: "harness-status", content: await buildStatus(pi, ctx, taskLayer, lastAmbientContext), display: true });
 		},
 	});
 	pi.registerCommand("doctor", {
 		description: "Run a read-only harness health check with memory-spine and AGENTS task diagnostics",
 		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer), display: true });
+			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer, lastAmbientContext), display: true });
 		},
 	});
 	pi.registerCommand("doct", {
 		description: "Alias for /doctor",
 		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer), display: true });
+			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer, lastAmbientContext), display: true });
 		},
 	});
 	pi.registerCommand("memory", {
@@ -89,7 +91,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			const label = args.trim() || new Date().toISOString().replace(/[:.]/g, "-");
 			const leafId = ctx.sessionManager.getLeafId();
 			if (leafId) pi.setLabel(leafId, `checkpoint: ${label}`);
-			const content = [`## Checkpoint: ${label}`, await buildStatus(pi, ctx, taskLayer), "", "Next-step note:", args.trim() || "None provided."].join(
+			const content = [`## Checkpoint: ${label}`, await buildStatus(pi, ctx, taskLayer, lastAmbientContext), "", "Next-step note:", args.trim() || "None provided."].join(
 				"\n",
 			);
 			pi.sendMessage({ customType: "harness-checkpoint", content, display: true, details: { label } });
@@ -109,16 +111,19 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		const taskContext = await taskLayer.beforeAgentStart(pi, event.prompt, fallbackWeight, ctx);
 		const weight = taskLayer.currentPromptWeight();
 		currentPromptWasMajor = promptSuggestsMajorCleanup(event.prompt, weight);
-		const additions: string[] = [DISPLAY_MATH_RENDERING_INSTRUCTION, MARKDOWN_HEADING_RENDERING_INSTRUCTION];
 		const activeModeInstructions = modeInstructions(activeMode);
-		if (activeModeInstructions) additions.push(activeModeInstructions);
 		const reminder = skillRoutingReminder(weight);
-		if (reminder) additions.push(reminder);
 		const cleanup = cleanupReminder(event.prompt, weight);
-		if (cleanup) additions.push(cleanup);
-		if (taskContext) additions.push(taskContext);
-		if (!additions.length) return undefined;
-		return { systemPrompt: `${event.systemPrompt}\n\n${additions.join("\n\n")}` };
+		const ambient = assembleAmbientContext(event.systemPrompt, weight, [
+			{ id: "display_math", title: "Display math rendering", priority: 10, content: DISPLAY_MATH_RENDERING_INSTRUCTION },
+			{ id: "markdown_heading", title: "Markdown heading rendering", priority: 20, content: MARKDOWN_HEADING_RENDERING_INSTRUCTION },
+			{ id: "mode", title: "Active harness mode", priority: 30, content: activeModeInstructions, reason: "no active mode override" },
+			{ id: "skill_routing", title: "Skill routing", priority: 40, content: reminder, reason: "trivial prompt" },
+			{ id: "cleanup", title: "Post-change cleanup gate", priority: 50, content: cleanup, reason: "non-coding prompt" },
+			{ id: "agents_task", title: "Active AGENTS task context", priority: 60, content: taskContext, reason: "no scoped active task context" },
+		]);
+		lastAmbientContext = ambient.snapshot;
+		return ambient.systemPrompt === event.systemPrompt ? undefined : { systemPrompt: ambient.systemPrompt };
 	});
 	pi.on("tool_call", async (event) => {
 		if (event.toolName === "edit" || event.toolName === "write") {
