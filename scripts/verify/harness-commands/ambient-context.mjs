@@ -5,6 +5,7 @@ export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
 	const ambientPolicy = loadExtensionModule("extensions/shared/ambient-policy.ts");
 	const repoContext = loadExtensionModule("extensions/shared/repo-context.ts");
+	const memoryContext = loadExtensionModule("extensions/shared/memory-context.ts");
 	assert(typeof ambient.assembleAmbientContext === "function", "ambient context module should export assembler");
 	assert(typeof ambient.ambientStatusLines === "function", "ambient context module should export status lines");
 	assert(ambientPolicy.decideAmbientPolicy("trivial").receipt === "off", "ambient policy should suppress receipts for trivial prompts");
@@ -19,6 +20,45 @@ export async function runAmbientContextTests() {
 	} }, root);
 	assert(cleanRepo.status === "dirty" && cleanRepo.summary === "0 staged, 1 unstaged, untracked not scanned", "repo context should summarize tracked porcelain status without scanning untracked names");
 	assert(repoContext.formatRepoContext(cleanRepo).includes("## Repo Context"), "repo context should render bounded metadata");
+	assert(memoryContext.memoryAdminGuidance("Remember this project preference: use scoped candidates by default")?.includes("candidate by default"), "remember prompts should get memory admin guidance");
+	assert(memoryContext.memoryAdminGuidance("Remember: I prefer concise answers")?.includes("candidate by default"), "remember-colon preference prompts should get memory admin guidance");
+	assert(memoryContext.memoryAdminGuidance("Remember I prefer scoped candidates")?.includes("candidate by default"), "remember preference prompts should get memory admin guidance");
+	assert(memoryContext.memoryAdminGuidance("Remember this project preference: always run tests before final")?.includes("candidate by default"), "durable project preference prompts should override code-word suppression");
+	assert(memoryContext.memoryAdminGuidance("Remember this repo convention: put helpers in shared files")?.includes("candidate by default"), "durable repo convention prompts should override code-word suppression");
+	assert(memoryContext.memoryAdminGuidance("Remember: use pnpm")?.includes("candidate by default"), "remember-colon prompts should get memory admin guidance");
+	assert(memoryContext.memoryAdminGuidance("Please remember my name is Ben")?.includes("candidate by default"), "remember-my prompts should get memory admin guidance");
+	assert(memoryContext.memoryAdminGuidance("Could you remember this project preference: use pnpm by default")?.includes("candidate by default"), "polite remember prompts should get memory admin guidance");
+	assert(memoryContext.memoryAdminGuidance("Do not record this in docs. Remember: I prefer pnpm")?.includes("candidate by default"), "negation in an earlier sentence should not suppress a later explicit remember request");
+	assert(memoryContext.memoryAdminGuidance("Do not record this in docs, but remember: I prefer pnpm")?.includes("candidate by default"), "comma-but negation should not suppress a later explicit remember request");
+	const listGuidance = memoryContext.memoryAdminGuidance("Please list memory records for this project");
+	assert(listGuidance?.includes("memory-list.sh"), "explicit list memory record prompts should get list guidance");
+	assert(!/global|all-scope|--all/i.test(listGuidance), "runtime memory-admin guidance should avoid global/all-scope instructions");
+	assert(memoryContext.memoryAdminGuidance("List memories for this project")?.includes("memory-list.sh"), "explicit project-scoped memories list prompts should get list guidance");
+	assert(memoryContext.memoryAdminGuidance("List all memories for this project")?.includes("memory-list.sh"), "explicit all-worded project-scoped memories list prompts should get list guidance without all-scope instructions");
+	assert(memoryContext.memoryAdminGuidance("List memories for this task")?.includes("memory-list.sh"), "explicit task-scoped memories list prompts should get list guidance");
+	assert(memoryContext.memoryAdminGuidance("List all memories for this task")?.includes("memory-list.sh"), "explicit all-worded task-scoped memories list prompts should get list guidance without all-scope instructions");
+	assert(memoryContext.memoryAdminGuidance("Promote memory candidate mem_example")?.includes("memory-promote.sh"), "explicit promote memory candidate prompts should get promote guidance");
+	assert(memoryContext.memoryAdminGuidance("Promote memory mem_123")?.includes("memory-promote.sh"), "explicit promote memory id prompts should get promote guidance");
+	assert(memoryContext.memoryAdminGuidance("Forget this memory")?.includes("memory-forget.sh"), "explicit forget-this-memory prompts should get forget guidance");
+	assert(memoryContext.memoryAdminGuidance("Forget memory mem_123")?.includes("memory-forget.sh"), "explicit forget memory id prompts should get forget guidance");
+	assert(!memoryContext.memoryAdminGuidance("Please save this diff summary in progress.md"), "ordinary save-file prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Record this decision in docs/adr.md"), "ordinary docs-record prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Do not remember this preference"), "negated remember prompts should not get add-memory guidance");
+	assert(!memoryContext.memoryAdminGuidance("Do not save this as a memory record"), "negated save-memory prompts should not get add-memory guidance");
+	assert(!memoryContext.memoryAdminGuidance("Don't promote memory candidate mem_123"), "negated promote prompts should not get promote guidance");
+	assert(!memoryContext.memoryAdminGuidance("Never store this memory record"), "negated store-memory prompts should not get add-memory guidance");
+	assert(!memoryContext.memoryAdminGuidance("I cannot remember this convention; inspect docs"), "non-admin remember statements should not get add-memory guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remove memory-context shim from the harness"), "code prompts mentioning memory-context should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Inspect memory-context.ts tests"), "code inspection prompts mentioning memory-context.ts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remove project memory leak in the cache"), "memory-leak code prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Inspect project memory usage before optimizing"), "memory-usage code prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Show project memory profile"), "memory-profile diagnostics prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Inspect memory record serialization code"), "code inspection prompts around memory records should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remember to update README"), "ordinary remember-to file prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remember to fix the parser"), "ordinary remember-to coding prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Please remember to check git diff"), "ordinary remember-to process prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remember to update memory-context.ts tests"), "remember-to code prompts should not get memory admin guidance");
+	assert(!memoryContext.memoryAdminGuidance("Remember to inspect memory record serialization code"), "remember-to code inspection prompts should not get memory admin guidance");
 
 	const assembled = ambient.assembleAmbientContext("base", "standard", [
 		{ id: "late", title: "Late", priority: 20, content: "late content" },
@@ -55,4 +95,14 @@ export async function runAmbientContextTests() {
 	await boundTask.commands.get("doctor").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Ambient context"), "/doctor should include ambient context diagnostics");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");
+
+	const rememberTask = createTaskHarness({
+		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
+	});
+	await rememberTask.handlers.get("session_start")({ reason: "startup" }, rememberTask.ctx);
+	const rememberResult = await rememberTask.handlers.get("before_agent_start")({ prompt: "Remember this project preference: keep memory scoped and manual", systemPrompt: "base" }, rememberTask.ctx);
+	assert(rememberResult.systemPrompt.includes("## Explicit Memory Admin Request"), "explicit remember prompts should get safe memory-admin guidance");
+	assert(rememberResult.systemPrompt.includes("create a candidate by default"), "remember guidance should default to candidate memory, not approved injection");
+	assert(rememberResult.systemPrompt.includes("memory_admin: included"), "ambient receipt should expose memory-admin guidance inclusion");
+	assert(!rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-add.sh")), "ambient memory-admin guidance should not write memory during prompt assembly");
 }

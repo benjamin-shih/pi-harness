@@ -51,6 +51,43 @@ export function memoryCandidateReminder(enabled: boolean): string | undefined {
 	].join("\n");
 }
 
+function explicitMemoryAction(prompt: string): "add" | "list" | "promote" | "forget" | undefined {
+	const memoryWord = String.raw`memor(?:y|ies)(?![-_.])`;
+	const adminTarget = String.raw`(?:durable\s+${memoryWord}|${memoryWord}\s+(?:record|records|candidate|candidates|entry|entries|id|admin)|(?:all\s+)?${memoryWord}\s+for\s+this\s+(?:project|task|repo|repository)|${memoryWord}\s+mem_[a-z0-9_-]+)`;
+	const adminVerbs = "remember|add|create|save|store|record|forget|delete|remove|deprecate|approve|promote|list|show";
+	const codeContext = /\b(code|serialization|tests?|files?|helper|function|module|shim|class|implementation)\b|\.[a-z0-9]{1,5}\b|\bmemory-[a-z0-9_-]+\b/;
+	const clauses = prompt.toLowerCase().split(/[.!?\n;]|,\s*(?:but|and)\s+/).map((clause) => clause.trim()).filter(Boolean);
+	for (const clause of clauses) {
+		if (new RegExp(String.raw`\b(?:do not|don't|dont|cannot|can't|cant|never)\s+(?:${adminVerbs})\b|\bnot\s+(?:${adminVerbs})\b`).test(clause)) continue;
+		const near = (verbs: string, target = adminTarget, chars = 80) => new RegExp(String.raw`\b(?:${verbs})\b[^\n]{0,${chars}}${target}|${target}[^\n]{0,${chars}}\b(?:${verbs})\b`).test(clause);
+		const looksLikeCode = codeContext.test(clause);
+		if (!looksLikeCode && (near("forget|delete|remove|deprecate") || new RegExp(String.raw`\bforget\b[^\n]{0,50}\b(?:this|that)\s+${memoryWord}\s*$`).test(clause))) return "forget";
+		if (!looksLikeCode && near("approve|promote")) return "promote";
+		if (!looksLikeCode && near("list|show")) return "list";
+		const strongRemember = /\bremember\s*[:\-]\s*\S/.test(clause) || /\bremember\b[^\n]{0,120}\b(?:(?:project|repo|repository|task)\s+)?(?:preference|convention|decision)\b/.test(clause);
+		const directRemember = strongRemember || /\bremember\b[^\n]{0,80}\b(?:i|we)\s+(?:prefer|like|want|use|need)\b/.test(clause) || /^\s*(?:(?:can|could|would)\s+you\s+(?:please\s+)?|please\s+)?remember\s+my\b/.test(clause);
+		if (strongRemember || (!looksLikeCode && directRemember)) return "add";
+		if (!looksLikeCode && near("add|create|save|store|record")) return "add";
+	}
+	return undefined;
+}
+
+export function memoryAdminGuidance(prompt: string): string | undefined {
+	const action = explicitMemoryAction(prompt);
+	if (!action) return undefined;
+	const lines = [
+		"## Explicit Memory Admin Request",
+		"The user appears to be asking for memory administration. Use only `.agents` memory scripts; do not write durable memory directly from Pi.",
+		"Keep Pi-guided memory scoped to an explicit project or task. Never store credential-like or secret material.",
+		"Read freeform title/body/reason text from temporary files, not process argv, and clean those temp files before finishing.",
+	];
+	if (action === "add") lines.push("For remember/save requests, create a candidate by default with `memory-add.sh`; use approved state only when the user explicitly asks for approved future-context injection.");
+	if (action === "list") lines.push("For list/show requests, use `memory-list.sh` with an explicit project/task scope.");
+	if (action === "promote") lines.push("For promote/approve requests, use `memory-promote.sh` only for an explicit memory id or after the user selects one from a scoped list.");
+	if (action === "forget") lines.push("For forget/remove requests, use `memory-forget.sh` only for an explicit memory id or after the user selects one from a scoped list.");
+	return lines.join("\n");
+}
+
 function emptyStats(available: boolean, reason: string, scope: MemoryStatsResult["scope"] = "none"): MemoryStatsResult {
 	return { available, reason, counts: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0, scope };
 }
