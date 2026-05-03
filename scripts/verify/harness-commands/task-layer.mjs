@@ -62,6 +62,24 @@ export async function runTaskLayerTests() {
 	const incompatibleBindResult = await incompatibleBind.handlers.get("before_agent_start")({ prompt: "Implement task binding", systemPrompt: "base" }, incompatibleBind.ctx);
 	assert(!incompatibleBindResult?.systemPrompt?.includes("## Active AGENTS Task Context"), "pi task layer should not inject context when task-bind returns an incompatible API version");
 
+	const blockedTask = createTaskHarness({
+		bindPayload: { action: "blocked", bound: false, created: false, blocked: true, reason: "lease held by another pi session", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-blocked", project_root: root },
+	});
+	await blockedTask.handlers.get("session_start")({ reason: "startup" }, blockedTask.ctx);
+	const blockedResult = await blockedTask.handlers.get("before_agent_start")({ prompt: "Implement blocked task binding", systemPrompt: "base" }, blockedTask.ctx);
+	assert(!blockedResult?.systemPrompt?.includes("## Active AGENTS Task Context"), "pi task layer should not inject task context after a blocked bind");
+	await blockedTask.handlers.get("tool_result")({ toolName: "read", input: { path: "README.md" }, isError: false }, blockedTask.ctx);
+	await blockedTask.handlers.get("tool_result")({ toolName: "edit", input: { path: "src/blocked.ts" }, isError: false }, blockedTask.ctx);
+	await blockedTask.handlers.get("tool_result")({ toolName: "bash", input: { command: "npm run verify" }, isError: false }, blockedTask.ctx);
+	await blockedTask.handlers.get("agent_end")({}, blockedTask.ctx);
+	const blockedBindCalls = blockedTask.execCalls.filter((call) => call.args[0]?.endsWith("task-bind.sh"));
+	assert(blockedBindCalls.length === 1, "pi task layer should not retry task-bind in the same turn after a blocked lease conflict");
+	assert(!blockedTask.execCalls.some((call) => call.args[0]?.endsWith("task-event.sh")), "pi task layer should not checkpoint an unbound blocked task");
+	assert(!blockedTask.execCalls.some((call) => call.args[0]?.endsWith("task-status.sh")), "pi task layer should not update task status for an unbound blocked task");
+	await blockedTask.commands.get("status").handler("", blockedTask.ctx);
+	assert(blockedTask.sentMessages.at(-1).content.includes("active task: blocked"), "/status should keep blocked bind state visible");
+	assert(blockedTask.sentMessages.at(-1).content.includes("lease held by another pi session"), "/status should keep the blocked bind reason visible");
+
 	const homeTask = createTaskHarness({
 		cwd: homeRoot,
 		bindPayload: { action: "skipped", bound: false, created: false, blocked: false, reason: "no matching task", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-home", project_root: homeRoot },
