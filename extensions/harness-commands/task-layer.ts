@@ -61,7 +61,6 @@ type TaskLayerState = {
 	currentPromptWeight: TaskWeight;
 	currentBindingMode: TaskClassification["binding_mode"];
 	currentPromptNeedsTask: boolean;
-	currentPromptBindBlocked: boolean;
 	meaningfulActivity: boolean;
 	activity: { reads: number; writes: number; commands: number; errors: number };
 	artifactCount: number;
@@ -88,7 +87,6 @@ function initialState(): TaskLayerState {
 		currentPromptWeight: "standard",
 		currentBindingMode: "auto",
 		currentPromptNeedsTask: false,
-		currentPromptBindBlocked: false,
 		meaningfulActivity: false,
 		activity: emptyActivity(),
 		artifactCount: 0,
@@ -100,7 +98,6 @@ function resetSessionState(state: TaskLayerState): void {
 	state.currentPromptWeight = "standard";
 	state.currentBindingMode = "auto";
 	state.currentPromptNeedsTask = false;
-	state.currentPromptBindBlocked = false;
 	state.meaningfulActivity = false;
 	state.activity = emptyActivity();
 	state.artifactCount = 0;
@@ -111,7 +108,7 @@ function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): vo
 	state.active = undefined;
 	state.context = undefined;
 	state.currentPromptWeight = fallbackWeight;
-	state.currentPromptBindBlocked = false;
+	state.currentPromptNeedsTask = false;
 	state.activity = emptyActivity();
 	state.artifactCount = 0;
 	state.artifactSkipped = 0;
@@ -288,7 +285,7 @@ export function createAgentsTaskLayer() {
 			state.lastError = undefined;
 			if (!payload.bound) {
 				if (payload.blocked) {
-					state.currentPromptBindBlocked = true;
+					state.currentPromptNeedsTask = false;
 					state.lastError = payload.reason;
 				}
 				return payload;
@@ -394,7 +391,7 @@ export function createAgentsTaskLayer() {
 		},
 		async toolResult(pi: ExtensionAPI, event: ToolResultEvent, ctx: ExtensionContext): Promise<void> {
 			activityFromTool(state, event);
-			if (!state.active && state.currentPromptNeedsTask && state.apiAvailable && !state.currentPromptBindBlocked) {
+			if (!state.active && state.currentPromptNeedsTask && state.apiAvailable) {
 				const candidate = pathFromTool(event, ctx.cwd);
 				const decision = candidate ? await candidateRoot(pi, candidate, ctx.cwd) : undefined;
 				if (decision?.bindable) await bind(pi, ctx, decision.project_root, decision.auto_create);

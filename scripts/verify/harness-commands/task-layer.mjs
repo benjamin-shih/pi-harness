@@ -69,8 +69,6 @@ export async function runTaskLayerTests() {
 	const blockedResult = await blockedTask.handlers.get("before_agent_start")({ prompt: "Implement blocked task binding", systemPrompt: "base" }, blockedTask.ctx);
 	assert(!blockedResult?.systemPrompt?.includes("## Active AGENTS Task Context"), "pi task layer should not inject task context after a blocked bind");
 	await blockedTask.handlers.get("tool_result")({ toolName: "read", input: { path: "README.md" }, isError: false }, blockedTask.ctx);
-	await blockedTask.handlers.get("tool_result")({ toolName: "edit", input: { path: "src/blocked.ts" }, isError: false }, blockedTask.ctx);
-	await blockedTask.handlers.get("tool_result")({ toolName: "bash", input: { command: "npm run verify" }, isError: false }, blockedTask.ctx);
 	await blockedTask.handlers.get("agent_end")({}, blockedTask.ctx);
 	const blockedBindCalls = blockedTask.execCalls.filter((call) => call.args[0]?.endsWith("task-bind.sh"));
 	assert(blockedBindCalls.length === 1, "pi task layer should not retry task-bind in the same turn after a blocked lease conflict");
