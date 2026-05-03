@@ -39,6 +39,22 @@ export async function runTaskLayerTests() {
 	await skippedArtifactTask.commands.get("status").handler("", skippedArtifactTask.ctx);
 	assert(skippedArtifactTask.sentMessages.at(-1).content.includes("0 recorded, 1 skipped"), "pi task layer should count unsupported artifact responses as skipped");
 
+	for (const [label, taskApiResult] of [
+		["nonzero", { code: 1, stdout: "", stderr: "task api unavailable" }],
+		["incompatible", { code: 0, stdout: JSON.stringify({ task_api_version: 2, agents_shared_root: agentsRoot, capabilities: [] }), stderr: "" }],
+		["malformed", { code: 0, stdout: "not json", stderr: "" }],
+	]) {
+		const unavailableTaskApi = createTaskHarness({ taskApiResult, bindPayload: taskBindPayload() });
+		await unavailableTaskApi.handlers.get("session_start")({ reason: "startup" }, unavailableTaskApi.ctx);
+		const result = await unavailableTaskApi.handlers.get("before_agent_start")({ prompt: `Implement task binding with ${label} task API`, systemPrompt: "base" }, unavailableTaskApi.ctx);
+		assert(!result?.systemPrompt?.includes("## Active AGENTS Task Context"), `pi task layer should not inject context after ${label} task-api output`);
+		for (const scriptName of ["task-classify.sh", "task-candidate-root.sh", "task-bind.sh", "task-context.sh"]) {
+			assert(!unavailableTaskApi.execCalls.some((call) => call.args[0]?.endsWith(scriptName)), `pi task layer should not call ${scriptName} after ${label} task-api output`);
+		}
+		await unavailableTaskApi.commands.get("status").handler("", unavailableTaskApi.ctx);
+		assert(unavailableTaskApi.sentMessages.at(-1).content.includes("active task: unavailable"), `/status should report unavailable task binding after ${label} task-api output`);
+	}
+
 	const incompatibleClassify = createTaskHarness({
 		classifyPayload: { task_api_version: 2, weight: "standard", binding_mode: "auto" },
 		bindPayload: taskBindPayload({ task_id: "bad" }),
