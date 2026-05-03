@@ -45,7 +45,7 @@ export function skillRoutingReminder(weight: TaskWeight): string | undefined {
 	}
 	return base.join("\n");
 }
-export function isExecutionContinuationPrompt(prompt: string): boolean {
+function isExecutionContinuationPrompt(prompt: string): boolean {
 	return /^(?:go ahead(?: and do (?:it|this))?|continue|proceed|do it|do this|yes|yep|ok(?:ay)?)[\s.!]*$/i.test(prompt.trim());
 }
 export function isCodingOrFilePrompt(prompt: string): boolean {

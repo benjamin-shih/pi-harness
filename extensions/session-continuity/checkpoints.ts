@@ -17,7 +17,7 @@ export function uniqueSorted(values: Iterable<string>, maxItems = MAX_ITEMS_PER_
 	return [...new Set([...values].filter(Boolean))].sort((a, b) => a.localeCompare(b)).slice(0, maxItems);
 }
 
-export function pushUnique<T>(items: T[], item: T, maxItems: number): void {
+function pushUnique<T>(items: T[], item: T, maxItems: number): void {
 	if (!items.some((existing) => JSON.stringify(existing) === JSON.stringify(item))) items.push(item);
 	if (items.length > maxItems) items.splice(0, items.length - maxItems);
 }
@@ -79,15 +79,18 @@ export function checkpointHash(checkpoint: ContinuityCheckpoint): string {
 }
 
 export function buildCheckpoint(reason: ContinuityCheckpoint["reason"], state: TurnState, ctx: ExtensionContext, pi: ExtensionAPI): ContinuityCheckpoint {
+	const sessionFile = ctx.sessionManager.getSessionFile();
+	const model = modelSummary(ctx);
+	const context = contextSummary(ctx);
 	return {
 		version: CONTINUITY_VERSION,
 		reason,
 		timestamp: new Date().toISOString(),
 		cwd: ctx.cwd,
-		...(ctx.sessionManager.getSessionFile() ? { sessionFile: ctx.sessionManager.getSessionFile() } : {}),
-		...(modelSummary(ctx) ? { model: modelSummary(ctx) } : {}),
+		...(sessionFile ? { sessionFile } : {}),
+		...(model ? { model } : {}),
 		thinking: pi.getThinkingLevel(),
-		...(contextSummary(ctx) ? { context: contextSummary(ctx) } : {}),
+		...(context ? { context } : {}),
 		...(state.prompt ? { prompt: truncateText(state.prompt, MAX_PROMPT_CHARS) } : {}),
 		filesRead: uniqueSorted(state.filesRead),
 		filesModified: uniqueSorted(state.filesModified),

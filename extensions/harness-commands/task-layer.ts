@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
 import { agentsRoot, agentsScriptPath } from "../shared/config";
+import { parseJson } from "../shared/json";
 export type TaskWeight = "trivial" | "standard" | "complex";
 type BindAction = "created" | "claimed_existing" | "refreshed_existing" | "skipped" | "blocked" | "error";
 type BindResult = {
@@ -124,13 +125,6 @@ function safeSessionId(ctx: ExtensionContext): string {
 	const sessionFile = ctx.sessionManager.getSessionFile?.();
 	if (sessionFile) return `pi-${path.basename(sessionFile).replace(/[^A-Za-z0-9_-]/g, "-")}`;
 	return `pi-${process.pid}`;
-}
-function parseJson<T>(text: string): T | undefined {
-	try {
-		return JSON.parse(text) as T;
-	} catch {
-		return undefined;
-	}
 }
 async function runScript(pi: ExtensionAPI, scriptName: string, args: string[], cwd: string, timeout = SCRIPT_TIMEOUT_MS): Promise<ExecResult> {
 	return pi.exec("bash", [agentsScriptPath(scriptName), ...args], { cwd, timeout });

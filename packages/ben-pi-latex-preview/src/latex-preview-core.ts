@@ -1013,7 +1013,7 @@ function terminalImageLines(
 	theme: Theme,
 ): string[] {
 	const resolvedDimensions = dimensions ?? { widthPx: 800, heightPx: 600 };
-	const { calculateImageRows, getCapabilities, getCellDimensions } = runtimeDeps();
+	const { calculateImageRows, encodeITerm2, encodeKitty, getCapabilities, getCellDimensions, imageFallback } = runtimeDeps();
 	const rows = calculateImageRows(resolvedDimensions, imageWidthCells, getCellDimensions());
 	const caps = getCapabilities();
 	let sequence: string | undefined;
@@ -1021,9 +1021,9 @@ function terminalImageLines(
 	if (caps.images === "kitty") {
 		// Deliberately omit `rows`: Kitty then preserves the PNG's native aspect
 		// ratio instead of stretching it to a quantized terminal-cell rectangle.
-		sequence = runtimeDeps().encodeKitty(base64Data, { columns: imageWidthCells });
+		sequence = encodeKitty(base64Data, { columns: imageWidthCells });
 	} else if (caps.images === "iterm2") {
-		sequence = runtimeDeps().encodeITerm2(base64Data, {
+		sequence = encodeITerm2(base64Data, {
 			width: imageWidthCells,
 			height: "auto",
 			name: filename,
@@ -1032,7 +1032,7 @@ function terminalImageLines(
 	}
 
 	if (!sequence) {
-		return [theme.fg("muted", runtimeDeps().imageFallback("image/png", resolvedDimensions, filename))];
+		return [theme.fg("muted", imageFallback("image/png", resolvedDimensions, filename))];
 	}
 
 	const lines = Array.from({ length: Math.max(0, rows - 1) }, () => "");

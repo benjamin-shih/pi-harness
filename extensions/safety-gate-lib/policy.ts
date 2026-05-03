@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { agentsRoot, agentsScriptPath } from "../shared/config";
+import { parseJson } from "../shared/json";
 import { cleanPathToken } from "./shell";
 
 const POLICY_API_VERSION = 1;
@@ -18,14 +19,6 @@ export type PathSafetyResult = {
 };
 
 export type PathSafetyCheck = (rawPath: string | undefined, cwd: string, operation?: PolicyOperation, recursive?: boolean) => Promise<PathSafetyResult | undefined>;
-
-function parseJson<T>(text: string): T | undefined {
-	try {
-		return JSON.parse(text) as T;
-	} catch {
-		return undefined;
-	}
-}
 
 function policyUnavailable(pathToken: string, reason: string): PathSafetyResult {
 	return {

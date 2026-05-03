@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { agentsScriptPath } from "./config";
+import { parseJson } from "./json";
 
 export type MemoryContextScope = {
 	projectRoot?: string;
@@ -33,14 +34,6 @@ type MemoryStatsPayload = {
 	counts_by_state?: Partial<Record<"candidate" | "approved" | "deprecated", number>>;
 	skipped?: number;
 };
-
-function parseJson<T>(text: string): T | undefined {
-	try {
-		return JSON.parse(text) as T;
-	} catch {
-		return undefined;
-	}
-}
 
 export function memoryCandidateReminder(enabled: boolean): string | undefined {
 	if (!enabled) return undefined;

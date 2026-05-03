@@ -64,7 +64,7 @@ function formatLaneReceipt(lane: AmbientContextLaneSnapshot): string {
 	return `  - ${lane.id}: skipped${lane.reason ? `, ${lane.reason}` : ""}`;
 }
 
-export function formatAmbientReceipt(snapshot: AmbientContextSnapshot): string {
+function formatAmbientReceipt(snapshot: AmbientContextSnapshot): string {
 	const lines = [
 		"## Ambient Context Receipt",
 		`- version: ${snapshot.version}`,
