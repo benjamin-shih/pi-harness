@@ -4,6 +4,7 @@ import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@mariozech
 import { modelSummary } from "../session-continuity/context";
 import { agentsRoot, agentsScriptPath } from "../shared/config";
 import { parseJson } from "../shared/json";
+import { withPrivateTempTextFile } from "../shared/private-temp";
 export type TaskWeight = "trivial" | "standard" | "complex";
 type BindAction = "created" | "claimed_existing" | "refreshed_existing" | "skipped" | "blocked" | "error";
 type BindResult = {
@@ -163,11 +164,13 @@ async function candidateRoot(pi: ExtensionAPI, candidate: string, cwd: string): 
 }
 async function classifyTask(pi: ExtensionAPI, prompt: string, cwd: string): Promise<TaskClassification | undefined> {
 	try {
-		const result = await runScript(pi, "task-classify.sh", ["--prompt-text", prompt, "--cwd", cwd], cwd, 5_000);
-		if (result.code !== 0) return undefined;
-		const payload = parseJson<TaskClassification>(result.stdout);
-		if (!payload) return undefined;
-		return payload.task_api_version === SUPPORTED_TASK_API_VERSION ? payload : undefined;
+		return await withPrivateTempTextFile("pi-task-classify-", prompt, async (promptFile) => {
+			const result = await runScript(pi, "task-classify.sh", ["--prompt-file", promptFile, "--cwd", cwd], cwd, 5_000);
+			if (result.code !== 0) return undefined;
+			const payload = parseJson<TaskClassification>(result.stdout);
+			if (!payload) return undefined;
+			return payload.task_api_version === SUPPORTED_TASK_API_VERSION ? payload : undefined;
+		});
 	} catch {
 		return undefined;
 	}

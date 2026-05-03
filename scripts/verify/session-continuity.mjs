@@ -133,6 +133,8 @@ export async function runSessionContinuityBehaviorTests() {
 	};
 	const successHandlers = new Map();
 	const successAppended = [];
+	const gitExecCalls = [];
+	const untrackedSentinel = "private-untracked-compaction-note.md";
 	let successCompleteContext;
 	const successFactory = continuity.createSessionContinuity({
 		completeFn: async (_model, context) => {
@@ -144,6 +146,15 @@ export async function runSessionContinuityBehaviorTests() {
 		on: (event, handler) => successHandlers.set(event, handler),
 		appendEntry: (customType, data) => successAppended.push({ customType, data }),
 		getThinkingLevel: () => "xhigh",
+		exec: async (cmd, args) => {
+			gitExecCalls.push({ cmd, args });
+			if (cmd === "git" && args.join(" ") === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
+			if (cmd === "git" && args.includes("status")) {
+				const includesUntrackedNames = !args.includes("--untracked-files=no");
+				return { code: 0, stdout: includesUntrackedNames ? `## main\n?? ${untrackedSentinel}\n M README.md\n` : "## main\n M README.md\n", stderr: "" };
+			}
+			return { code: 1, stdout: "", stderr: "" };
+		},
 	});
 	const successResult = await successHandlers.get("session_before_compact")(
 		{ preparation: fakePreparation, branchEntries: entries, customInstructions: "Keep it concise.", signal: new AbortController().signal },
@@ -153,6 +164,8 @@ export async function runSessionContinuityBehaviorTests() {
 		},
 	);
 	assert(successCompleteContext?.systemPrompt?.includes("continuity summarizer"), "session-continuity custom compaction should send provider system instructions");
+	assert(gitExecCalls.some((call) => call.cmd === "git" && call.args.includes("--untracked-files=no")), "session-continuity compaction should not scan untracked filenames");
+	assert(!JSON.stringify(successCompleteContext).includes(untrackedSentinel), "session-continuity compaction prompt should not include untracked filenames");
 	assert(successResult?.compaction?.details?.source === "ben-pi-harness/session-continuity", "session-continuity successful compaction should identify harness source");
 	assert(successResult.compaction.details.promptSizing.messagesToSummarize === 1, "session-continuity successful compaction should persist prompt sizing");
 	assert(successResult.compaction.details.promptSizing.promptBudgetChars === 120_000, "session-continuity should cap large-model prompt budget at the harness maximum");

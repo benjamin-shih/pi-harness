@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { agentsRoot, agentsTasksRoot, assert, createTaskHarness, homeRoot, join, root, runRealAgentsTaskLayerTest } from "./support.mjs";
 
 export async function runTaskLayerTests() {
@@ -13,6 +14,12 @@ export async function runTaskLayerTests() {
 	await boundTask.handlers.get("tool_result")({ toolName: "bash", input: { command: "npm run verify" }, isError: false }, boundTask.ctx);
 	await boundTask.handlers.get("agent_end")({}, boundTask.ctx);
 	await boundTask.handlers.get("session_shutdown")({ reason: "quit" }, boundTask.ctx);
+	const classifyCall = boundTask.execCalls.find((call) => call.args[0]?.endsWith("task-classify.sh"));
+	const promptFile = classifyCall?.args[classifyCall.args.indexOf("--prompt-file") + 1];
+	assert(classifyCall?.args.includes("--prompt-file"), "pi task classification should pass prompt text through a temporary prompt file");
+	assert(!classifyCall?.args.includes("--prompt-text"), "pi task classification should not pass raw prompts through argv");
+	assert(!classifyCall?.args.includes("Implement ambient task binding"), "pi task classification argv should not include raw prompt text");
+	assert(promptFile && !existsSync(promptFile), "pi task classification should clean up the temporary prompt file");
 	const bindCall = boundTask.execCalls.find((call) => call.args[0]?.endsWith("task-bind.sh"));
 	assert(bindCall && !bindCall.args.includes("--prompt-text"), "pi task binding should not persist raw prompts by default");
 	const artifactCalls = boundTask.execCalls.filter((call) => call.args[0]?.endsWith("task-artifact-add.sh"));

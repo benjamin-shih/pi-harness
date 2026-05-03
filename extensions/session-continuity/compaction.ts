@@ -10,7 +10,7 @@ export async function gitStatusSummary(pi: ExtensionAPI, cwd: string): Promise<s
 	try {
 		const [branchResult, statusResult] = await Promise.all([
 			pi.exec("git", ["branch", "--show-current"], { cwd, timeout: 3_000 }).catch((): undefined => undefined),
-			pi.exec("git", ["status", "--short", "--branch", "--untracked-files=normal"], { cwd, timeout: 3_000 }).catch((): undefined => undefined),
+			pi.exec("git", ["status", "--short", "--branch", "--untracked-files=no"], { cwd, timeout: 3_000 }).catch((): undefined => undefined),
 		]);
 		if (!statusResult || statusResult.code !== 0) return undefined;
 		const branch = branchResult?.stdout.trim();
