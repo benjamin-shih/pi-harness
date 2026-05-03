@@ -291,7 +291,6 @@ export function createAgentsTaskLayer() {
 				return payload;
 			}
 			state.active = payload;
-			state.artifactSkipped = 0;
 			await refreshArtifactCount(pi, ctx);
 			await refreshContext(pi, ctx, payload.task_id, bindCwd);
 			return payload;
