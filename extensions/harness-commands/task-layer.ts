@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
+import { modelSummary } from "../session-continuity/context";
 import { agentsRoot, agentsScriptPath } from "../shared/config";
 import { parseJson } from "../shared/json";
 export type TaskWeight = "trivial" | "standard" | "complex";
@@ -111,9 +112,6 @@ function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): vo
 	state.artifactCount = 0;
 	state.artifactSkipped = 0;
 	state.meaningfulActivity = false;
-}
-function modelSummary(ctx: ExtensionContext): string | undefined {
-	return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
 }
 function safeSessionId(ctx: ExtensionContext): string {
 	try {

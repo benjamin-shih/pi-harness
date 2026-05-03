@@ -1088,10 +1088,6 @@ class ResponsiveMathImage {
 	}
 }
 
-function addMathImage(container: { addChild: (child: unknown) => void }, math: RenderedMath, index: number, theme: Theme): void {
-	container.addChild(new ResponsiveMathImage(math, index, theme));
-}
-
 class SafeMarkdownBlock {
 	private markdownComponent: { render: (width: number) => string[] } | undefined;
 	private fallbackComponent: { render: (width: number) => string[] } | undefined;
@@ -1138,7 +1134,7 @@ function latexPreviewComponent(payload: PreviewPayload, theme: Theme) {
 			addSafeMarkdown(container, block.text, theme, mdTheme);
 		} else {
 			container.addChild(new Spacer(1));
-			addMathImage(container, block.math, mathIndex, theme);
+			container.addChild(new ResponsiveMathImage(block.math, mathIndex, theme));
 			container.addChild(new Spacer(1));
 			mathIndex++;
 		}
