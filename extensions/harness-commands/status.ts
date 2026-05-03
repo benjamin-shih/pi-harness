@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { ambientDoctorSection, ambientStatusLines, type AmbientContextSnapshot } from "../shared/ambient-context";
-import { buildMemoryStats, formatMemoryStatsLines, type MemoryStatsResult } from "../shared/memory-context";
+import { buildMemoryStats, formatMemoryReviewHintLines, formatMemoryStatsLines, type MemoryStatsResult } from "../shared/memory-context";
 import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, memorySpineStatusLines, type MemorySpineDiagnostics } from "../session-continuity/diagnostics";
 
 type HarnessAudit = {
@@ -135,15 +135,13 @@ function doctorRecommendations(facts: HarnessFacts, taskLayer: StatusTaskLayer):
 	else if (facts.audit.audit.issues?.length) recommendations.push("Fix harness audit issues before adding more harness features.");
 	if (facts.memory.health === "warning") recommendations.push("Inspect `/memory`; latest memory-spine diagnostics indicate compaction fallback/default behavior.");
 	if (facts.memory.health === "unknown") recommendations.push("No memory-spine entries yet; run one normal agent turn and check `/memory` again.");
+	if (facts.memoryApi.available && facts.memoryApi.counts.candidate > 0) recommendations.push("Ask to review memory candidates when ready; candidate previews are read-only and promotion/forgetting remains explicit.");
 	if (taskLayer.health() === "warning") recommendations.push("Inspect AGENTS task binding state; pi could not bind or refresh the active task cleanly.");
 	return recommendations.length ? recommendations : ["None; harness checks are green."];
 }
 
 function doctorHealth(facts: HarnessFacts, taskLayer: StatusTaskLayer): "ok" | "warning" {
-	if (!facts.audit.ok || facts.audit.audit.issues?.length) return "warning";
-	if (facts.memory.health === "warning") return "warning";
-	if (taskLayer.health() === "warning") return "warning";
-	return "ok";
+	return !facts.audit.ok || facts.audit.audit.issues?.length || facts.memory.health === "warning" || taskLayer.health() === "warning" ? "warning" : "ok";
 }
 
 export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): Promise<string> {
@@ -154,6 +152,7 @@ export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		...formatHarnessAuditLines(facts.audit),
 		...memorySpineStatusLines(facts.memory),
 		...formatMemoryStatsLines(facts.memoryApi),
+		...formatMemoryReviewHintLines(facts.memoryApi),
 		...taskLayer.statusLines(),
 		...ambientStatusLines(ambientContext),
 	].join("\n");
@@ -174,6 +173,7 @@ export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		"",
 		"## Scoped memory API",
 		...formatMemoryStatsLines(facts.memoryApi),
+		...formatMemoryReviewHintLines(facts.memoryApi),
 		"",
 		taskLayer.doctorSection(),
 		"",

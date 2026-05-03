@@ -3,6 +3,7 @@ import { assert, harnessCommands, root } from "./support.mjs";
 export async function runStatusCommandTests() {
 	const statusCommands = new Map();
 	const statusMessages = [];
+	const execCalls = [];
 	const promptSizing = {
 		promptChars: 1000,
 		conversationChars: 2000,
@@ -61,10 +62,13 @@ export async function runStatusCommandTests() {
 		getAllTools: () => [],
 		getActiveTools: () => ["read", "bash"],
 		getThinkingLevel: () => "xhigh",
-		exec: async (_cmd, args) => {
+		exec: async (cmd, args) => {
+			execCalls.push({ cmd, args });
 			const key = args.join(" ");
+			if (key === "rev-parse --show-toplevel") return { code: 0, stdout: `${root}\n`, stderr: "" };
 			if (key === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
 			if (key === "status --porcelain=v1 --untracked-files=all") return { code: 0, stdout: "", stderr: "" };
+			if (String(args[0] || "").endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, counts_by_state: { candidate: 2, approved: 1, deprecated: 0 }, skipped: 0 }), stderr: "" };
 			if (key === "scripts/harness-audit.mjs --json" || key.endsWith("scripts/harness-audit.mjs --json")) {
 				return {
 					code: 0,
@@ -89,12 +93,16 @@ export async function runStatusCommandTests() {
 	assert(statusMessages[0].content.includes("harness audit: ok"), "/status should include harness audit health");
 	assert(statusMessages[0].content.includes("runtime extensions: 4"), "/status should include runtime extension count");
 	assert(statusMessages[0].content.includes("memory spine: warning"), "/status should include compact memory-spine health");
+	assert(statusMessages[0].content.includes("memory review: 2 candidates pending"), "/status should surface pending memory candidate review availability");
 	await statusCommands.get("doctor").handler("", commandCtx);
 	assert(statusMessages[1].customType === "harness-doctor", "/doctor should send a harness doctor message");
 	assert(statusMessages[1].content.includes("## Harness doctor"), "/doctor should render a doctor report");
 	assert(statusMessages[1].content.includes("package: ben-pi-harness 0.2.0"), "/doctor should include package version");
 	assert(statusMessages[1].content.includes("latest diagnostic"), "/doctor should include memory-spine diagnostics");
+	assert(statusMessages[1].content.includes("memory review: 2 candidates pending"), "/doctor should surface pending memory candidate review availability");
+	assert(statusMessages[1].content.includes("Ask to review memory candidates when ready"), "/doctor should recommend explicit candidate review when candidates are pending");
 	await statusCommands.get("memory").handler("", commandCtx);
 	assert(statusMessages[2].customType === "harness-memory", "/memory should send a memory diagnostics message");
 	assert(statusMessages[2].content.includes("latest diagnostic error: context_length_exceeded"), "/memory should include latest diagnostic errors");
+	assert(!execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh")), "status/doctor should not auto-run memory-review.sh");
 }

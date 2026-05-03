@@ -51,16 +51,18 @@ export function memoryCandidateReminder(enabled: boolean): string | undefined {
 	].join("\n");
 }
 
-function explicitMemoryAction(prompt: string): "add" | "list" | "promote" | "forget" | undefined {
+function explicitMemoryAction(prompt: string): "add" | "list" | "promote" | "forget" | "review" | undefined {
 	const memoryWord = String.raw`memor(?:y|ies)(?![-_.])`;
 	const adminTarget = String.raw`(?:durable\s+${memoryWord}|${memoryWord}\s+(?:record|records|candidate|candidates|entry|entries|id|admin)|(?:all\s+)?${memoryWord}\s+for\s+this\s+(?:project|task|repo|repository)|${memoryWord}\s+mem_[a-z0-9_-]+)`;
-	const adminVerbs = "remember|add|create|save|store|record|forget|delete|remove|deprecate|approve|promote|list|show";
-	const codeContext = /\b(code|serialization|tests?|files?|helper|function|module|shim|class|implementation)\b|\.[a-z0-9]{1,5}\b|\bmemory-[a-z0-9_-]+\b/;
+	const adminVerbs = "remember|add|create|save|store|record|forget|delete|remove|deprecate|approve|promote|list|show|review|triage|audit";
+	const codeContext = /\b(code|code review|diff|uncommitted|serialization|tests?|files?|helper|function|module|shim|class|implementation|guidance|discovery)\b|\.[a-z0-9]{1,5}\b|\bmemory-[a-z0-9_-]+\b/;
 	const clauses = prompt.toLowerCase().split(/[.!?\n;]|,\s*(?:but|and)\s+/).map((clause) => clause.trim()).filter(Boolean);
 	for (const clause of clauses) {
 		if (new RegExp(String.raw`\b(?:do not|don't|dont|cannot|can't|cant|never)\s+(?:${adminVerbs})\b|\bnot\s+(?:${adminVerbs})\b`).test(clause)) continue;
 		const near = (verbs: string, target = adminTarget, chars = 80) => new RegExp(String.raw`\b(?:${verbs})\b[^\n]{0,${chars}}${target}|${target}[^\n]{0,${chars}}\b(?:${verbs})\b`).test(clause);
+		const reviewTarget = String.raw`(?:${memoryWord}\s+candidate|${memoryWord}\s+candidates|candidate\s+${memoryWord}|candidate\s+memories|pending\s+${memoryWord}|pending\s+memories|${memoryWord}\s+review\s+queue)`;
 		const looksLikeCode = codeContext.test(clause);
+		if (!looksLikeCode && new RegExp(String.raw`\b(?:review|triage|audit|show|list)\b[^\n]{0,80}${reviewTarget}`).test(clause)) return "review";
 		if (!looksLikeCode && (near("forget|delete|remove|deprecate") || new RegExp(String.raw`\bforget\b[^\n]{0,50}\b(?:this|that)\s+${memoryWord}\s*$`).test(clause))) return "forget";
 		if (!looksLikeCode && near("approve|promote")) return "promote";
 		if (!looksLikeCode && near("list|show")) return "list";
@@ -84,6 +86,7 @@ export function memoryAdminGuidance(prompt: string): string | undefined {
 	];
 	if (action === "add") lines.push("For remember/save requests, create a candidate by default with `memory-add.sh`; use approved state only when the user explicitly asks for approved future-context injection.");
 	if (action === "list") lines.push("For list/show requests, use `memory-list.sh` with an explicit project/task scope.");
+	if (action === "review") lines.push("For candidate review requests, use read-only `memory-review.sh` with an explicit project/task scope; show bounded previews, then ask which memory id to promote or forget before any mutation.");
 	if (action === "promote") lines.push("For promote/approve requests, use `memory-promote.sh` only for an explicit memory id or after the user selects one from a scoped list.");
 	if (action === "forget") lines.push("For forget/remove requests, use `memory-forget.sh` only for an explicit memory id or after the user selects one from a scoped list.");
 	return lines.join("\n");
@@ -124,6 +127,12 @@ export function formatMemoryStatsLines(stats: MemoryStatsResult): string[] {
 	if (!stats.available) return [`- scoped memory API: unavailable (${stats.reason})`];
 	const { candidate, approved, deprecated } = stats.counts;
 	return [`- scoped memory API: ok (${stats.scope}; ${candidate} candidate, ${approved} approved, ${deprecated} deprecated; ${stats.skipped} skipped)`];
+}
+
+export function formatMemoryReviewHintLines(stats: MemoryStatsResult): string[] {
+	if (!stats.available || stats.counts.candidate <= 0) return [];
+	const plural = stats.counts.candidate === 1 ? "candidate" : "candidates";
+	return [`- memory review: ${stats.counts.candidate} ${plural} pending; ask to review memory candidates to inspect bounded previews via read-only memory-review.sh`];
 }
 
 export async function buildMemoryContext(pi: ExtensionAPI, cwd: string, scope: MemoryContextScope): Promise<MemoryContextResult> {

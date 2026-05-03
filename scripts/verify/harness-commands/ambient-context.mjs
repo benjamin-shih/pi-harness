@@ -39,6 +39,16 @@ export async function runAmbientContextTests() {
 	assert(memoryContext.memoryAdminGuidance("List all memories for this project")?.includes("memory-list.sh"), "explicit all-worded project-scoped memories list prompts should get list guidance without all-scope instructions");
 	assert(memoryContext.memoryAdminGuidance("List memories for this task")?.includes("memory-list.sh"), "explicit task-scoped memories list prompts should get list guidance");
 	assert(memoryContext.memoryAdminGuidance("List all memories for this task")?.includes("memory-list.sh"), "explicit all-worded task-scoped memories list prompts should get list guidance without all-scope instructions");
+	const reviewGuidance = memoryContext.memoryAdminGuidance("Review memory candidates for this project");
+	assert(reviewGuidance?.includes("memory-review.sh"), "explicit memory candidate review prompts should get review guidance");
+	assert(reviewGuidance.includes("read-only"), "memory candidate review guidance should be read-only");
+	assert(reviewGuidance.includes("before any mutation"), "memory candidate review guidance should require explicit selection before mutation");
+	assert(memoryContext.memoryAdminGuidance("Show pending memories")?.includes("memory-review.sh"), "pending-memory prompts should get review guidance");
+	assert(!memoryContext.memoryAdminGuidance("Do not review memory candidates"), "negated review prompts should not get candidate review guidance");
+	assert(!memoryContext.memoryAdminGuidance("Never audit pending memories"), "negated audit prompts should not get candidate review guidance");
+	assert(!memoryContext.memoryAdminGuidance("Review memory-context.ts tests"), "code review prompts mentioning memory-context should not get candidate review guidance");
+	assert(!memoryContext.memoryAdminGuidance("Final blocker-only review of current uncommitted diff. Scope: read-only memory candidate review guidance/discovery."), "code-review prompts about memory-review implementation should not get candidate review guidance");
+	assert(!memoryContext.memoryAdminGuidance("Check explicit read-only memory candidate review only, .agents API ownership, no hidden review/writes/promotion."), "decision-review prompts mentioning memory candidate review should not get candidate review guidance");
 	assert(memoryContext.memoryAdminGuidance("Promote memory candidate mem_example")?.includes("memory-promote.sh"), "explicit promote memory candidate prompts should get promote guidance");
 	assert(memoryContext.memoryAdminGuidance("Promote memory mem_123")?.includes("memory-promote.sh"), "explicit promote memory id prompts should get promote guidance");
 	assert(memoryContext.memoryAdminGuidance("Forget this memory")?.includes("memory-forget.sh"), "explicit forget-this-memory prompts should get forget guidance");
@@ -111,6 +121,7 @@ export async function runAmbientContextTests() {
 	assert(rememberResult.systemPrompt.includes("create a candidate by default"), "remember guidance should default to candidate memory, not approved injection");
 	assert(rememberResult.systemPrompt.includes("memory_admin: included"), "ambient receipt should expose memory-admin guidance inclusion");
 	assert(!rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-add.sh")), "ambient memory-admin guidance should not write memory during prompt assembly");
+	assert(!rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh")), "ambient memory-admin guidance should not auto-review candidates during prompt assembly");
 
 	const omittedMemoryTask = createTaskHarness({
 		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
