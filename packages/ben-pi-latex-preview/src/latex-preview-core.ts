@@ -266,18 +266,6 @@ function transformMarkdownProse(text: string, transform: (text: string) => strin
 	return output;
 }
 
-function blankMarkdownCode(text: string): string {
-	let output = "";
-	let cursor = 0;
-	for (const code of markdownCodeSpans(text)) {
-		output += text.slice(cursor, code.start);
-		output += " ".repeat(code.end - code.start);
-		cursor = code.end;
-	}
-	output += text.slice(cursor);
-	return output;
-}
-
 function isUsefulInlineMath(tex: string): boolean {
 	if (tex.length > 220) return false;
 	if (/^\d+(?:\.\d{2})?$/.test(tex.trim())) return false;

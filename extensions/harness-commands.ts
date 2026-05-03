@@ -1,6 +1,6 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { assembleAmbientContext, type AmbientContextSnapshot } from "./shared/ambient-context";
 import { decideAmbientPolicy, shouldIncludeMemoryContext, shouldIncludeRepoContext } from "./shared/ambient-policy";
 import { buildMemoryContext, memoryAdminGuidance, memoryCandidateReminder } from "./shared/memory-context";
@@ -63,6 +63,9 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			activeMode = requested;
 		},
 	});
+	const sendDoctor = async (ctx: ExtensionContext) => {
+		pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer, lastAmbientContext), display: true });
+	};
 	pi.registerCommand("status", {
 		description: "Show current harness, model, tool, context, git, audit, memory, and task status",
 		handler: async (_args, ctx) => {
@@ -71,15 +74,11 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	});
 	pi.registerCommand("doctor", {
 		description: "Run a read-only harness health check with memory-spine and AGENTS task diagnostics",
-		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer, lastAmbientContext), display: true });
-		},
+		handler: async (_args, ctx) => sendDoctor(ctx),
 	});
 	pi.registerCommand("doct", {
 		description: "Alias for /doctor",
-		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer, lastAmbientContext), display: true });
-		},
+		handler: async (_args, ctx) => sendDoctor(ctx),
 	});
 	pi.registerCommand("memory", {
 		description: "Show session memory-spine checkpoint and compaction diagnostics",

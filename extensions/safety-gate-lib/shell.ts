@@ -339,9 +339,6 @@ export function extractOutputPathTokens(command: string, depth = 0): string[] {
 	}
 	return [...tokens];
 }
-function addPathTokens(tokens: Set<string>, raw: string): void {
-	for (const token of extractPathTokens(raw, true)) tokens.add(token);
-}
 export function extractCopyMoveSourcePathTokens(command: string, depth = 0): string[] {
 	const tokens = new Set<string>();
 	for (const segment of commandSegments(command)) {

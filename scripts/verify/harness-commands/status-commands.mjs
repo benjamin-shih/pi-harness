@@ -106,8 +106,11 @@ export async function runStatusCommandTests() {
 	assert(statusMessages[1].content.includes("latest diagnostic"), "/doctor should include memory-spine diagnostics");
 	assert(statusMessages[1].content.includes("memory review: 2 candidates pending"), "/doctor should surface pending memory candidate review availability");
 	assert(statusMessages[1].content.includes("Ask to review memory candidates when ready"), "/doctor should recommend explicit candidate review when candidates are pending");
+	await statusCommands.get("doct").handler("", commandCtx);
+	assert(statusMessages[2].customType === "harness-doctor", "/doct should use the same doctor output path");
+	assert(statusMessages[2].content.includes("## Harness doctor"), "/doct should render a doctor report");
 	await statusCommands.get("memory").handler("", commandCtx);
-	assert(statusMessages[2].customType === "harness-memory", "/memory should send a memory diagnostics message");
-	assert(statusMessages[2].content.includes("latest diagnostic error: context_length_exceeded"), "/memory should include latest diagnostic errors");
+	assert(statusMessages[3].customType === "harness-memory", "/memory should send a memory diagnostics message");
+	assert(statusMessages[3].content.includes("latest diagnostic error: context_length_exceeded"), "/memory should include latest diagnostic errors");
 	assert(!execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh")), "status/doctor should not auto-run memory-review.sh");
 }
