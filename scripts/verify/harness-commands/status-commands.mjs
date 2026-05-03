@@ -4,6 +4,11 @@ export async function runStatusCommandTests() {
 	const statusCommands = new Map();
 	const statusMessages = [];
 	const execCalls = [];
+	const memoryStatsPayload = {
+		memory_api_version: 1,
+		counts_by_state: { candidate: 2, approved: 1, deprecated: 0 },
+		skipped: 0,
+	};
 	const promptSizing = {
 		promptChars: 1000,
 		conversationChars: 2000,
@@ -68,7 +73,7 @@ export async function runStatusCommandTests() {
 			if (key === "rev-parse --show-toplevel") return { code: 0, stdout: `${root}\n`, stderr: "" };
 			if (key === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
 			if (key === "status --porcelain=v1 --untracked-files=all") return { code: 0, stdout: "", stderr: "" };
-			if (String(args[0] || "").endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, counts_by_state: { candidate: 2, approved: 1, deprecated: 0 }, skipped: 0 }), stderr: "" };
+			if (String(args[0] || "").endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload), stderr: "" };
 			if (key === "scripts/harness-audit.mjs --json" || key.endsWith("scripts/harness-audit.mjs --json")) {
 				return {
 					code: 0,

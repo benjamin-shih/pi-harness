@@ -55,14 +55,16 @@ function explicitMemoryAction(prompt: string): "add" | "list" | "promote" | "for
 	const memoryWord = String.raw`memor(?:y|ies)(?![-_.])`;
 	const adminTarget = String.raw`(?:durable\s+${memoryWord}|${memoryWord}\s+(?:record|records|candidate|candidates|entry|entries|id|admin)|(?:all\s+)?${memoryWord}\s+for\s+this\s+(?:project|task|repo|repository)|${memoryWord}\s+mem_[a-z0-9_-]+)`;
 	const adminVerbs = "remember|add|create|save|store|record|forget|delete|remove|deprecate|approve|promote|list|show|review|triage|audit";
-	const codeContext = /\b(code|code review|diff|uncommitted|serialization|tests?|files?|helper|function|module|shim|class|implementation|guidance|discovery)\b|\.[a-z0-9]{1,5}\b|\bmemory-[a-z0-9_-]+\b/;
+	const reviewTarget = String.raw`(?:${memoryWord}\s+candidate|${memoryWord}\s+candidates|candidate\s+${memoryWord}|candidate\s+memories|pending\s+${memoryWord}|pending\s+memories|${memoryWord}\s+review\s+queue)`;
+	const codeContext = /\b(code|diff|uncommitted|serialization|tests?|files?|helper|function|module|shim|class|implementation|guidance|discovery)\b|\.[a-z0-9]{1,5}\b|\bmemory-[a-z0-9_-]+\b/;
+	const negatedAdminRequest = new RegExp(String.raw`\b(?:do not|don't|dont|cannot|can't|cant|never)\s+(?:${adminVerbs})\b|\bnot\s+(?:${adminVerbs})\b`);
+	const reviewRequest = new RegExp(String.raw`\b(?:review|triage|audit|show|list)\b[^\n]{0,80}${reviewTarget}`);
 	const clauses = prompt.toLowerCase().split(/[.!?\n;]|,\s*(?:but|and)\s+/).map((clause) => clause.trim()).filter(Boolean);
 	for (const clause of clauses) {
-		if (new RegExp(String.raw`\b(?:do not|don't|dont|cannot|can't|cant|never)\s+(?:${adminVerbs})\b|\bnot\s+(?:${adminVerbs})\b`).test(clause)) continue;
+		if (negatedAdminRequest.test(clause)) continue;
 		const near = (verbs: string, target = adminTarget, chars = 80) => new RegExp(String.raw`\b(?:${verbs})\b[^\n]{0,${chars}}${target}|${target}[^\n]{0,${chars}}\b(?:${verbs})\b`).test(clause);
-		const reviewTarget = String.raw`(?:${memoryWord}\s+candidate|${memoryWord}\s+candidates|candidate\s+${memoryWord}|candidate\s+memories|pending\s+${memoryWord}|pending\s+memories|${memoryWord}\s+review\s+queue)`;
 		const looksLikeCode = codeContext.test(clause);
-		if (!looksLikeCode && new RegExp(String.raw`\b(?:review|triage|audit|show|list)\b[^\n]{0,80}${reviewTarget}`).test(clause)) return "review";
+		if (!looksLikeCode && reviewRequest.test(clause)) return "review";
 		if (!looksLikeCode && (near("forget|delete|remove|deprecate") || new RegExp(String.raw`\bforget\b[^\n]{0,50}\b(?:this|that)\s+${memoryWord}\s*$`).test(clause))) return "forget";
 		if (!looksLikeCode && near("approve|promote")) return "promote";
 		if (!looksLikeCode && near("list|show")) return "list";
@@ -130,9 +132,11 @@ export function formatMemoryStatsLines(stats: MemoryStatsResult): string[] {
 }
 
 export function formatMemoryReviewHintLines(stats: MemoryStatsResult): string[] {
-	if (!stats.available || stats.counts.candidate <= 0) return [];
-	const plural = stats.counts.candidate === 1 ? "candidate" : "candidates";
-	return [`- memory review: ${stats.counts.candidate} ${plural} pending; ask to review memory candidates to inspect bounded previews via read-only memory-review.sh`];
+	if (!stats.available) return [];
+	const candidateCount = stats.counts.candidate;
+	if (candidateCount <= 0) return [];
+	const plural = candidateCount === 1 ? "candidate" : "candidates";
+	return [`- memory review: ${candidateCount} ${plural} pending; ask to review memory candidates to inspect bounded previews via read-only memory-review.sh`];
 }
 
 export async function buildMemoryContext(pi: ExtensionAPI, cwd: string, scope: MemoryContextScope): Promise<MemoryContextResult> {
