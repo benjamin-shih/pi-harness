@@ -11,6 +11,8 @@ export const homeRoot = homedir();
 export const agentsRoot = process.env.AGENTS_SHARED_ROOT || join(homeRoot, ".agents");
 export const agentsTasksRoot = join(agentsRoot, "tasks");
 
+export const taskBindPayload = (overrides = {}) => ({ action: "created", bound: true, blocked: false, reason: "", task_id: "pi-task", project_root: root, ...overrides });
+
 export async function runRealAgentsTaskLayerTest() {
 	const realAgentsRoot = agentsRoot;
 	if (!existsSync(join(realAgentsRoot, "scripts", "task-api.sh"))) return;

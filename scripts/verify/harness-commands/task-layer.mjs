@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
-import { agentsRoot, agentsTasksRoot, assert, createTaskHarness, homeRoot, join, root, runRealAgentsTaskLayerTest } from "./support.mjs";
+import { agentsRoot, assert, createTaskHarness, homeRoot, join, root, runRealAgentsTaskLayerTest, taskBindPayload } from "./support.mjs";
 
 export async function runTaskLayerTests() {
 	const boundTask = createTaskHarness({
-		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
+		bindPayload: taskBindPayload(),
 	});
 	await boundTask.handlers.get("session_start")({ reason: "startup" }, boundTask.ctx);
 	const taskPromptResult = await boundTask.handlers.get("before_agent_start")({ prompt: "Implement ambient task binding", systemPrompt: "base" }, boundTask.ctx);
@@ -30,7 +30,7 @@ export async function runTaskLayerTests() {
 
 	const skippedArtifactTask = createTaskHarness({
 		artifactAddPayload: { artifact_api_version: 2, recorded: false },
-		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
+		bindPayload: taskBindPayload(),
 	});
 	await skippedArtifactTask.handlers.get("session_start")({ reason: "startup" }, skippedArtifactTask.ctx);
 	await skippedArtifactTask.handlers.get("before_agent_start")({ prompt: "Implement artifact accounting", systemPrompt: "base" }, skippedArtifactTask.ctx);
@@ -41,7 +41,7 @@ export async function runTaskLayerTests() {
 
 	const incompatibleClassify = createTaskHarness({
 		classifyPayload: { task_api_version: 2, weight: "standard", binding_mode: "auto" },
-		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "bad", task_dir: "/tmp/bad", runtime: "pi", session: "pi-session-1", project_root: root },
+		bindPayload: taskBindPayload({ task_id: "bad" }),
 	});
 	await incompatibleClassify.handlers.get("session_start")({ reason: "startup" }, incompatibleClassify.ctx);
 	const incompatibleClassifyResult = await incompatibleClassify.handlers.get("before_agent_start")({ prompt: "Implement task binding", systemPrompt: "base" }, incompatibleClassify.ctx);
@@ -55,7 +55,7 @@ export async function runTaskLayerTests() {
 	]) {
 		const badClassify = createTaskHarness({
 			classifyResult,
-			bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "bad", task_dir: "/tmp/bad", runtime: "pi", session: "pi-session-1", project_root: root },
+			bindPayload: taskBindPayload({ task_id: "bad" }),
 		});
 		await badClassify.handlers.get("session_start")({ reason: "startup" }, badClassify.ctx);
 		await badClassify.handlers.get("before_agent_start")({ prompt: `Implement task binding with ${label}`, systemPrompt: "base" }, badClassify.ctx);
@@ -63,14 +63,14 @@ export async function runTaskLayerTests() {
 	}
 
 	const incompatibleBind = createTaskHarness({
-		bindPayload: { task_api_version: 2, action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "bad", task_dir: "/tmp/bad", runtime: "pi", session: "pi-session-1", project_root: root },
+		bindPayload: taskBindPayload({ task_api_version: 2, task_id: "bad" }),
 	});
 	await incompatibleBind.handlers.get("session_start")({ reason: "startup" }, incompatibleBind.ctx);
 	const incompatibleBindResult = await incompatibleBind.handlers.get("before_agent_start")({ prompt: "Implement task binding", systemPrompt: "base" }, incompatibleBind.ctx);
 	assert(!incompatibleBindResult?.systemPrompt?.includes("## Active AGENTS Task Context"), "pi task layer should not inject context when task-bind returns an incompatible API version");
 
 	const blockedTask = createTaskHarness({
-		bindPayload: { action: "blocked", bound: false, created: false, blocked: true, reason: "lease held by another pi session", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-blocked", project_root: root },
+		bindPayload: taskBindPayload({ action: "blocked", bound: false, blocked: true, reason: "lease held by another pi session", task_id: "" }),
 	});
 	await blockedTask.handlers.get("session_start")({ reason: "startup" }, blockedTask.ctx);
 	const blockedResult = await blockedTask.handlers.get("before_agent_start")({ prompt: "Implement blocked task binding", systemPrompt: "base" }, blockedTask.ctx);
@@ -87,7 +87,7 @@ export async function runTaskLayerTests() {
 
 	const homeTask = createTaskHarness({
 		cwd: homeRoot,
-		bindPayload: { action: "skipped", bound: false, created: false, blocked: false, reason: "no matching task", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-home", project_root: homeRoot },
+		bindPayload: taskBindPayload({ action: "skipped", bound: false, reason: "no matching task", task_id: "", project_root: homeRoot }),
 	});
 	await homeTask.handlers.get("session_start")({ reason: "startup" }, homeTask.ctx);
 	await homeTask.handlers.get("before_agent_start")({ prompt: "Implement a harness improvement", systemPrompt: "base" }, homeTask.ctx);
@@ -100,7 +100,7 @@ export async function runTaskLayerTests() {
 
 	const bootstrapTask = createTaskHarness({
 		cwd: homeRoot,
-		bindPayload: { action: "skipped", bound: false, created: false, blocked: false, reason: "no matching task", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-home", project_root: homeRoot },
+		bindPayload: taskBindPayload({ action: "skipped", bound: false, reason: "no matching task", task_id: "", project_root: homeRoot }),
 	});
 	await bootstrapTask.handlers.get("session_start")({ reason: "startup" }, bootstrapTask.ctx);
 	await bootstrapTask.handlers.get("before_agent_start")({ prompt: "Implement a harness improvement", systemPrompt: "base" }, bootstrapTask.ctx);
@@ -113,9 +113,9 @@ export async function runTaskLayerTests() {
 
 	const staleTask = createTaskHarness({
 		bindPayloads: [
-			{ action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "task-a", task_dir: join(agentsTasksRoot, "task-a"), runtime: "pi", session: "pi-session-1", project_root: root },
-			{ action: "skipped", bound: false, created: false, blocked: false, reason: "home root", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-1", project_root: homeRoot },
-			{ action: "claimed_existing", bound: true, created: false, blocked: false, reason: "", task_id: "task-b", task_dir: join(agentsTasksRoot, "task-b"), runtime: "pi", session: "pi-session-1", project_root: root },
+			taskBindPayload({ task_id: "task-a" }),
+			taskBindPayload({ action: "skipped", bound: false, reason: "home root", task_id: "", project_root: homeRoot }),
+			taskBindPayload({ action: "claimed_existing", task_id: "task-b" }),
 		],
 	});
 	await staleTask.handlers.get("session_start")({ reason: "startup" }, staleTask.ctx);
@@ -131,8 +131,8 @@ export async function runTaskLayerTests() {
 
 	const shutdownTask = createTaskHarness({
 		bindPayloads: [
-			{ action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "task-a", task_dir: join(agentsTasksRoot, "task-a"), runtime: "pi", session: "pi-session-1", project_root: root },
-			{ action: "skipped", bound: false, created: false, blocked: false, reason: "home root", task_id: "", task_dir: "", runtime: "pi", session: "pi-session-1", project_root: homeRoot },
+			taskBindPayload({ task_id: "task-a" }),
+			taskBindPayload({ action: "skipped", bound: false, reason: "home root", task_id: "", project_root: homeRoot }),
 		],
 	});
 	await shutdownTask.handlers.get("session_start")({ reason: "startup" }, shutdownTask.ctx);

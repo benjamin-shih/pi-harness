@@ -1,5 +1,5 @@
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, createTaskHarness, join, agentsTasksRoot, root } from "./support.mjs";
+import { assert, createTaskHarness, join, root, taskBindPayload } from "./support.mjs";
 
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
@@ -91,7 +91,7 @@ export async function runAmbientContextTests() {
 	assert(!trivial.receipt, "ambient assembler should not add receipt noise for trivial prompts");
 
 	const boundTask = createTaskHarness({
-		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
+		bindPayload: taskBindPayload(),
 		memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep ambient behavior command-light." },
 	});
 	await boundTask.handlers.get("session_start")({ reason: "startup" }, boundTask.ctx);
@@ -113,7 +113,7 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");
 
 	const rememberTask = createTaskHarness({
-		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
+		bindPayload: taskBindPayload(),
 	});
 	await rememberTask.handlers.get("session_start")({ reason: "startup" }, rememberTask.ctx);
 	const rememberResult = await rememberTask.handlers.get("before_agent_start")({ prompt: "Remember this project preference: keep memory scoped and manual", systemPrompt: "base" }, rememberTask.ctx);
@@ -124,7 +124,7 @@ export async function runAmbientContextTests() {
 	assert(!rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh")), "ambient memory-admin guidance should not auto-review candidates during prompt assembly");
 
 	const omittedMemoryTask = createTaskHarness({
-		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "pi-task", task_dir: join(agentsTasksRoot, "pi-task"), runtime: "pi", session: "pi-session-1", project_root: root },
+		bindPayload: taskBindPayload(),
 		memoryContextPayload: { memory_api_version: 1, included: [], omitted: [{ reason: "credential-like metadata" }], context: "" },
 	});
 	await omittedMemoryTask.handlers.get("session_start")({ reason: "startup" }, omittedMemoryTask.ctx);
