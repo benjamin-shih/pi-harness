@@ -139,9 +139,10 @@ export function createTaskHarness({ bindPayload, bindPayloads, classifyPayload, 
 			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts"] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-classify.sh")) {
 				if (classifyResult) return classifyResult;
-				const promptFile = args[args.indexOf("--prompt-file") + 1];
-				if (args.includes("--prompt-file") && !existsSync(promptFile)) return { code: 1, stdout: "", stderr: "prompt file missing" };
-				return { code: 0, stdout: JSON.stringify({ task_api_version: 1, ...(classifyPayload ?? { weight: "standard", binding_mode: "auto", reasons: [] }) }), stderr: "" };
+				const promptFileIndex = args.indexOf("--prompt-file");
+				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
+				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
+				return { code: 0, stdout: JSON.stringify({ task_api_version: 1, ...(classifyPayload ?? { weight: "standard", binding_mode: "auto" }) }), stderr: "" };
 			}
 			if (cmd === "bash" && script.endsWith("task-candidate-root.sh")) {
 				const candidate = args[args.indexOf("--candidate") + 1] || cwd;

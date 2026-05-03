@@ -11,33 +11,25 @@ type BindResult = {
 	task_api_version?: number;
 	action: BindAction;
 	bound: boolean;
-	created: boolean;
 	blocked: boolean;
 	reason: string;
 	task_id: string;
-	task_dir: string;
-	runtime: string;
-	session: string;
 	project_root: string;
 };
 type TaskClassification = {
 	task_api_version?: number;
 	weight: TaskWeight;
 	binding_mode: "auto" | "skip" | "reuse_only";
-	reasons: string[];
 };
 type ExecResult = Awaited<ReturnType<ExtensionAPI["exec"]>>;
 type TaskApiInfo = {
 	task_api_version: number;
 	agents_shared_root: string;
-	tasks_root: string;
-	scripts_dir: string;
 	capabilities: string[];
 };
 type ArtifactAddResult = {
 	artifact_api_version?: number;
 	recorded: boolean;
-	reason?: string;
 };
 type ArtifactListResult = {
 	artifact_api_version?: number;
@@ -45,14 +37,9 @@ type ArtifactListResult = {
 };
 type CandidateRootResult = {
 	task_api_version: number;
-	candidate: string;
-	cwd: string;
 	project_root: string;
 	bindable: boolean;
-	safe_to_auto_create: boolean;
-	bootstrap_path: boolean;
 	auto_create: "auto" | "never";
-	reason: string;
 };
 type TaskLayerState = {
 	sessionId: string;

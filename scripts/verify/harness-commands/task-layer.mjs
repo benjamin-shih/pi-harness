@@ -40,7 +40,7 @@ export async function runTaskLayerTests() {
 	assert(skippedArtifactTask.sentMessages.at(-1).content.includes("0 recorded, 1 skipped"), "pi task layer should count unsupported artifact responses as skipped");
 
 	const incompatibleClassify = createTaskHarness({
-		classifyPayload: { task_api_version: 2, weight: "standard", binding_mode: "auto", reasons: [] },
+		classifyPayload: { task_api_version: 2, weight: "standard", binding_mode: "auto" },
 		bindPayload: { action: "created", bound: true, created: true, blocked: false, reason: "", task_id: "bad", task_dir: "/tmp/bad", runtime: "pi", session: "pi-session-1", project_root: root },
 	});
 	await incompatibleClassify.handlers.get("session_start")({ reason: "startup" }, incompatibleClassify.ctx);
@@ -49,7 +49,7 @@ export async function runTaskLayerTests() {
 	assert(!incompatibleClassify.execCalls.some((call) => call.args[0]?.endsWith("task-bind.sh")), "pi task layer should skip task-bind after incompatible classification");
 
 	for (const [label, classifyResult] of [
-		["missing version", { code: 0, stdout: JSON.stringify({ weight: "standard", binding_mode: "auto", reasons: [] }), stderr: "" }],
+		["missing version", { code: 0, stdout: JSON.stringify({ weight: "standard", binding_mode: "auto" }), stderr: "" }],
 		["invalid JSON", { code: 0, stdout: "not json", stderr: "" }],
 		["nonzero", { code: 1, stdout: "", stderr: "boom" }],
 	]) {
