@@ -99,12 +99,16 @@ export async function runStatusCommandTests() {
 	assert(statusMessages[0].content.includes("runtime extensions: 4"), "/status should include runtime extension count");
 	assert(statusMessages[0].content.includes("memory spine: warning"), "/status should include compact memory-spine health");
 	assert(statusMessages[0].content.includes("memory review: 2 candidates pending"), "/status should surface pending memory candidate review availability");
+	assert(statusMessages[0].content.includes("write semantics: durable memory mutations explicit-only; task operational writes automatic when bound"), "/status should distinguish durable memory writes from automatic task operational writes");
 	await statusCommands.get("doctor").handler("", commandCtx);
 	assert(statusMessages[1].customType === "harness-doctor", "/doctor should send a harness doctor message");
 	assert(statusMessages[1].content.includes("## Harness doctor"), "/doctor should render a doctor report");
 	assert(statusMessages[1].content.includes("package: ben-pi-harness 0.2.0"), "/doctor should include package version");
 	assert(statusMessages[1].content.includes("latest diagnostic"), "/doctor should include memory-spine diagnostics");
 	assert(statusMessages[1].content.includes("memory review: 2 candidates pending"), "/doctor should surface pending memory candidate review availability");
+	assert(statusMessages[1].content.includes("## Write semantics"), "/doctor should include write-semantics diagnostics");
+	assert(statusMessages[1].content.includes("durable memory mutations: explicit user request only"), "/doctor should make durable memory mutation semantics explicit");
+	assert(statusMessages[1].content.includes("task artifacts: metadata-only and policy-filtered"), "/doctor should describe artifact metadata write semantics");
 	assert(statusMessages[1].content.includes("Ask to review memory candidates when ready"), "/doctor should recommend explicit candidate review when candidates are pending");
 	await statusCommands.get("doct").handler("", commandCtx);
 	assert(statusMessages[2].customType === "harness-doctor", "/doct should use the same doctor output path");

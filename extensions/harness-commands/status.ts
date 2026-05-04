@@ -144,6 +144,19 @@ function doctorHealth(facts: HarnessFacts, taskLayer: StatusTaskLayer): "ok" | "
 	return !facts.audit.ok || facts.audit.audit.issues?.length || facts.memory.health === "warning" || taskLayer.health() === "warning" ? "warning" : "ok";
 }
 
+function writeSemanticsStatusLines(): string[] {
+	return ["- write semantics: durable memory mutations explicit-only; task operational writes automatic when bound; artifacts metadata-only/policy-filtered"];
+}
+
+function writeSemanticsDoctorSection(): string {
+	return [
+		"## Write semantics",
+		"- durable memory mutations: explicit user request only; approved scoped memory may be read for nontrivial turns",
+		"- task operational writes: automatic while bound via `.agents/tasks` leases, heartbeats, checkpoints, and status updates",
+		"- task artifacts: metadata-only and policy-filtered; raw prompts, transcripts, and file contents are not copied",
+	].join("\n");
+}
+
 export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): Promise<string> {
 	const facts = await buildHarnessFacts(pi, ctx, taskLayer);
 	return [
@@ -153,6 +166,7 @@ export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		...memorySpineStatusLines(facts.memory),
 		...formatMemoryStatsLines(facts.memoryApi),
 		...formatMemoryReviewHintLines(facts.memoryApi),
+		...writeSemanticsStatusLines(),
 		...taskLayer.statusLines(),
 		...ambientStatusLines(ambientContext),
 	].join("\n");
@@ -174,6 +188,8 @@ export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		"## Scoped memory API",
 		...formatMemoryStatsLines(facts.memoryApi),
 		...formatMemoryReviewHintLines(facts.memoryApi),
+		"",
+		writeSemanticsDoctorSection(),
 		"",
 		taskLayer.doctorSection(),
 		"",
