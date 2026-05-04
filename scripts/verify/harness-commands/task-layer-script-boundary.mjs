@@ -71,7 +71,7 @@ export async function runTaskLayerScriptBoundaryTests() {
 	assert(contextFailure.sentMessages.at(-1).content.includes("context failed"), "/doctor should expose task-context failure diagnostics");
 
 	const noArtifactCapability = createTaskHarness({
-		taskApiResult: jsonResult({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: join(agentsRoot, "tasks"), scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy"] }),
+		scriptResults: { "task-api.sh": jsonResult({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: join(agentsRoot, "tasks"), scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy"] }) },
 		bindPayload: taskBindPayload(),
 	});
 	await noArtifactCapability.handlers.get("session_start")({ reason: "startup" }, noArtifactCapability.ctx);

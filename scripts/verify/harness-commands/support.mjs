@@ -120,7 +120,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ taskApiResult, scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, artifactAddPayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, artifactAddPayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
@@ -150,7 +150,7 @@ export function createTaskHarness({ taskApiResult, scriptResults = {}, bindPaylo
 				const overridden = scriptResult(scriptName, { cmd, args, options });
 				if (overridden !== undefined) return overridden;
 			}
-			if (cmd === "bash" && script.endsWith("task-api.sh")) return taskApiResult ?? { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts"] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts"] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-classify.sh")) {
 				if (classifyResult) return classifyResult;
 				const promptFileIndex = args.indexOf("--prompt-file");

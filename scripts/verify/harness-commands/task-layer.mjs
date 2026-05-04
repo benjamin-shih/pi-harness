@@ -44,7 +44,7 @@ export async function runTaskLayerTests() {
 		["incompatible", { code: 0, stdout: JSON.stringify({ task_api_version: 2, agents_shared_root: agentsRoot, capabilities: [] }), stderr: "" }],
 		["malformed", { code: 0, stdout: "not json", stderr: "" }],
 	]) {
-		const unavailableTaskApi = createTaskHarness({ taskApiResult, bindPayload: taskBindPayload() });
+		const unavailableTaskApi = createTaskHarness({ scriptResults: { "task-api.sh": taskApiResult }, bindPayload: taskBindPayload() });
 		await unavailableTaskApi.handlers.get("session_start")({ reason: "startup" }, unavailableTaskApi.ctx);
 		const result = await unavailableTaskApi.handlers.get("before_agent_start")({ prompt: `Implement task binding with ${label} task API`, systemPrompt: "base" }, unavailableTaskApi.ctx);
 		assert(!result?.systemPrompt?.includes("## Active AGENTS Task Context"), `pi task layer should not inject context after ${label} task-api output`);
