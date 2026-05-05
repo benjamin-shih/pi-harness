@@ -60,7 +60,7 @@ function taskStateRows(value: string): VisibilityBoxRow[] {
 }
 
 function taskRows(taskLayer: StatusViewTaskLayer): VisibilityBoxRow[] {
-	// Adapt the current task-layer display lines without widening the task-layer API in this visual-only change.
+	// Task layer currently exposes display lines; map only known labels for status rendering.
 	const rows = taskLayer.statusLines().flatMap((line): VisibilityBoxRow[] => {
 		const [rawLabel, ...rest] = line.replace(/^[-*]\s*/, "").split(":");
 		const value = rest.join(":").trim();

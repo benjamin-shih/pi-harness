@@ -2,10 +2,6 @@ import type { TaskWeight } from "./prompt-guidance";
 
 const DETAILED_TASK_PATTERN = /\b(?:complex|detailed|risky|risk|architecture|architectural|multi-step|high-stakes|migration|release|research|audit|security|deployment|post-implementation|implementation review|independent scout|scout|planner|oracle|reviewer)\b/i;
 
-function formatOverlays(overlays: readonly string[]): string {
-	return overlays.length ? overlays.join(", ") : "none";
-}
-
 export function shouldIncludeSubagentTopologyGuidance(prompt: string, weight: TaskWeight): boolean {
 	if (weight === "trivial") return false;
 	return weight === "complex" || DETAILED_TASK_PATTERN.test(prompt);
@@ -26,7 +22,7 @@ export function buildSubagentTopologyReminder(prompt: string, weight: TaskWeight
 export function executionSubagentTopologyGuidance(profile: string, overlays: readonly string[]): string[] {
 	return [
 		"Subagent topology contract:",
-		`- Give subagents the same relevant execution route when applicable: profile ${profile}; overlays ${formatOverlays(overlays)}.`,
+		`- Give subagents the same relevant execution route when applicable: profile ${profile}; overlays ${overlays.length ? overlays.join(", ") : "none"}.`,
 		"- Use scout for independent codebase/context reconnaissance and researcher for source-backed external research.",
 		"- Use planner for ambiguous multi-step decomposition before major work.",
 		"- Use oracle for architecture, risk, route/profile consistency, and decision-drift review.",

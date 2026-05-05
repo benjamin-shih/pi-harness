@@ -23,7 +23,7 @@ export function visibilityBoxSentinel(title: string): string {
 
 function clip(value: string, width: number): string {
 	if (width <= 0) return "";
-	return value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…`;
+	return value.length <= width ? value : `${value.slice(0, width - 1)}…`;
 }
 
 function terminalColumns(): number {
@@ -33,10 +33,6 @@ function terminalColumns(): number {
 
 function boxWidth(columns: number | undefined, maxWidth = MAX_BOX_WIDTH): number {
 	return Math.min(maxWidth, Math.max(MIN_BOX_WIDTH, (columns ?? terminalColumns()) - 2));
-}
-
-function supportsColor(color: boolean | undefined): boolean {
-	return color === true;
 }
 
 function paint(value: string, code: string, color: boolean): string {
@@ -63,7 +59,7 @@ function boxRow(label: string, value: string, innerWidth: number, labelWidth: nu
 export function formatVisibilityBox(titleText: string, rows: VisibilityBoxRow[], options: VisibilityBoxOptions = {}): string {
 	const innerWidth = Math.max(0, boxWidth(options.columns, options.maxWidth) - 2);
 	const labelWidth = options.labelWidth ?? DEFAULT_LABEL_WIDTH;
-	const color = supportsColor(options.color);
+	const color = options.color === true;
 	const title = clip(`─ ${titleText} `, innerWidth);
 	const top = `╭${title}${"─".repeat(Math.max(0, innerWidth - title.length))}╮`;
 	return [
