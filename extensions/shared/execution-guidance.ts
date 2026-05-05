@@ -49,7 +49,7 @@ const OVERLAY_PATTERNS: Array<[ExecutionOverlay, RegExp]> = [
 
 const EXECUTION_INTENT_PATTERNS = [
 	/^\s*(?:go ahead|do it|do this|ship it|execute|one[- ]shot it)\s*[.!]*\s*$/i,
-	/\bgo ahead\b[^\n]{0,80}\b(?:implement|execute|ship|do|make|apply|run|commit|push|simplify|cleanup|clean up|refactor|write|author|continue)\b/i,
+	/\bgo ahead\b[^\n]{0,80}\b(?:implement|execute|ship|do|make|apply|run|commit|push|simplify|cleanup|clean up|refactor|write|author|continue|complete|finish|prepare)\b/i,
 	/\bgo ahead\b[^\n]{0,80}\b(?:with|from)\b[^\n]{0,80}\b(?:plan|implementation|work|task|changes|latest checkpoint|checkpoint)\b/i,
 	/^\s*(?:please\s+)?(?:execute|ship|one[- ]shot|implement)\b[^\n]{0,80}\b(?:this|it|the plan|the current task|end[- ]to[- ]end|to completion)\b/i,
 	/\btake (?:this|it) (?:through|to) (?:completion|the finish line)\b/i,

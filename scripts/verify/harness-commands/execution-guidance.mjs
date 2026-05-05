@@ -1,6 +1,10 @@
 import { loadExtensionModule } from "../harness.mjs";
 import { assert, createTaskHarness, taskBindPayload } from "./support.mjs";
 
+function assertSameArray(actual, expected, message) {
+	assert(actual.length === expected.length && actual.every((value, index) => value === expected[index]), message);
+}
+
 export async function runExecutionGuidanceTests() {
 	const execution = loadExtensionModule("extensions/shared/execution-guidance.ts");
 	assert(!execution.hasExecutionIntent("What does this repository do?"), "ordinary questions should not trigger execution protocol");
@@ -19,6 +23,8 @@ export async function runExecutionGuidanceTests() {
 	assert(execution.hasExecutionIntent("Go ahead with the plan"), "go-ahead plan prompts should trigger execution protocol");
 	assert(execution.hasExecutionIntent("Go ahead with implementation"), "go-ahead implementation-continuation prompts should trigger execution protocol");
 	assert(execution.hasExecutionIntent("Go ahead and continue from the latest checkpoint"), "go-ahead checkpoint continuation prompts should trigger execution protocol");
+	assert(execution.hasExecutionIntent("Go ahead and complete the next steps"), "go-ahead completion prompts should trigger execution protocol");
+	assert(execution.hasExecutionIntent("Go ahead and finish the implementation"), "go-ahead finish prompts should trigger execution protocol");
 
 	assert(execution.classifyExecutionProfile("Go ahead and implement the TypeScript extension tests") === "software", "software execution prompts should route to software profile");
 	assert(execution.classifyExecutionProfile("Go ahead and cut the changelog release") === "software", "release/changelog work should remain under software profile with overlay support");
@@ -26,6 +32,22 @@ export async function runExecutionGuidanceTests() {
 	assert(execution.classifyExecutionProfile("Execute the AI literature review and benchmark ablation") === "research_ai_ml", "AI research prompts should route to research profile");
 	assert(execution.classifyExecutionProfile("Run the quant backtest and statistical robustness checks") === "empirical_data", "data/quant prompts should route to empirical profile");
 	assert(execution.classifyExecutionProfile("Go ahead and write the documentation guide") === "documentation", "documentation prompts should route to documentation profile");
+
+	const goldenRoutes = [
+		{ prompt: "Go ahead and implement the TypeScript API cleanup", profile: "software", overlays: ["repo_cleanup"] },
+		{ prompt: "Go ahead and execute the GitHub Actions deployment rollback", profile: "devops", overlays: [] },
+		{ prompt: "Go ahead and execute the AI literature review and benchmark ablation", profile: "research_ai_ml", overlays: [] },
+		{ prompt: "Go ahead and run the quant backtest statistical robustness checks", profile: "empirical_data", overlays: [] },
+		{ prompt: "Go ahead and write the documentation guide", profile: "documentation", overlays: [] },
+		{ prompt: "Go ahead and prepare changelog release notes", profile: "software", overlays: ["release_changelog"] },
+		{ prompt: "Go ahead and run the dataset pandas visualization script", profile: "empirical_data", overlays: ["python_uv", "plotting"] },
+		{ prompt: "Go ahead and write the LaTeX proof in notes.tex", profile: "general_execution", overlays: ["math_latex"] },
+	];
+	for (const { prompt, profile, overlays: expectedOverlays } of goldenRoutes) {
+		const route = execution.buildExecutionGuidance(prompt);
+		assert(route?.profile === profile, `golden route profile mismatch for: ${prompt}`);
+		assertSameArray(route.overlays, expectedOverlays, `golden route overlays mismatch for: ${prompt}`);
+	}
 
 	const overlays = execution.classifyExecutionOverlays("Go ahead and implement the Python UV experiment, plot the Matplotlib figure, write the LaTeX proof, and prepare changelog release notes without leaking secrets");
 	for (const overlay of ["python_uv", "plotting", "math_latex", "release_changelog", "security_privacy"]) {
