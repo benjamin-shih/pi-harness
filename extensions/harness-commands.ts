@@ -16,6 +16,7 @@ import {
 	looksFileMutatingCommand,
 	type GitChangeSnapshot,
 } from "./harness-commands/cleanup-guard";
+import { buildExecutionGuidance } from "./shared/execution-guidance";
 import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
 import { applyMode, modeDescription, modeInstructions, modeNames } from "./harness-commands/modes";
 import {
@@ -124,6 +125,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		const cleanup = cleanupReminder(event.prompt, weight);
 		const memoryCandidates = memoryCandidateReminder(weight !== "trivial");
 		const memoryAdmin = memoryAdminGuidance(event.prompt);
+		const executionGuidance = buildExecutionGuidance(event.prompt)?.guidance;
 		const policy = decideAmbientPolicy(weight);
 		const repoSummary = shouldIncludeRepoContext(policy) ? await buildRepoContextSummary(pi, ctx.cwd) : undefined;
 		const taskScope = taskLayer.ambientScope();
@@ -139,6 +141,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			{ id: "memory", title: "Approved scoped memory", priority: 65, content: memoryContext?.content, reason: memoryContext?.reason ?? "memory disabled" },
 			{ id: "memory_candidates", title: "Durable memory candidates", priority: 66, content: memoryCandidates, reason: "trivial prompt" },
 			{ id: "memory_admin", title: "Explicit memory admin", priority: 67, content: memoryAdmin, reason: "no explicit memory admin request" },
+			{ id: "execution", title: "Ambient execution protocol", priority: 68, content: executionGuidance, reason: "no explicit execution intent" },
 			{ id: "repo", title: "Repo metadata", priority: 70, content: repoSummary ? formatRepoContext(repoSummary) : undefined, reason: repoSummary?.summary ?? "trivial prompt" },
 		], policy);
 		lastAmbientContext = ambient.snapshot;

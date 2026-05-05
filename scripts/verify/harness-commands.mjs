@@ -1,5 +1,6 @@
 import { runAmbientContextTests } from "./harness-commands/ambient-context.mjs";
 import { runCleanupGuardTests } from "./harness-commands/cleanup-guard.mjs";
+import { runExecutionGuidanceTests } from "./harness-commands/execution-guidance.mjs";
 import { runFinalVisibilityTests } from "./harness-commands/final-visibility.mjs";
 import { runModeBehaviorTests } from "./harness-commands/modes.mjs";
 import { runPromptGuidanceTests } from "./harness-commands/prompt-guidance.mjs";
@@ -9,6 +10,7 @@ import { runTaskLayerScriptBoundaryTests } from "./harness-commands/task-layer-s
 
 export async function runHarnessCommandBehaviorTests() {
 	await runAmbientContextTests();
+	await runExecutionGuidanceTests();
 	await runFinalVisibilityTests();
 	await runModeBehaviorTests();
 	await runPromptGuidanceTests();
