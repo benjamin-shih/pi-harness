@@ -144,7 +144,7 @@ function doctorHealth(facts: HarnessFacts, taskLayer: StatusTaskLayer): "ok" | "
 	return !facts.audit.ok || facts.audit.audit.issues?.length || facts.memory.health === "warning" || taskLayer.health() === "warning" ? "warning" : "ok";
 }
 
-const WRITE_SEMANTICS_STATUS_LINES = ["- write semantics: durable memory mutations explicit-only; task operational writes automatic when bound; artifacts metadata-only/policy-filtered"];
+const WRITE_SEMANTICS_STATUS_LINE = "- write semantics: durable memory mutations explicit-only; task operational writes automatic when bound; artifacts metadata-only/policy-filtered";
 
 const WRITE_SEMANTICS_DOCTOR_SECTION = [
 	"## Write semantics",
@@ -162,7 +162,7 @@ export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		...memorySpineStatusLines(facts.memory),
 		...formatMemoryStatsLines(facts.memoryApi),
 		...formatMemoryReviewHintLines(facts.memoryApi),
-		...WRITE_SEMANTICS_STATUS_LINES,
+		WRITE_SEMANTICS_STATUS_LINE,
 		...taskLayer.statusLines(),
 		...ambientStatusLines(ambientContext),
 	].join("\n");
