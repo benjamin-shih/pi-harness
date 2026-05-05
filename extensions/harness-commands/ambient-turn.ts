@@ -57,10 +57,11 @@ export async function buildAmbientTurn(pi: ExtensionAPI, ctx: ExtensionContext, 
 	const repoSummary = shouldIncludeRepoContext(policy) ? await buildRepoContextSummary(pi, ctx.cwd) : undefined;
 	const memoryProjectRoot = input.taskScope.projectRoot || repoSummary?.root;
 	const memoryContext = shouldIncludeMemoryContext(policy) ? await buildMemoryContext(pi, ctx.cwd, { projectRoot: memoryProjectRoot, taskId: input.taskScope.taskId }) : undefined;
+	const executionRoute = await buildExecutionGuidance(pi, ctx.cwd, input.prompt);
 	return assembleAmbientContext(input.baseSystemPrompt, input.weight, buildAmbientLanes({
 		...input,
 		memoryContext,
-		executionRoute: buildExecutionGuidance(input.prompt),
+		executionRoute,
 		repoSummary,
 	}), policy);
 }

@@ -12,6 +12,7 @@ export const agentsRoot = process.env.AGENTS_SHARED_ROOT || join(homeRoot, ".age
 export const agentsTasksRoot = join(agentsRoot, "tasks");
 
 export const taskBindPayload = (overrides = {}) => ({ action: "created", bound: true, blocked: false, reason: "", task_id: "pi-task", project_root: root, ...overrides });
+export const executionRoutePayload = (overrides = {}) => ({ execution_route_api_version: 1, execution_intent: true, profile: "software", overlays: [], summary: "profile software; overlays none", guidance: "## Ambient Execution Protocol\nExecution intent was detected.", ...overrides });
 
 export async function runRealAgentsTaskLayerTest() {
 	const realAgentsRoot = agentsRoot;
@@ -120,7 +121,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, artifactAddPayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, executionPayload, artifactAddPayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
@@ -157,6 +158,12 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
 				return { code: 0, stdout: JSON.stringify({ task_api_version: 1, ...(classifyPayload ?? { weight: "standard", binding_mode: "auto" }) }), stderr: "" };
+			}
+			if (cmd === "bash" && script.endsWith("execution-route.sh")) {
+				const promptFileIndex = args.indexOf("--prompt-file");
+				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
+				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
+				return { code: 0, stdout: JSON.stringify(executionPayload ?? { execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "", reasons: ["no explicit execution intent"] }), stderr: "" };
 			}
 			if (cmd === "bash" && script.endsWith("task-candidate-root.sh")) {
 				const candidate = args[args.indexOf("--candidate") + 1] || cwd;

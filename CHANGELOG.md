@@ -5,9 +5,24 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## 0.3.0 - 2026-05-05
+
+### Added
 - Ambient pi binding to the shared `.agents/tasks` control plane: pi can auto-bind/reuse tasks, inject task context, heartbeat leases, checkpoint meaningful turns, capture safe typed task-artifact metadata, and release current-session tasks on shutdown without slash-command usage.
 - Consumption of the versioned `.agents` task API and candidate-root policy instead of hardcoding bootstrap-path binding rules in TypeScript.
 - Consumption of `.agents` sensitive-path policy via `path-safety.sh`, keeping only Pi-specific UI and git-finalization behavior in the harness.
+- Consumption of the shared `.agents` ambient execution-route API so Pi no longer owns execution-intent, profile, overlay, or guidance routing rules.
 - Kitty/terminal titlebar spinner while an agent turn is running; idle tabs keep the compact `π` title.
 - `/doctor` (`/doct` alias) for read-only harness health checks across package audit, model/context/git state, tools, memory-spine status, and AGENTS task binding.
 - `/memory` for detailed memory-spine checkpoint, compaction, fallback, and diagnostic inspection.

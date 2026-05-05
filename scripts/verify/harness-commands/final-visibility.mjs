@@ -1,5 +1,5 @@
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, createTaskHarness, taskBindPayload, withEnv } from "./support.mjs";
+import { assert, createTaskHarness, executionRoutePayload, taskBindPayload, withEnv } from "./support.mjs";
 
 function stripAnsi(value) {
 	return value.replace(/\x1b\[[0-9;]*m/g, "");
@@ -82,7 +82,7 @@ export async function runFinalVisibilityTests() {
 	const elapsedThenVisibility = visibility.appendFinalVisibilityToAssistantMessage(uiPolish.appendElapsedToAssistantMessage(assistantMessage(), "0:02"), { ambient }, { columns: 80, color: false });
 	assert(elapsedThenVisibility.content.some((block) => block.text?.includes("Harness visibility")) && elapsedThenVisibility.content.some((block) => block.text?.includes("Elapsed wall time: 0:02")), "final visibility should compose with elapsed footer before it");
 
-	const harness = createTaskHarness({ bindPayload: taskBindPayload() });
+	const harness = createTaskHarness({ bindPayload: taskBindPayload(), executionPayload: executionRoutePayload() });
 	await harness.handlers.get("session_start")({ reason: "startup" }, harness.ctx);
 	await harness.handlers.get("before_agent_start")({ prompt: "Go ahead and implement final visibility", systemPrompt: "base" }, harness.ctx);
 	await harness.handlers.get("tool_result")({ toolName: "edit", input: { path: "src/final.ts" }, isError: false }, harness.ctx);

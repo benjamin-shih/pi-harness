@@ -18,16 +18,3 @@ export function buildSubagentTopologyReminder(prompt: string, weight: TaskWeight
 		"Ask subagents to adopt the same relevant profile and capability overlays for their lane.",
 	].join("\n");
 }
-
-export function executionSubagentTopologyGuidance(profile: string, overlays: readonly string[]): string[] {
-	return [
-		"Subagent topology contract:",
-		`- Give subagents the same relevant execution route when applicable: profile ${profile}; overlays ${overlays.length ? overlays.join(", ") : "none"}.`,
-		"- Use scout for independent codebase/context reconnaissance and researcher for source-backed external research.",
-		"- Use planner for ambiguous multi-step decomposition before major work.",
-		"- Use oracle for architecture, risk, route/profile consistency, and decision-drift review.",
-		"- Use reviewer for blocker-only post-implementation review before finalizing significant or risky changes.",
-		"- Use worker only for explicitly bounded implementation handoffs when safe and isolated; the main agent remains accountable.",
-		"- Keep subagent prompts bounded, prevent stray artifacts/progress.md, synthesize findings, and do not add extension-side orchestration.",
-	];
-}

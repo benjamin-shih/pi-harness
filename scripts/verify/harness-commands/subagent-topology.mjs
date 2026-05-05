@@ -14,11 +14,6 @@ export async function runSubagentTopologyTests() {
 	assert(light.includes("same relevant profile and capability overlays"), "light topology guidance should ask subagents to adopt relevant profiles/overlays");
 	assert(light.includes("main agent accountable"), "light topology guidance should keep the main agent accountable");
 
-	const executionTopology = topology.executionSubagentTopologyGuidance("research_ai_ml", ["security_privacy", "subagent_orchestration"]).join("\n");
-	assert(executionTopology.includes("profile research_ai_ml; overlays security_privacy, subagent_orchestration"), "execution topology should pass profile/overlays to subagents");
-	assert(executionTopology.includes("Use worker only for explicitly bounded implementation handoffs"), "execution topology should bound worker use");
-	assert(executionTopology.includes("do not add extension-side orchestration"), "execution topology should forbid extension-side orchestration");
-
 	const trivialHarness = createHarness([]);
 	const trivialResult = await trivialHarness.beforeAgentStart({ prompt: "What is the CLT?", systemPrompt: "base" }, { cwd: root });
 	assert(!trivialResult?.systemPrompt?.includes("## Subagent Topology Reminder"), "trivial harness prompts should not inject subagent topology guidance");

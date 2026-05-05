@@ -1,85 +1,52 @@
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, createTaskHarness, taskBindPayload } from "./support.mjs";
-
-function assertSameArray(actual, expected, message) {
-	assert(actual.length === expected.length && actual.every((value, index) => value === expected[index]), message);
-}
+import { agentsRoot, assert, createTaskHarness, executionRoutePayload, root, taskBindPayload } from "./support.mjs";
 
 export async function runExecutionGuidanceTests() {
 	const execution = loadExtensionModule("extensions/shared/execution-guidance.ts");
-	assert(!execution.hasExecutionIntent("What does this repository do?"), "ordinary questions should not trigger execution protocol");
-	assert(!execution.buildExecutionGuidance("Continue discussing the design tradeoffs"), "discussion-continuation prompts should not trigger execution protocol");
-	assert(!execution.hasExecutionIntent("How would you implement this?"), "implementation questions should not authorize execution");
-	assert(!execution.hasExecutionIntent("Can you explain how to implement this plan?"), "explanation questions should not authorize execution");
-	assert(!execution.hasExecutionIntent("Please explain how to implement this plan"), "explanation requests should not authorize execution");
-	assert(!execution.hasExecutionIntent("Make sense?"), "conversational make-sense questions should not authorize execution");
-	assert(!execution.hasExecutionIntent("Please make sense of this plan"), "make-sense explanation requests should not authorize execution");
-	assert(!execution.hasExecutionIntent("Continue with the plan discussion"), "plan-discussion prompts should not authorize execution");
-	assert(!execution.hasExecutionIntent("Please proceed with discussing the task"), "task-discussion prompts should not authorize execution");
-	assert(!execution.hasExecutionIntent("Continue"), "bare continue should not authorize automatic execution/commit policy");
-	assert(!execution.hasExecutionIntent("Proceed"), "bare proceed should not authorize automatic execution/commit policy");
-	assert(!execution.hasExecutionIntent("Continue with the plan"), "ambiguous plan continuation should not authorize automatic execution/commit policy");
-	assert(!execution.hasExecutionIntent("Proceed with implementation"), "ambiguous implementation continuation should not authorize automatic execution/commit policy");
-	assert(execution.hasExecutionIntent("Go ahead and implement the plan"), "go-ahead implementation prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Ship this end-to-end"), "ship/end-to-end prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Go ahead and write the docs"), "go-ahead writing prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Go ahead with the plan"), "go-ahead plan prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Go ahead with implementation"), "go-ahead implementation-continuation prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Go ahead and continue from the latest checkpoint"), "go-ahead checkpoint continuation prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Go ahead and complete the next steps"), "go-ahead completion prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Go ahead and finish the implementation"), "go-ahead finish prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Simplify the recently changed code. Preserve observable behavior."), "direct imperative cleanup prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Refactor this module preserving behavior"), "direct imperative refactor prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Fix the failing tests and verify locally"), "direct imperative fix prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Update the docs and verify the examples"), "direct imperative documentation prompts should trigger execution protocol");
-	assert(execution.hasExecutionIntent("Please update the docs and explain the new behavior"), "direct imperative prompts may include explanatory deliverables");
+	const execCalls = [];
+	const pi = {
+		exec: async (cmd, args, options) => {
+			execCalls.push({ cmd, args, options });
+			const promptFileIndex = args.indexOf("--prompt-file");
+			const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
+			assert(promptFile && existsSync(promptFile), "execution route adapter should pass prompt through a private temp file");
+			assert(!args.includes("Go ahead and implement the plan"), "execution route adapter should not pass raw prompt text on argv");
+			return { code: 0, stdout: JSON.stringify(executionRoutePayload({ overlays: ["repo_cleanup"], summary: "profile software; overlays repo_cleanup" })), stderr: "" };
+		},
+	};
+	const route = await execution.buildExecutionGuidance(pi, "/tmp/project", "Go ahead and implement the plan");
+	assert(route?.summary === "profile software; overlays repo_cleanup", "execution guidance should consume shared route script output");
+	assert(execCalls.at(-1).args[0].endsWith("execution-route.sh"), "execution guidance should call the .agents execution-route script");
+	assert(execCalls.at(-1).args.includes("--cwd"), "execution guidance should pass cwd to shared route script");
 
-	assert(execution.classifyExecutionProfile("Go ahead and implement the TypeScript extension tests") === "software", "software execution prompts should route to software profile");
-	assert(execution.classifyExecutionProfile("Go ahead and cut the changelog release") === "software", "release/changelog work should remain under software profile with overlay support");
-	assert(execution.classifyExecutionProfile("Simplify the recently changed code. Workflow: inspect, edit, verify") === "software", "generic workflow wording should not force devops profile for software cleanup tasks");
-	assert(execution.classifyExecutionProfile("Execute the GitHub Actions deployment rollback") === "devops", "CI/deployment prompts should route to devops profile");
-	assert(execution.classifyExecutionProfile("Update the GitHub workflow file") === "devops", "GitHub workflow file prompts should still route to devops profile");
-	assert(execution.classifyExecutionProfile("Execute the AI literature review and benchmark ablation") === "research_ai_ml", "AI research prompts should route to research profile");
-	assert(execution.classifyExecutionProfile("Run the quant backtest and statistical robustness checks") === "empirical_data", "data/quant prompts should route to empirical profile");
-	assert(execution.classifyExecutionProfile("Go ahead and write the documentation guide") === "documentation", "documentation prompts should route to documentation profile");
+	const noIntent = await execution.buildExecutionGuidance({ exec: async () => ({ code: 0, stdout: JSON.stringify({ execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "" }), stderr: "" }) }, "/tmp/project", "What does this do?");
+	assert(!noIntent, "non-execution script results should skip ambient execution guidance");
+	const incompatible = await execution.buildExecutionGuidance({ exec: async () => ({ code: 0, stdout: JSON.stringify({ execution_route_api_version: 999, execution_intent: true }), stderr: "" }) }, "/tmp/project", "Go ahead");
+	assert(!incompatible, "incompatible execution-route API versions should degrade without blocking");
 
-	const goldenRoutes = [
-		{ prompt: "Go ahead and implement the TypeScript API cleanup", profile: "software", overlays: ["repo_cleanup"] },
-		{ prompt: "Go ahead and execute the GitHub Actions deployment rollback", profile: "devops", overlays: [] },
-		{ prompt: "Go ahead and execute the AI literature review and benchmark ablation", profile: "research_ai_ml", overlays: [] },
-		{ prompt: "Go ahead and run the quant backtest statistical robustness checks", profile: "empirical_data", overlays: [] },
-		{ prompt: "Go ahead and write the documentation guide", profile: "documentation", overlays: [] },
-		{ prompt: "Go ahead and prepare changelog release notes", profile: "software", overlays: ["release_changelog"] },
-		{ prompt: "Simplify the recently changed code", profile: "software", overlays: ["repo_cleanup"] },
-		{ prompt: "Simplify the recently changed code. Workflow: inspect, edit, verify", profile: "software", overlays: ["repo_cleanup"] },
-		{ prompt: "Fix the failing tests and verify locally", profile: "software", overlays: [] },
-		{ prompt: "Update the docs and verify the examples", profile: "documentation", overlays: [] },
-		{ prompt: "Go ahead and run the dataset pandas visualization script", profile: "empirical_data", overlays: ["python_uv", "plotting"] },
-		{ prompt: "Go ahead and write the LaTeX proof in notes.tex", profile: "general_execution", overlays: ["math_latex"] },
-	];
-	for (const { prompt, profile, overlays: expectedOverlays } of goldenRoutes) {
-		const route = execution.buildExecutionGuidance(prompt);
-		assert(route?.profile === profile, `golden route profile mismatch for: ${prompt}`);
-		assertSameArray(route.overlays, expectedOverlays, `golden route overlays mismatch for: ${prompt}`);
+	const realScript = join(agentsRoot, "scripts", "execution-route.sh");
+	if (existsSync(realScript)) {
+		const realPi = {
+			exec: async (cmd, args, options) => {
+				try {
+					const stdout = execFileSync(cmd, args, { cwd: options?.cwd, env: process.env, encoding: "utf8", timeout: options?.timeout || 10_000 });
+					return { code: 0, stdout, stderr: "" };
+				} catch (error) {
+					return { code: error.status ?? 1, stdout: String(error.stdout || ""), stderr: String(error.stderr || error.message || "") };
+				}
+			},
+		};
+		const realRoute = await execution.buildExecutionGuidance(realPi, root, "Task: Simplify the recently changed code");
+		assert(realRoute?.summary === "profile software; overlays repo_cleanup", "real .agents execution-route script should support wrapped execution prompts");
 	}
 
-	const overlays = execution.classifyExecutionOverlays("Go ahead and implement the Python UV experiment, plot the Matplotlib figure, write the LaTeX proof, and prepare changelog release notes without leaking secrets");
-	for (const overlay of ["python_uv", "plotting", "math_latex", "release_changelog", "security_privacy"]) {
-		assert(overlays.includes(overlay), `execution overlay should include ${overlay}`);
-	}
-
-	const route = execution.buildExecutionGuidance("Go ahead and simplify the package dependency cleanup with subagents");
-	assert(route?.guidance.includes("## Ambient Execution Protocol"), "execution guidance should have a clear ambient section heading");
-	assert(route.summary === "profile software; overlays repo_cleanup, package_hygiene, subagent_orchestration", "execution route should expose a safe profile/overlay summary");
-	assert(route.guidance.includes("correct the route"), "execution guidance should ask agents to correct continuation-prompt routing from context");
-	assert(route.guidance.includes("Automatically commit and push"), "execution guidance should include auto commit/push policy");
-	assert(route.guidance.includes("incremental coherent commits"), "execution guidance should include incremental commit policy");
-	assert(route.guidance.includes("Subagent topology contract"), "execution guidance should include detailed subagent topology expectations");
-	assert(route.guidance.includes("profile software; overlays repo_cleanup, package_hygiene, subagent_orchestration"), "execution guidance should pass profile/overlays into subagent topology");
-	assert(route.guidance.includes("Use worker only for explicitly bounded implementation handoffs"), "execution guidance should bound worker subagents");
-	assert(route.guidance.includes("Final report"), "execution guidance should include final-report expectations");
-
-	const harness = createTaskHarness({ bindPayload: taskBindPayload() });
+	const harness = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		executionPayload: executionRoutePayload({ overlays: ["repo_cleanup"], summary: "profile software; overlays repo_cleanup", guidance: "## Ambient Execution Protocol\nSubagent topology contract\nAutomatically commit and push" }),
+	});
 	assert(!harness.commands.has("execute"), "ambient execution protocol should not add an /execute command yet");
 	await harness.handlers.get("session_start")({ reason: "startup" }, harness.ctx);
 	const result = await harness.handlers.get("before_agent_start")({ prompt: "Simplify the recently changed code. Preserve observable behavior.", systemPrompt: "base" }, harness.ctx);
@@ -88,8 +55,9 @@ export async function runExecutionGuidanceTests() {
 	assert(result.systemPrompt.includes("profile software; overlays repo_cleanup"), "ambient receipt should include safe execution route summary");
 	await harness.commands.get("status").handler("", harness.ctx);
 	assert(harness.sentMessages.at(-1).content.includes("exec     profile software; overlays repo_cleanup"), "/status should expose safe execution route metadata");
+
 	const discussion = createTaskHarness({ bindPayload: taskBindPayload() });
 	await discussion.handlers.get("session_start")({ reason: "startup" }, discussion.ctx);
 	const discussionResult = await discussion.handlers.get("before_agent_start")({ prompt: "Continue discussing the execution protocol design", systemPrompt: "base" }, discussion.ctx);
-	assert(!discussionResult.systemPrompt.includes("## Ambient Execution Protocol"), "discussion prompts should not include execution protocol guidance");
+	assert(!discussionResult.systemPrompt.includes("## Ambient Execution Protocol"), "discussion prompts should not include execution protocol guidance when the shared route script returns no intent");
 }
