@@ -1,12 +1,16 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { extensionEntrypoints as scanExtensionEntrypoints } from "./lib/extension-entrypoints.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const json = process.argv.includes("--json");
 
 const IGNORE_DIRS = new Set([".git", "node_modules"]);
 const SOURCE_EXTENSIONS = new Set([".ts", ".js", ".mjs", ".cjs", ".json", ".md", ".yml", ".yaml"]);
+const SINGLE_FILE_EXTENSION_LOC_LIMIT = 900;
+const MULTI_FILE_EXTENSION_BASE_LOC_LIMIT = 1_100;
+const MULTI_FILE_EXTENSION_PER_FILE_ALLOWANCE = 25;
 const STALE_PATTERNS = [
 	{ pattern: /\bgpt-?5\.2\b|\bgpt5\.2\b/gi, label: "stale GPT-5.2 model reference" },
 	{ pattern: /aesthetic-polish\.ts|catppuccin-footer\.ts/g, label: "stale folded UI extension filename" },
@@ -33,28 +37,7 @@ function walk(dir, files = []) {
 }
 
 function extensionEntrypoints() {
-	const dir = join(root, "extensions");
-	return readdirSync(dir, { withFileTypes: true })
-		.flatMap((entry) => {
-			const full = join(dir, entry.name);
-			if (entry.isFile() && [".ts", ".js"].includes(extname(entry.name))) return [full];
-			if (!entry.isDirectory()) return [];
-			const packageJson = join(full, "package.json");
-			if (existsSync(packageJson)) {
-				try {
-					const manifest = JSON.parse(readFileSync(packageJson, "utf8"));
-					return (manifest.pi?.extensions ?? []).map((path) => join(full, path)).filter(existsSync);
-				} catch {
-					return [];
-				}
-			}
-			const indexTs = join(full, "index.ts");
-			const indexJs = join(full, "index.js");
-			if (existsSync(indexTs)) return [indexTs];
-			if (existsSync(indexJs)) return [indexJs];
-			return [];
-		})
-		.sort();
+	return scanExtensionEntrypoints(root, { absolute: true });
 }
 
 function groupedExtensionStats(entrypoint) {
@@ -119,7 +102,9 @@ if (!entries.includes(join(root, "extensions", "session-continuity", "index.ts")
 if (existsSync(join(root, "extensions", "session-continuity.ts"))) issues.push("obsolete extensions/session-continuity.ts still exists");
 if (entries.length > 4) issues.push(`runtime extension entrypoint count is ${entries.length}; expected <= 4`);
 for (const group of extensionGroups) {
-	const limit = group.fileCount > 1 ? 1_200 : 900;
+	const limit = group.fileCount > 1
+		? MULTI_FILE_EXTENSION_BASE_LOC_LIMIT + (group.fileCount - 1) * MULTI_FILE_EXTENSION_PER_FILE_ALLOWANCE
+		: SINGLE_FILE_EXTENSION_LOC_LIMIT;
 	if (group.loc > limit) warnings.push(`${group.path} is ${group.loc} LOC across ${group.fileCount} file(s); consider another internal split`);
 }
 for (const match of staleMatches) issues.push(`${match.label}: ${match.file} (${match.match})`);

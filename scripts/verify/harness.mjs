@@ -1,8 +1,9 @@
 import { createRequire } from "node:module";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Module from "node:module";
+import { extensionEntrypoints as scanExtensionEntrypoints } from "../lib/extension-entrypoints.mjs";
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const requireFromVerify = createRequire(import.meta.url);
@@ -76,30 +77,5 @@ export async function withEnv(overrides, fn) {
 }
 
 export function extensionEntrypoints() {
-	return readdirSync(join(root, "extensions"), { withFileTypes: true })
-		.flatMap((entry) => {
-			const relativeDir = join("extensions", entry.name);
-			const full = join(root, relativeDir);
-			if (entry.isFile() && [".ts", ".js"].includes(extname(entry.name))) return [relativeDir];
-			if (!entry.isDirectory()) return [];
-
-			const packageJson = join(full, "package.json");
-			if (existsSync(packageJson)) {
-				try {
-					const manifest = JSON.parse(readFileSync(packageJson, "utf8"));
-					return (manifest.pi?.extensions ?? [])
-						.map((entryPath) => join(relativeDir, entryPath))
-						.filter((entryPath) => existsSync(join(root, entryPath)));
-				} catch {
-					return [];
-				}
-			}
-
-			for (const indexFile of ["index.ts", "index.js"]) {
-				const indexPath = join(relativeDir, indexFile);
-				if (existsSync(join(root, indexPath))) return [indexPath];
-			}
-			return [];
-		})
-		.sort();
+	return scanExtensionEntrypoints(root);
 }
