@@ -1,4 +1,4 @@
-import { skillsRoot } from "../shared/config";
+import { skillsRoot } from "./config";
 export type TaskWeight = "trivial" | "standard" | "complex";
 export const DISPLAY_MATH_RENDERING_INSTRUCTION = [
 	"## Display Math Rendering",

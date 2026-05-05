@@ -1,5 +1,5 @@
 import { decideAmbientPolicy, type AmbientPolicy } from "./ambient-policy";
-import type { TaskWeight } from "../harness-commands/prompt-guidance";
+import type { TaskWeight } from "./prompt-guidance";
 
 export type AmbientLaneStatus = "included" | "skipped";
 

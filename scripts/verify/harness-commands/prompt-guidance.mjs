@@ -2,7 +2,7 @@ import { loadExtensionModule } from "../harness.mjs";
 import { assert, createHarness, root, withEnv } from "./support.mjs";
 
 export async function runPromptGuidanceTests() {
-	const promptGuidance = loadExtensionModule("extensions/harness-commands/prompt-guidance.ts");
+	const promptGuidance = loadExtensionModule("extensions/shared/prompt-guidance.ts");
 	assert(promptGuidance.classifyPrompt("What is specificity?") === "trivial", "fallback prompt classifier should not treat incidental ci substrings as complex");
 	const basic = createHarness([]);
 	const result = await basic.beforeAgentStart({ prompt: "What is the CLT?", systemPrompt: "base" }, { cwd: root });

@@ -1,4 +1,4 @@
-import type { TaskWeight } from "../harness-commands/prompt-guidance";
+import type { TaskWeight } from "./prompt-guidance";
 
 export type AmbientReceiptMode = "off" | "compact";
 export type AmbientFeatureStatus = "not_enabled";

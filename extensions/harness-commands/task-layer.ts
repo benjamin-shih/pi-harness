@@ -5,7 +5,8 @@ import { modelSummary } from "../session-continuity/context";
 import { agentsRoot, agentsScriptPath } from "../shared/config";
 import { parseJson } from "../shared/json";
 import { withPrivateTempTextFile } from "../shared/private-temp";
-import type { TaskWeight } from "./prompt-guidance";
+import type { FinalTaskVisibility } from "../shared/final-visibility";
+import type { TaskWeight } from "../shared/prompt-guidance";
 type BindAction = "created" | "claimed_existing" | "refreshed_existing" | "skipped" | "blocked" | "error";
 type BindResult = {
 	task_api_version?: number;
@@ -52,6 +53,7 @@ type TaskLayerState = {
 	meaningfulActivity: boolean;
 	activity: { reads: number; writes: number; commands: number; errors: number };
 	artifactCount: number;
+	artifactRecordedThisTurn: number;
 	artifactSkipped: number;
 	active?: BindResult;
 	context?: string;
@@ -78,6 +80,7 @@ function initialState(): TaskLayerState {
 		meaningfulActivity: false,
 		activity: emptyActivity(),
 		artifactCount: 0,
+		artifactRecordedThisTurn: 0,
 		artifactSkipped: 0,
 		lastHeartbeatAt: 0,
 	};
@@ -89,6 +92,7 @@ function resetSessionState(state: TaskLayerState): void {
 	state.meaningfulActivity = false;
 	state.activity = emptyActivity();
 	state.artifactCount = 0;
+	state.artifactRecordedThisTurn = 0;
 	state.artifactSkipped = 0;
 	state.lastHeartbeatAt = 0;
 }
@@ -99,6 +103,7 @@ function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): vo
 	state.currentPromptNeedsTask = false;
 	state.activity = emptyActivity();
 	state.artifactCount = 0;
+	state.artifactRecordedThisTurn = 0;
 	state.artifactSkipped = 0;
 	state.meaningfulActivity = false;
 }
@@ -324,8 +329,10 @@ export function createAgentsTaskLayer() {
 				state.artifactSkipped++;
 				return;
 			}
-			if (payload.recorded) state.artifactCount++;
-			else state.artifactSkipped++;
+			if (payload.recorded) {
+				state.artifactCount++;
+				state.artifactRecordedThisTurn++;
+			} else state.artifactSkipped++;
 		} catch {
 			state.artifactSkipped++;
 		}
@@ -433,6 +440,14 @@ export function createAgentsTaskLayer() {
 		},
 		ambientScope(): { taskId?: string; projectRoot?: string } {
 			return { taskId: state.active?.task_id, projectRoot: state.active?.project_root };
+		},
+		finalVisibility(): FinalTaskVisibility {
+			const visibilityState: FinalTaskVisibility["state"] = state.active?.task_id ? "bound" : state.lastAction === "blocked" ? "blocked" : state.lastError ? "unavailable" : "not_bound";
+			return {
+				state: visibilityState,
+				activity: { ...state.activity },
+				artifacts: { recordedThisTurn: state.artifactRecordedThisTurn, skippedThisTurn: state.artifactSkipped },
+			};
 		},
 		doctorSection(): string {
 			return [

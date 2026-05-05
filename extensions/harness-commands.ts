@@ -16,6 +16,7 @@ import {
 	looksFileMutatingCommand,
 	type GitChangeSnapshot,
 } from "./harness-commands/cleanup-guard";
+import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
 import { applyMode, modeDescription, modeInstructions, modeNames } from "./harness-commands/modes";
 import {
 	cleanupReminder,
@@ -25,7 +26,7 @@ import {
 	MARKDOWN_HEADING_RENDERING_INSTRUCTION,
 	promptSuggestsMajorCleanup,
 	skillRoutingReminder,
-} from "./harness-commands/prompt-guidance";
+} from "./shared/prompt-guidance";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { buildDoctor, buildStatus } from "./harness-commands/status";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
@@ -40,6 +41,10 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	let currentPromptWasMajor = false;
 	let initialChangeSnapshot: GitChangeSnapshot | undefined;
 	let lastAmbientContext: AmbientContextSnapshot | undefined;
+	let finalVisibility: FinalVisibilityState | undefined;
+	const refreshFinalVisibility = () => {
+		finalVisibility = lastAmbientContext ? { ambient: lastAmbientContext, mode: activeMode, task: taskLayer.finalVisibility() } : undefined;
+	};
 	pi.registerCommand("mode", {
 		description: "Switch harness mode: fast, default, deep, readonly, full",
 		getArgumentCompletions: (prefix: string) => {
@@ -105,6 +110,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		await taskLayer.sessionStart(pi, ctx);
 	});
 	pi.on("before_agent_start", async (event, ctx) => {
+		finalVisibility = undefined;
 		const fallbackWeight = classifyPrompt(event.prompt);
 		sawFileMutation = false;
 		currentPromptIsCleanupGuard = event.prompt.includes(CLEANUP_GUARD_MARKER);
@@ -136,6 +142,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			{ id: "repo", title: "Repo metadata", priority: 70, content: repoSummary ? formatRepoContext(repoSummary) : undefined, reason: repoSummary?.summary ?? "trivial prompt" },
 		], policy);
 		lastAmbientContext = ambient.snapshot;
+		refreshFinalVisibility();
 		return ambient.systemPrompt === event.systemPrompt ? undefined : { systemPrompt: ambient.systemPrompt };
 	});
 	pi.on("tool_call", async (event) => {
@@ -149,6 +156,12 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	});
 	pi.on("tool_result", async (event, ctx) => {
 		await taskLayer.toolResult(pi, event, ctx);
+		refreshFinalVisibility();
+	});
+	pi.on("message_end", async (event) => {
+		if (event.message.role !== "assistant" || event.message.stopReason === "toolUse") return;
+		const message = appendFinalVisibilityToAssistantMessage(event.message, finalVisibility);
+		return message === event.message ? undefined : { message };
 	});
 	pi.on("agent_end", async (_event, ctx) => {
 		await taskLayer.agentEnd(pi, ctx);
@@ -162,6 +175,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		pi.sendUserMessage(cleanupGuardMessage(changedStats, currentPromptWasMajor), { deliverAs: "followUp" });
 	});
 	pi.on("session_shutdown", async (_event, ctx) => {
+		finalVisibility = undefined;
 		await taskLayer.sessionShutdown(pi, ctx);
 	});
 }
