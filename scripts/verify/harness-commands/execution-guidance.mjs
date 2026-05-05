@@ -36,7 +36,9 @@ export async function runExecutionGuidanceTests() {
 
 	assert(execution.classifyExecutionProfile("Go ahead and implement the TypeScript extension tests") === "software", "software execution prompts should route to software profile");
 	assert(execution.classifyExecutionProfile("Go ahead and cut the changelog release") === "software", "release/changelog work should remain under software profile with overlay support");
+	assert(execution.classifyExecutionProfile("Simplify the recently changed code. Workflow: inspect, edit, verify") === "software", "generic workflow wording should not force devops profile for software cleanup tasks");
 	assert(execution.classifyExecutionProfile("Execute the GitHub Actions deployment rollback") === "devops", "CI/deployment prompts should route to devops profile");
+	assert(execution.classifyExecutionProfile("Update the GitHub workflow file") === "devops", "GitHub workflow file prompts should still route to devops profile");
 	assert(execution.classifyExecutionProfile("Execute the AI literature review and benchmark ablation") === "research_ai_ml", "AI research prompts should route to research profile");
 	assert(execution.classifyExecutionProfile("Run the quant backtest and statistical robustness checks") === "empirical_data", "data/quant prompts should route to empirical profile");
 	assert(execution.classifyExecutionProfile("Go ahead and write the documentation guide") === "documentation", "documentation prompts should route to documentation profile");
@@ -49,6 +51,7 @@ export async function runExecutionGuidanceTests() {
 		{ prompt: "Go ahead and write the documentation guide", profile: "documentation", overlays: [] },
 		{ prompt: "Go ahead and prepare changelog release notes", profile: "software", overlays: ["release_changelog"] },
 		{ prompt: "Simplify the recently changed code", profile: "software", overlays: ["repo_cleanup"] },
+		{ prompt: "Simplify the recently changed code. Workflow: inspect, edit, verify", profile: "software", overlays: ["repo_cleanup"] },
 		{ prompt: "Fix the failing tests and verify locally", profile: "software", overlays: [] },
 		{ prompt: "Update the docs and verify the examples", profile: "documentation", overlays: [] },
 		{ prompt: "Go ahead and run the dataset pandas visualization script", profile: "empirical_data", overlays: ["python_uv", "plotting"] },
