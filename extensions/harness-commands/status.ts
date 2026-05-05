@@ -24,10 +24,11 @@ type HarnessFacts = {
 	git: GitSummary;
 	activeTools: string[];
 	sessionEntries: number;
-	audit: HarnessAuditResult;
 	memory: MemorySpineDiagnostics;
 	memoryApi: MemoryStatsResult;
 };
+
+type DoctorFacts = HarnessFacts & { audit: HarnessAuditResult };
 
 export type StatusTaskLayer = {
 	statusLines(): string[];
@@ -51,22 +52,17 @@ async function gitOutput(pi: ExtensionAPI, cwd: string, args: string[]): Promise
 async function gitSummary(pi: ExtensionAPI, cwd: string): Promise<GitSummary> {
 	const root = await gitOutput(pi, cwd, ["rev-parse", "--show-toplevel"]);
 	const branch = await gitOutput(pi, cwd, ["branch", "--show-current"]);
-	const status = await gitOutput(pi, cwd, ["status", "--porcelain=v1", "--untracked-files=all"]);
+	const status = await gitOutput(pi, cwd, ["status", "--porcelain=v1", "--untracked-files=no"]);
 	if (status === undefined) return { branch: undefined, root, summary: "not a git repo" };
-	if (!status) return { branch, root, summary: "clean" };
+	if (!status) return { branch, root, summary: "tracked clean (untracked not scanned)" };
 
 	let staged = 0;
 	let unstaged = 0;
-	let untracked = 0;
 	for (const line of status.split(/\r?\n/)) {
-		if (line.startsWith("??")) {
-			untracked++;
-			continue;
-		}
 		if (line[0] && line[0] !== " ") staged++;
 		if (line[1] && line[1] !== " ") unstaged++;
 	}
-	return { branch, root, summary: `${staged} staged, ${unstaged} unstaged, ${untracked} untracked` };
+	return { branch, root, summary: `${staged} staged, ${unstaged} unstaged tracked (untracked not scanned)` };
 }
 
 function contextSummary(ctx: ExtensionContext): string {
@@ -99,7 +95,6 @@ function formatHarnessAuditLines(result: HarnessAuditResult): string[] {
 
 async function buildHarnessFacts(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer): Promise<HarnessFacts> {
 	const git = await gitSummary(pi, ctx.cwd);
-	const audit = await runHarnessAudit(pi);
 	const branch = ctx.sessionManager.getBranch();
 	const taskScope = taskLayer.ambientScope?.() ?? {};
 	const memoryApi = await buildMemoryStats(pi, ctx.cwd, { projectRoot: taskScope.projectRoot || git.root, taskId: taskScope.taskId });
@@ -111,10 +106,14 @@ async function buildHarnessFacts(pi: ExtensionAPI, ctx: ExtensionContext, taskLa
 		git,
 		activeTools: pi.getActiveTools(),
 		sessionEntries: branch.length,
-		audit,
 		memory: buildMemorySpineDiagnostics(branch),
 		memoryApi,
 	};
+}
+
+async function buildDoctorFacts(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer): Promise<DoctorFacts> {
+	const [facts, audit] = await Promise.all([buildHarnessFacts(pi, ctx, taskLayer), runHarnessAudit(pi)]);
+	return { ...facts, audit };
 }
 
 function overviewLines(facts: HarnessFacts): string[] {
@@ -129,7 +128,7 @@ function overviewLines(facts: HarnessFacts): string[] {
 	];
 }
 
-function doctorRecommendations(facts: HarnessFacts, taskLayer: StatusTaskLayer): string[] {
+function doctorRecommendations(facts: DoctorFacts, taskLayer: StatusTaskLayer): string[] {
 	const recommendations: string[] = [];
 	if (!facts.audit.ok) recommendations.push("Run `npm run harness:audit` in the harness package; the slash-command audit call failed.");
 	else if (facts.audit.audit.issues?.length) recommendations.push("Fix harness audit issues before adding more harness features.");
@@ -140,7 +139,7 @@ function doctorRecommendations(facts: HarnessFacts, taskLayer: StatusTaskLayer):
 	return recommendations.length ? recommendations : ["None; harness checks are green."];
 }
 
-function doctorHealth(facts: HarnessFacts, taskLayer: StatusTaskLayer): "ok" | "warning" {
+function doctorHealth(facts: DoctorFacts, taskLayer: StatusTaskLayer): "ok" | "warning" {
 	return !facts.audit.ok || facts.audit.audit.issues?.length || facts.memory.health === "warning" || taskLayer.health() === "warning" ? "warning" : "ok";
 }
 
@@ -158,7 +157,6 @@ export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 	return [
 		"## Harness status",
 		...overviewLines(facts),
-		...formatHarnessAuditLines(facts.audit),
 		...memorySpineStatusLines(facts.memory),
 		...formatMemoryStatsLines(facts.memoryApi),
 		...formatMemoryReviewHintLines(facts.memoryApi),
@@ -169,7 +167,7 @@ export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 }
 
 export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): Promise<string> {
-	const facts = await buildHarnessFacts(pi, ctx, taskLayer);
+	const facts = await buildDoctorFacts(pi, ctx, taskLayer);
 	return [
 		"## Harness doctor",
 		`- health: ${doctorHealth(facts, taskLayer)}`,

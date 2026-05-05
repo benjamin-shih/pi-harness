@@ -72,7 +72,7 @@ export async function runStatusCommandTests() {
 			const key = args.join(" ");
 			if (key === "rev-parse --show-toplevel") return { code: 0, stdout: `${root}\n`, stderr: "" };
 			if (key === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
-			if (key === "status --porcelain=v1 --untracked-files=all") return { code: 0, stdout: "", stderr: "" };
+			if (key === "status --porcelain=v1 --untracked-files=no") return { code: 0, stdout: "", stderr: "" };
 			if (String(args[0] || "").endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload), stderr: "" };
 			if (key === "scripts/harness-audit.mjs --json" || key.endsWith("scripts/harness-audit.mjs --json")) {
 				return {
@@ -95,8 +95,11 @@ export async function runStatusCommandTests() {
 	assert(typeof statusCommands.get("doct")?.handler === "function", "harness should register /doct alias");
 	assert(typeof statusCommands.get("memory")?.handler === "function", "harness should register /memory");
 	await statusCommands.get("status").handler("", commandCtx);
-	assert(statusMessages[0].content.includes("harness audit: ok"), "/status should include harness audit health");
-	assert(statusMessages[0].content.includes("runtime extensions: 4"), "/status should include runtime extension count");
+	assert(!statusMessages[0].content.includes("harness audit:"), "/status should avoid the heavier harness audit subprocess");
+	assert(statusMessages[0].content.includes("tracked clean (untracked not scanned)"), "/status should avoid scanning untracked filenames");
+	assert(!execCalls.some((call) => String(call.args?.[0] || "").endsWith("harness-audit.mjs")), "/status should not run harness-audit.mjs");
+	assert(execCalls.some((call) => call.args.join(" ") === "status --porcelain=v1 --untracked-files=no"), "/status should request git status without untracked filenames");
+	assert(!execCalls.some((call) => call.args.join(" ") === "status --porcelain=v1 --untracked-files=all"), "/status should not request untracked filename scans");
 	assert(statusMessages[0].content.includes("memory spine: warning"), "/status should include compact memory-spine health");
 	assert(statusMessages[0].content.includes("memory review: 2 candidates pending"), "/status should surface pending memory candidate review availability");
 	assert(statusMessages[0].content.includes("write semantics: durable memory mutations explicit-only; task operational writes automatic when bound"), "/status should distinguish durable memory writes from automatic task operational writes");
@@ -104,6 +107,9 @@ export async function runStatusCommandTests() {
 	assert(statusMessages[1].customType === "harness-doctor", "/doctor should send a harness doctor message");
 	assert(statusMessages[1].content.includes("## Harness doctor"), "/doctor should render a doctor report");
 	assert(statusMessages[1].content.includes("package: ben-pi-harness 0.2.0"), "/doctor should include package version");
+	assert(statusMessages[1].content.includes("harness audit: ok"), "/doctor should include harness audit health");
+	assert(statusMessages[1].content.includes("runtime extensions: 4"), "/doctor should include runtime extension count");
+	assert(execCalls.some((call) => String(call.args?.[0] || "").endsWith("harness-audit.mjs")), "/doctor should run harness-audit.mjs");
 	assert(statusMessages[1].content.includes("latest diagnostic"), "/doctor should include memory-spine diagnostics");
 	assert(statusMessages[1].content.includes("memory review: 2 candidates pending"), "/doctor should surface pending memory candidate review availability");
 	assert(statusMessages[1].content.includes("## Write semantics"), "/doctor should include write-semantics diagnostics");

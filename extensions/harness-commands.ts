@@ -67,7 +67,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer, lastAmbientContext), display: true });
 	};
 	pi.registerCommand("status", {
-		description: "Show current harness, model, tool, context, git, audit, memory, and task status",
+		description: "Show a quick bounded harness, model, tool, context, git, memory, and task status",
 		handler: async (_args, ctx) => {
 			pi.sendMessage({ customType: "harness-status", content: await buildStatus(pi, ctx, taskLayer, lastAmbientContext), display: true });
 		},
