@@ -28,6 +28,7 @@ import {
 	promptSuggestsMajorCleanup,
 	skillRoutingReminder,
 } from "./shared/prompt-guidance";
+import { buildSubagentTopologyReminder } from "./shared/subagent-topology";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { buildDoctor, buildStatus } from "./harness-commands/status";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
@@ -123,6 +124,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		const activeModeInstructions = modeInstructions(activeMode);
 		const reminder = skillRoutingReminder(weight);
 		const cleanup = cleanupReminder(event.prompt, weight);
+		const subagentTopology = buildSubagentTopologyReminder(event.prompt, weight);
 		const memoryCandidates = memoryCandidateReminder(weight !== "trivial");
 		const memoryAdmin = memoryAdminGuidance(event.prompt);
 		const executionRoute = buildExecutionGuidance(event.prompt);
@@ -137,6 +139,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			{ id: "mode", title: "Active harness mode", priority: 30, content: activeModeInstructions, reason: "no active mode override" },
 			{ id: "skill_routing", title: "Skill routing", priority: 40, content: reminder, reason: "trivial prompt" },
 			{ id: "cleanup", title: "Post-change cleanup gate", priority: 50, content: cleanup, reason: "non-coding prompt" },
+			{ id: "subagent_topology", title: "Subagent topology", priority: 55, content: subagentTopology, reason: "not a detailed subagent-worthy prompt" },
 			{ id: "agents_task", title: "Active AGENTS task context", priority: 60, content: taskContext, reason: "no scoped active task context" },
 			{ id: "memory", title: "Approved scoped memory", priority: 65, content: memoryContext?.content, reason: memoryContext?.reason ?? "memory disabled" },
 			{ id: "memory_candidates", title: "Durable memory candidates", priority: 66, content: memoryCandidates, reason: "trivial prompt" },

@@ -1,3 +1,5 @@
+import { executionSubagentTopologyGuidance } from "./subagent-topology";
+
 export type ExecutionProfile = "software" | "devops" | "research_ai_ml" | "empirical_data" | "documentation" | "general_execution";
 export type ExecutionOverlay = "math_latex" | "release_changelog" | "python_uv" | "plotting" | "security_privacy" | "repo_cleanup" | "package_hygiene" | "subagent_orchestration";
 
@@ -100,7 +102,8 @@ export function buildExecutionGuidance(prompt: string): ExecutionRoute | undefin
 		...overlays.map((overlay) => OVERLAY_GUIDANCE[overlay]),
 		"Universal execution contract:",
 		"- Restate scope, assumptions, and done condition before major work; inspect repo/task state first.",
-		"- Load the smallest relevant skill set and use profile-appropriate subagents for scout/planning/oracle/review when they improve quality.",
+		"- Load the smallest relevant skill set and default to profile-appropriate subagents for detailed, risky, scout-worthy, or post-implementation-review work.",
+		...executionSubagentTopologyGuidance(profile, overlays),
 		"- Implement in coherent slices; verify narrowly after each slice; simplify touched code before finalizing.",
 		"- Automatically commit and push task-relevant verified changes. For larger tasks, make incremental coherent commits so history stays revertable.",
 		"- Never stage unrelated dirty files, secrets, or generated junk; stop and report if safe isolation is impossible.",

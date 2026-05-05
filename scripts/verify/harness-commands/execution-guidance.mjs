@@ -60,7 +60,9 @@ export async function runExecutionGuidanceTests() {
 	assert(route.guidance.includes("correct the route"), "execution guidance should ask agents to correct continuation-prompt routing from context");
 	assert(route.guidance.includes("Automatically commit and push"), "execution guidance should include auto commit/push policy");
 	assert(route.guidance.includes("incremental coherent commits"), "execution guidance should include incremental commit policy");
-	assert(route.guidance.includes("subagents"), "execution guidance should include subagent-use expectations");
+	assert(route.guidance.includes("Subagent topology contract"), "execution guidance should include detailed subagent topology expectations");
+	assert(route.guidance.includes("profile software; overlays repo_cleanup, package_hygiene, subagent_orchestration"), "execution guidance should pass profile/overlays into subagent topology");
+	assert(route.guidance.includes("Use worker only for explicitly bounded implementation handoffs"), "execution guidance should bound worker subagents");
 	assert(route.guidance.includes("Final report"), "execution guidance should include final-report expectations");
 
 	const harness = createTaskHarness({ bindPayload: taskBindPayload() });
