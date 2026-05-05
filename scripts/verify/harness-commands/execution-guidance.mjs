@@ -34,6 +34,7 @@ export async function runExecutionGuidanceTests() {
 
 	const route = execution.buildExecutionGuidance("Go ahead and simplify the package dependency cleanup with subagents");
 	assert(route?.guidance.includes("## Ambient Execution Protocol"), "execution guidance should have a clear ambient section heading");
+	assert(route.summary === "profile software; overlays repo_cleanup, package_hygiene, subagent_orchestration", "execution route should expose a safe profile/overlay summary");
 	assert(route.guidance.includes("correct the route"), "execution guidance should ask agents to correct continuation-prompt routing from context");
 	assert(route.guidance.includes("Automatically commit and push"), "execution guidance should include auto commit/push policy");
 	assert(route.guidance.includes("incremental coherent commits"), "execution guidance should include incremental commit policy");
@@ -46,6 +47,9 @@ export async function runExecutionGuidanceTests() {
 	const result = await harness.handlers.get("before_agent_start")({ prompt: "Go ahead and implement the execution protocol end-to-end", systemPrompt: "base" }, harness.ctx);
 	assert(result.systemPrompt.includes("## Ambient Execution Protocol"), "execution prompts should include ambient execution protocol guidance");
 	assert(result.systemPrompt.includes("execution: included"), "ambient receipt should expose execution protocol inclusion");
+	assert(result.systemPrompt.includes("profile software; overlays none"), "ambient receipt should include safe execution route summary");
+	await harness.commands.get("status").handler("", harness.ctx);
+	assert(harness.sentMessages.at(-1).content.includes("ambient execution: profile software; overlays none"), "/status should expose safe execution route metadata");
 	const discussion = createTaskHarness({ bindPayload: taskBindPayload() });
 	await discussion.handlers.get("session_start")({ reason: "startup" }, discussion.ctx);
 	const discussionResult = await discussion.handlers.get("before_agent_start")({ prompt: "Continue discussing the execution protocol design", systemPrompt: "base" }, discussion.ctx);

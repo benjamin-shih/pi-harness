@@ -9,6 +9,7 @@ export type AmbientContextLane = {
 	priority: number;
 	content?: string;
 	reason?: string;
+	publicSummary?: string;
 };
 
 export type AmbientContextLaneSnapshot = {
@@ -17,6 +18,7 @@ export type AmbientContextLaneSnapshot = {
 	status: AmbientLaneStatus;
 	chars: number;
 	reason?: string;
+	publicSummary?: string;
 };
 
 export type AmbientContextSnapshot = {
@@ -37,6 +39,7 @@ export type AmbientContextAssembly = {
 };
 
 const RECEIPT_MAX_CHARS = 1_200;
+const SUMMARY_MAX_CHARS = 96;
 
 function cleanInline(value: string | undefined): string | undefined {
 	const clean = value?.replace(/\s+/g, " ").trim();
@@ -48,6 +51,12 @@ function includedContent(lane: AmbientContextLane): string | undefined {
 	return content ? content : undefined;
 }
 
+function cleanPublicSummary(value: string | undefined): string | undefined {
+	const summary = cleanInline(value);
+	if (!summary) return undefined;
+	return summary.length <= SUMMARY_MAX_CHARS ? summary : `${summary.slice(0, SUMMARY_MAX_CHARS - 1)}…`;
+}
+
 function laneSnapshot(lane: AmbientContextLane): AmbientContextLaneSnapshot {
 	const content = includedContent(lane);
 	return {
@@ -56,11 +65,12 @@ function laneSnapshot(lane: AmbientContextLane): AmbientContextLaneSnapshot {
 		status: content ? "included" : "skipped",
 		chars: content?.length ?? 0,
 		reason: content ? undefined : cleanInline(lane.reason ?? "empty"),
+		publicSummary: content ? cleanPublicSummary(lane.publicSummary) : undefined,
 	};
 }
 
 function formatLaneReceipt(lane: AmbientContextLaneSnapshot): string {
-	if (lane.status === "included") return `  - ${lane.id}: included, ${lane.chars} chars`;
+	if (lane.status === "included") return `  - ${lane.id}: included, ${lane.chars} chars${lane.publicSummary ? `, ${lane.publicSummary}` : ""}`;
 	return `  - ${lane.id}: skipped${lane.reason ? `, ${lane.reason}` : ""}`;
 }
 
@@ -102,14 +112,20 @@ export function assembleAmbientContext(baseSystemPrompt: string, weight: TaskWei
 	};
 }
 
+function executionSummary(snapshot: AmbientContextSnapshot): string | undefined {
+	return snapshot.lanes.find((lane) => lane.id === "execution" && lane.status === "included")?.publicSummary;
+}
+
 export function ambientStatusLines(snapshot: AmbientContextSnapshot | undefined): string[] {
 	if (!snapshot) return ["- ambient context: not assembled yet"];
 	const included = snapshot.lanes.filter((lane) => lane.status === "included").length;
 	const skipped = snapshot.lanes.length - included;
+	const execution = executionSummary(snapshot);
 	return [
 		`- ambient context: ${snapshot.weight}, ${included} included / ${skipped} skipped lane(s)`,
+		execution ? `- ambient execution: ${execution}` : undefined,
 		`- ambient memory/advisory: personal ${snapshot.personalContext}, advisory ${snapshot.advisorySubagents}, vector memory ${snapshot.vectorMemory ? "on" : "off"}`,
-	];
+	].filter((line): line is string => Boolean(line));
 }
 
 export function ambientDoctorSection(snapshot: AmbientContextSnapshot | undefined): string {

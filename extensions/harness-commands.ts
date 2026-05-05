@@ -125,7 +125,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		const cleanup = cleanupReminder(event.prompt, weight);
 		const memoryCandidates = memoryCandidateReminder(weight !== "trivial");
 		const memoryAdmin = memoryAdminGuidance(event.prompt);
-		const executionGuidance = buildExecutionGuidance(event.prompt)?.guidance;
+		const executionRoute = buildExecutionGuidance(event.prompt);
 		const policy = decideAmbientPolicy(weight);
 		const repoSummary = shouldIncludeRepoContext(policy) ? await buildRepoContextSummary(pi, ctx.cwd) : undefined;
 		const taskScope = taskLayer.ambientScope();
@@ -141,7 +141,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			{ id: "memory", title: "Approved scoped memory", priority: 65, content: memoryContext?.content, reason: memoryContext?.reason ?? "memory disabled" },
 			{ id: "memory_candidates", title: "Durable memory candidates", priority: 66, content: memoryCandidates, reason: "trivial prompt" },
 			{ id: "memory_admin", title: "Explicit memory admin", priority: 67, content: memoryAdmin, reason: "no explicit memory admin request" },
-			{ id: "execution", title: "Ambient execution protocol", priority: 68, content: executionGuidance, reason: "no explicit execution intent" },
+			{ id: "execution", title: "Ambient execution protocol", priority: 68, content: executionRoute?.guidance, publicSummary: executionRoute?.summary, reason: "no explicit execution intent" },
 			{ id: "repo", title: "Repo metadata", priority: 70, content: repoSummary ? formatRepoContext(repoSummary) : undefined, reason: repoSummary?.summary ?? "trivial prompt" },
 		], policy);
 		lastAmbientContext = ambient.snapshot;

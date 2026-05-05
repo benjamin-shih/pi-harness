@@ -4,6 +4,7 @@ export type ExecutionOverlay = "math_latex" | "release_changelog" | "python_uv" 
 export type ExecutionRoute = {
 	profile: ExecutionProfile;
 	overlays: ExecutionOverlay[];
+	summary: string;
 	guidance: string;
 };
 
@@ -81,10 +82,15 @@ function formatOverlays(overlays: ExecutionOverlay[]): string {
 	return overlays.length ? overlays.join(", ") : "none";
 }
 
+export function formatExecutionRouteSummary(route: Pick<ExecutionRoute, "profile" | "overlays">): string {
+	return `profile ${route.profile}; overlays ${formatOverlays(route.overlays)}`;
+}
+
 export function buildExecutionGuidance(prompt: string): ExecutionRoute | undefined {
 	if (!hasExecutionIntent(prompt)) return undefined;
 	const profile = classifyExecutionProfile(prompt);
 	const overlays = classifyExecutionOverlays(prompt);
+	const summary = formatExecutionRouteSummary({ profile, overlays });
 	const lines = [
 		"## Ambient Execution Protocol",
 		"Execution intent was detected. Treat this as authorization to execute the current task, not merely discuss it.",
@@ -101,5 +107,5 @@ export function buildExecutionGuidance(prompt: string): ExecutionRoute | undefin
 		"- Before final push, run the repo's full local verification when available, then watch remote CI/checks when practical.",
 		"- Final report: role/profile, changed files/behavior, commits, verification/CI, subagents used, residual risks, and unrelated repo state.",
 	];
-	return { profile, overlays, guidance: lines.join("\n") };
+	return { profile, overlays, summary, guidance: lines.join("\n") };
 }

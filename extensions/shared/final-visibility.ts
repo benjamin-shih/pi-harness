@@ -20,6 +20,10 @@ function laneIncluded(snapshot: AmbientContextSnapshot | undefined, id: string):
 	return snapshot?.lanes.some((lane) => lane.id === id && lane.status === "included") ?? false;
 }
 
+function laneSummary(snapshot: AmbientContextSnapshot | undefined, id: string): string | undefined {
+	return snapshot?.lanes.find((lane) => lane.id === id && lane.status === "included")?.publicSummary;
+}
+
 function taskSummary(task: FinalTaskVisibility | undefined): string {
 	if (!task) return "task ops: unavailable";
 	if (task.state === "blocked") return "task ops: blocked";
@@ -51,9 +55,11 @@ function bounded(line: string): string {
 export function formatFinalVisibility(state: FinalVisibilityState | undefined): string | undefined {
 	const weight = state?.ambient?.weight;
 	if (!state || weight === "trivial") return undefined;
+	const execution = laneSummary(state.ambient, "execution");
 	const segments = [
 		`ambient: ${weight ?? "unknown"}`,
 		state.mode ? `mode: ${state.mode}` : undefined,
+		execution ? `execution: ${execution}` : undefined,
 		taskSummary(state.task),
 		activitySummary(state.task),
 		artifactSummary(state.task),

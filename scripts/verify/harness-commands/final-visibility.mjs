@@ -20,6 +20,7 @@ export async function runFinalVisibilityTests() {
 		version: "v0",
 		weight: "standard",
 		lanes: [
+			{ id: "execution", title: "Ambient execution protocol", status: "included", chars: 100, publicSummary: "profile software; overlays none" },
 			{ id: "memory", title: "Approved scoped memory", status: "included", chars: 20 },
 			{ id: "repo", title: "Repo metadata", status: "skipped", chars: 0, reason: "untracked secret.txt not scanned" },
 		],
@@ -40,6 +41,7 @@ export async function runFinalVisibilityTests() {
 	assert(footer.includes("Harness visibility:"), "final visibility should render a compact footer");
 	assert(footer.includes("ambient: standard"), "final visibility should include prompt weight");
 	assert(footer.includes("mode: fast"), "final visibility should include active mode when set");
+	assert(footer.includes("execution: profile software; overlays none"), "final visibility should include safe execution routing metadata");
 	assert(footer.includes("task ops: bound"), "final visibility should summarize task binding without task ids");
 	assert(footer.includes("activity: r1/w2/c3/e0"), "final visibility should summarize turn activity counts");
 	assert(footer.includes("artifacts: 2 metadata records, 1 skipped"), "final visibility should summarize metadata artifact capture");
@@ -60,11 +62,12 @@ export async function runFinalVisibilityTests() {
 
 	const harness = createTaskHarness({ bindPayload: taskBindPayload() });
 	await harness.handlers.get("session_start")({ reason: "startup" }, harness.ctx);
-	await harness.handlers.get("before_agent_start")({ prompt: "Implement final visibility", systemPrompt: "base" }, harness.ctx);
+	await harness.handlers.get("before_agent_start")({ prompt: "Go ahead and implement final visibility", systemPrompt: "base" }, harness.ctx);
 	await harness.handlers.get("tool_result")({ toolName: "edit", input: { path: "src/final.ts" }, isError: false }, harness.ctx);
 	const final = await harness.handlers.get("message_end")({ message: assistantMessage() }, harness.ctx);
 	const finalText = final?.message?.content.at(-1)?.text ?? "";
 	assert(finalText.includes("Harness visibility:"), "harness should append final visibility on final assistant messages");
+	assert(finalText.includes("execution: profile software; overlays none"), "harness final visibility should include execution route metadata when detected");
 	assert(finalText.includes("task ops: bound"), "harness final visibility should include task binding state");
 	assert(finalText.includes("activity: r0/w1/c0/e0"), "harness final visibility should include observed turn activity");
 	assert(finalText.includes("artifacts: 1 metadata record"), "harness final visibility should include artifact metadata captured this turn");

@@ -78,14 +78,16 @@ export async function runAmbientContextTests() {
 
 	const assembled = ambient.assembleAmbientContext("base", "standard", [
 		{ id: "late", title: "Late", priority: 20, content: "late content" },
-		{ id: "early", title: "Early", priority: 10, content: "early content" },
-		{ id: "empty", title: "Empty", priority: 30, reason: "not needed" },
+		{ id: "early", title: "Early", priority: 10, content: "early content", publicSummary: "safe summary" },
+		{ id: "empty", title: "Empty", priority: 30, reason: "not needed", publicSummary: "should stay hidden" },
 	]);
 	assert(assembled.systemPrompt.indexOf("early content") < assembled.systemPrompt.indexOf("late content"), "ambient assembler should preserve deterministic priority order");
 	assert(assembled.receipt.includes("## Ambient Context Receipt"), "ambient assembler should add a receipt for nontrivial prompts");
 	assert(assembled.receipt.includes("policy: nontrivial_prompt"), "ambient receipt should include policy reasons");
 	assert(assembled.receipt.includes("vector_memory: no"), "ambient receipt should document that vector memory is disabled");
+	assert(assembled.receipt.includes("early: included, 13 chars, safe summary"), "ambient receipt should include safe summaries for included lanes");
 	assert(assembled.receipt.includes("empty: skipped, not needed"), "ambient receipt should include skipped lane reasons");
+	assert(!assembled.receipt.includes("should stay hidden"), "ambient receipt should not include summaries for skipped lanes");
 
 	const trivial = ambient.assembleAmbientContext("base", "trivial", [{ id: "one", title: "One", priority: 10, content: "one" }]);
 	assert(!trivial.receipt, "ambient assembler should not add receipt noise for trivial prompts");
