@@ -112,22 +112,6 @@ export function assembleAmbientContext(baseSystemPrompt: string, weight: TaskWei
 	};
 }
 
-function executionSummary(snapshot: AmbientContextSnapshot): string | undefined {
-	return snapshot.lanes.find((lane) => lane.id === "execution" && lane.status === "included")?.publicSummary;
-}
-
-export function ambientStatusLines(snapshot: AmbientContextSnapshot | undefined): string[] {
-	if (!snapshot) return ["- ambient context: not assembled yet"];
-	const included = snapshot.lanes.filter((lane) => lane.status === "included").length;
-	const skipped = snapshot.lanes.length - included;
-	const execution = executionSummary(snapshot);
-	return [
-		`- ambient context: ${snapshot.weight}, ${included} included / ${skipped} skipped lane(s)`,
-		execution ? `- ambient execution: ${execution}` : undefined,
-		`- ambient memory/advisory: personal ${snapshot.personalContext}, advisory ${snapshot.advisorySubagents}, vector memory ${snapshot.vectorMemory ? "on" : "off"}`,
-	].filter((line): line is string => Boolean(line));
-}
-
 export function ambientDoctorSection(snapshot: AmbientContextSnapshot | undefined): string {
 	if (!snapshot) return ["## Ambient context", "- status: not assembled yet"].join("\n");
 	return [

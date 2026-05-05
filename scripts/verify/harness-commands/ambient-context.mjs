@@ -1,5 +1,5 @@
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, createTaskHarness, join, root, taskBindPayload } from "./support.mjs";
+import { assert, createTaskHarness, root, taskBindPayload } from "./support.mjs";
 
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
@@ -7,7 +7,6 @@ export async function runAmbientContextTests() {
 	const repoContext = loadExtensionModule("extensions/shared/repo-context.ts");
 	const memoryContext = loadExtensionModule("extensions/shared/memory-context.ts");
 	assert(typeof ambient.assembleAmbientContext === "function", "ambient context module should export assembler");
-	assert(typeof ambient.ambientStatusLines === "function", "ambient context module should export status lines");
 	assert(ambientPolicy.decideAmbientPolicy("trivial").receipt === "off", "ambient policy should suppress receipts for trivial prompts");
 	assert(ambientPolicy.decideAmbientPolicy("standard").personalContext === "auto_scoped", "ambient policy should auto-consider scoped approved memory for nontrivial prompts");
 	assert(ambientPolicy.shouldIncludeRepoContext(ambientPolicy.decideAmbientPolicy("standard")), "ambient policy should include repo context for nontrivial prompts");
