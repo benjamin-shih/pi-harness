@@ -5,7 +5,7 @@ import { modelSummary } from "../session-continuity/context";
 import { agentsRoot, agentsScriptPath } from "../shared/config";
 import { parseJson } from "../shared/json";
 import { withPrivateTempTextFile } from "../shared/private-temp";
-export type TaskWeight = "trivial" | "standard" | "complex";
+import type { TaskWeight } from "./prompt-guidance";
 type BindAction = "created" | "claimed_existing" | "refreshed_existing" | "skipped" | "blocked" | "error";
 type BindResult = {
 	task_api_version?: number;
