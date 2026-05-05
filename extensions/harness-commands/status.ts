@@ -1,9 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { ambientDoctorSection, ambientStatusLines, type AmbientContextSnapshot } from "../shared/ambient-context";
+import { ambientDoctorSection, type AmbientContextSnapshot } from "../shared/ambient-context";
 import { buildMemoryStats, formatMemoryReviewHintLines, formatMemoryStatsLines, type MemoryStatsResult } from "../shared/memory-context";
-import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, memorySpineStatusLines, type MemorySpineDiagnostics } from "../session-continuity/diagnostics";
+import { formatStatusView } from "../shared/status-view";
+import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemorySpineDiagnostics } from "../session-continuity/diagnostics";
 
 type HarnessAudit = {
 	packageVersion: string;
@@ -143,8 +144,6 @@ function doctorHealth(facts: DoctorFacts, taskLayer: StatusTaskLayer): "ok" | "w
 	return !facts.audit.ok || facts.audit.audit.issues?.length || facts.memory.health === "warning" || taskLayer.health() === "warning" ? "warning" : "ok";
 }
 
-const WRITE_SEMANTICS_STATUS_LINE = "- write semantics: durable memory mutations explicit-only; task operational writes automatic when bound; artifacts metadata-only/policy-filtered";
-
 const WRITE_SEMANTICS_DOCTOR_SECTION = [
 	"## Write semantics",
 	"- durable memory mutations: explicit user request only; approved scoped memory may be read for nontrivial turns",
@@ -154,16 +153,7 @@ const WRITE_SEMANTICS_DOCTOR_SECTION = [
 
 export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): Promise<string> {
 	const facts = await buildHarnessFacts(pi, ctx, taskLayer);
-	return [
-		"## Harness status",
-		...overviewLines(facts),
-		...memorySpineStatusLines(facts.memory),
-		...formatMemoryStatsLines(facts.memoryApi),
-		...formatMemoryReviewHintLines(facts.memoryApi),
-		WRITE_SEMANTICS_STATUS_LINE,
-		...taskLayer.statusLines(),
-		...ambientStatusLines(ambientContext),
-	].join("\n");
+	return ["## Harness status", formatStatusView(facts, taskLayer, ambientContext)].join("\n");
 }
 
 export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): Promise<string> {

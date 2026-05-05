@@ -71,7 +71,7 @@ export async function runExecutionGuidanceTests() {
 	assert(result.systemPrompt.includes("execution: included"), "ambient receipt should expose execution protocol inclusion");
 	assert(result.systemPrompt.includes("profile software; overlays none"), "ambient receipt should include safe execution route summary");
 	await harness.commands.get("status").handler("", harness.ctx);
-	assert(harness.sentMessages.at(-1).content.includes("ambient execution: profile software; overlays none"), "/status should expose safe execution route metadata");
+	assert(harness.sentMessages.at(-1).content.includes("exec     profile software; overlays none"), "/status should expose safe execution route metadata");
 	const discussion = createTaskHarness({ bindPayload: taskBindPayload() });
 	await discussion.handlers.get("session_start")({ reason: "startup" }, discussion.ctx);
 	const discussionResult = await discussion.handlers.get("before_agent_start")({ prompt: "Continue discussing the execution protocol design", systemPrompt: "base" }, discussion.ctx);

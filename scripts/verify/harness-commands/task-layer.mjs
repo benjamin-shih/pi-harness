@@ -52,7 +52,7 @@ export async function runTaskLayerTests() {
 			assert(!unavailableTaskApi.execCalls.some((call) => call.args[0]?.endsWith(scriptName)), `pi task layer should not call ${scriptName} after ${label} task-api output`);
 		}
 		await unavailableTaskApi.commands.get("status").handler("", unavailableTaskApi.ctx);
-		assert(unavailableTaskApi.sentMessages.at(-1).content.includes("active task: unavailable"), `/status should report unavailable task binding after ${label} task-api output`);
+		assert(unavailableTaskApi.sentMessages.at(-1).content.includes("state    unavailable"), `/status should report unavailable task binding after ${label} task-api output`);
 	}
 
 	const incompatibleClassify = createTaskHarness({
@@ -98,7 +98,7 @@ export async function runTaskLayerTests() {
 	assert(!blockedTask.execCalls.some((call) => call.args[0]?.endsWith("task-event.sh")), "pi task layer should not checkpoint an unbound blocked task");
 	assert(!blockedTask.execCalls.some((call) => call.args[0]?.endsWith("task-status.sh")), "pi task layer should not update task status for an unbound blocked task");
 	await blockedTask.commands.get("status").handler("", blockedTask.ctx);
-	assert(blockedTask.sentMessages.at(-1).content.includes("active task: blocked"), "/status should keep blocked bind state visible");
+	assert(blockedTask.sentMessages.at(-1).content.includes("state    blocked"), "/status should keep blocked bind state visible");
 	assert(blockedTask.sentMessages.at(-1).content.includes("lease held by another pi session"), "/status should keep the blocked bind reason visible");
 
 	const homeTask = createTaskHarness({

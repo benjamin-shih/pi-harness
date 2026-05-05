@@ -108,8 +108,8 @@ export async function runAmbientContextTests() {
 	assert(result.systemPrompt.includes("## Repo Context"), "standard prompts should include passive repo metadata");
 	assert(result.systemPrompt.includes("repo: included"), "ambient receipt should show repo metadata inclusion");
 	await boundTask.commands.get("status").handler("", boundTask.ctx);
-	assert(boundTask.sentMessages.at(-1).content.includes("ambient context:"), "/status should expose the last ambient context decision");
-	assert(boundTask.sentMessages.at(-1).content.includes("scoped memory API:"), "/status should expose scoped memory API diagnostics");
+	assert(boundTask.sentMessages.at(-1).content.includes("╭─ Ambient"), "/status should expose the last ambient context decision");
+	assert(boundTask.sentMessages.at(-1).content.includes("╭─ Memory"), "/status should expose scoped memory API diagnostics");
 	await boundTask.commands.get("doctor").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Ambient context"), "/doctor should include ambient context diagnostics");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");

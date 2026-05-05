@@ -67,7 +67,7 @@ After loading this package in pi, these commands provide explicit overrides and 
 
 ```text
 /mode [fast|default|deep|readonly|full]
-/status            # quick bounded snapshot; avoids heavy audit/untracked filename scans
+/status            # visual bounded snapshot; avoids heavy audit/untracked filename scans
 /doctor            # heavier diagnostics/audit; /doct alias also works
 /memory
 /checkpoint [note]

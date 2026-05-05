@@ -36,7 +36,7 @@ export async function runTaskLayerScriptBoundaryTests() {
 		assert(!hasCall(bindFailure, "task-event.sh") && !hasCall(bindFailure, "task-status.sh"), `task layer should not checkpoint after ${label} task-bind output`);
 		assertNoRawPromptArg(bindFailure, prompt);
 		await bindFailure.commands.get("status").handler("", bindFailure.ctx);
-		assert(bindFailure.sentMessages.at(-1).content.includes("active task: unavailable"), `/status should report unavailable task after ${label} task-bind output`);
+		assert(bindFailure.sentMessages.at(-1).content.includes("state    unavailable"), `/status should report unavailable task after ${label} task-bind output`);
 	}
 
 	for (const [label, candidateResult] of [
@@ -66,7 +66,7 @@ export async function runTaskLayerScriptBoundaryTests() {
 	const contextResult = await contextFailure.handlers.get("before_agent_start")({ prompt: "Implement context failure", systemPrompt: "base" }, contextFailure.ctx);
 	assert(!contextResult?.systemPrompt?.includes("## Active AGENTS Task Context"), "task-context failure should not inject a stale context block");
 	await contextFailure.commands.get("status").handler("", contextFailure.ctx);
-	assert(contextFailure.sentMessages.at(-1).content.includes("active task: pi-task"), "task-context failure should leave the bound task visible");
+	assert(contextFailure.sentMessages.at(-1).content.includes("state    bound · pi-task"), "task-context failure should leave the bound task visible");
 	await contextFailure.commands.get("doctor").handler("", contextFailure.ctx);
 	assert(contextFailure.sentMessages.at(-1).content.includes("context failed"), "/doctor should expose task-context failure diagnostics");
 
