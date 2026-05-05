@@ -2,9 +2,21 @@ import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { AmbientContextSnapshot } from "./ambient-context";
 
 const FOOTER_TITLE = "Harness visibility";
-const FOOTER_SENTINEL = `╭─ ${FOOTER_TITLE}`;
-const BOX_INNER_WIDTH = 68;
+const FOOTER_SENTINEL = "╭─ Harness";
+const DEFAULT_TERMINAL_COLUMNS = 72;
+const MIN_BOX_WIDTH = 12;
+const MAX_BOX_WIDTH = 96;
 const LABEL_WIDTH = 8;
+const RESET = "\x1b[0m";
+const DIM_CYAN = "\x1b[36;2m";
+const BOLD_CYAN = "\x1b[36;1m";
+const SOFT_GREEN = "\x1b[32m";
+const SOFT_AMBER = "\x1b[33m";
+
+export type FinalVisibilityFormatOptions = {
+	columns?: number;
+	color?: boolean;
+};
 
 export type FinalTaskVisibility = {
 	state: "bound" | "not_bound" | "blocked" | "unavailable";
@@ -52,24 +64,56 @@ function displayExecution(summary: string): string {
 }
 
 function clip(value: string, width: number): string {
-	return value.length <= width ? value : `${value.slice(0, width - 1)}…`;
+	if (width <= 0) return "";
+	return value.length <= width ? value : `${value.slice(0, Math.max(0, width - 1))}…`;
 }
 
-function boxRow(label: string, value: string): string {
-	const content = ` ${label.padEnd(LABEL_WIDTH)} ${value}`;
-	return `│${clip(content, BOX_INNER_WIDTH).padEnd(BOX_INNER_WIDTH)}│`;
+function terminalColumns(): number {
+	const envColumns = Number.parseInt(process.env.COLUMNS ?? "", 10);
+	return process.stdout.columns || (Number.isFinite(envColumns) ? envColumns : DEFAULT_TERMINAL_COLUMNS);
 }
 
-function box(lines: Array<[string, string]>): string {
-	const title = `─ ${FOOTER_TITLE} `;
+function boxWidth(columns: number | undefined): number {
+	return Math.min(MAX_BOX_WIDTH, Math.max(MIN_BOX_WIDTH, (columns ?? terminalColumns()) - 2));
+}
+
+function supportsColor(color: boolean | undefined): boolean {
+	return color === true;
+}
+
+function paint(value: string, code: string, color: boolean): string {
+	return color ? `${code}${value}${RESET}` : value;
+}
+
+function boxRow(label: string, value: string, innerWidth: number, color: boolean): string {
+	const labelText = label.padEnd(LABEL_WIDTH);
+	const valueWidth = Math.max(0, innerWidth - LABEL_WIDTH - 2);
+	const valueText = clip(value, valueWidth);
+	const padding = " ".repeat(Math.max(0, innerWidth - LABEL_WIDTH - valueText.length - 2));
 	return [
-		`╭${title}${"─".repeat(Math.max(0, BOX_INNER_WIDTH - title.length))}╮`,
-		...lines.map(([label, value]) => boxRow(label, value)),
-		`╰${"─".repeat(BOX_INNER_WIDTH)}╯`,
+		paint("│", DIM_CYAN, color),
+		" ",
+		paint(labelText, BOLD_CYAN, color),
+		" ",
+		paint(valueText, label === "memory" ? SOFT_AMBER : SOFT_GREEN, color),
+		padding,
+		paint("│", DIM_CYAN, color),
+	].join("");
+}
+
+function box(lines: Array<[string, string]>, options: FinalVisibilityFormatOptions): string {
+	const innerWidth = Math.max(0, boxWidth(options.columns) - 2);
+	const color = supportsColor(options.color);
+	const title = clip(`─ ${FOOTER_TITLE} `, innerWidth);
+	const top = `╭${title}${"─".repeat(Math.max(0, innerWidth - title.length))}╮`;
+	return [
+		paint(top, DIM_CYAN, color),
+		...lines.map(([label, value]) => boxRow(label, value, innerWidth, color)),
+		paint(`╰${"─".repeat(innerWidth)}╯`, DIM_CYAN, color),
 	].join("\n");
 }
 
-export function formatFinalVisibility(state: FinalVisibilityState | undefined): string | undefined {
+export function formatFinalVisibility(state: FinalVisibilityState | undefined, options: FinalVisibilityFormatOptions = {}): string | undefined {
 	const weight = state?.ambient?.weight;
 	if (!state || weight === "trivial") return undefined;
 	const execution = laneSummary(state.ambient, "execution");
@@ -81,12 +125,12 @@ export function formatFinalVisibility(state: FinalVisibilityState | undefined): 
 	if (execution) lines.push(["exec", displayExecution(execution)]);
 	if (activity || artifacts) lines.push(["turn", [activity ? `activity ${activity}` : undefined, artifacts ? `artifacts ${artifacts}` : undefined].filter(Boolean).join(" · ")]);
 	lines.push(["memory", [laneIncluded(state.ambient, "memory") ? "approved yes" : "approved no", "durable writes no", "vector off"].join(" · ")]);
-	return box(lines);
+	return box(lines, options);
 }
 
-export function appendFinalVisibilityToAssistantMessage(message: AssistantMessage, state: FinalVisibilityState | undefined): AssistantMessage {
+export function appendFinalVisibilityToAssistantMessage(message: AssistantMessage, state: FinalVisibilityState | undefined, options: FinalVisibilityFormatOptions = {}): AssistantMessage {
 	if (message.content.some((block) => block.type === "text" && block.text.includes(FOOTER_SENTINEL))) return message;
-	const footer = formatFinalVisibility(state);
+	const footer = formatFinalVisibility(state, options);
 	if (!footer) return message;
 	return { ...message, content: [...message.content, { type: "text" as const, text: `\n\n${footer}` }] };
 }

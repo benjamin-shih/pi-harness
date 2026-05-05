@@ -1,5 +1,9 @@
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, createTaskHarness, taskBindPayload } from "./support.mjs";
+import { assert, createTaskHarness, taskBindPayload, withEnv } from "./support.mjs";
+
+function stripAnsi(value) {
+	return value.replace(/\x1b\[[0-9;]*m/g, "");
+}
 
 function assistantMessage(stopReason = "stop") {
 	return {
@@ -37,27 +41,41 @@ export async function runFinalVisibilityTests() {
 			activity: { reads: 1, writes: 2, commands: 3, errors: 0 },
 			artifacts: { recordedThisTurn: 2, skippedThisTurn: 1 },
 		},
-	});
+	}, { columns: 80, color: false });
 	assert(footer.includes("╭─ Harness visibility"), "final visibility should render a compact visual footer");
 	assert(footer.includes("│ ambient  standard · mode fast · task bound"), "final visibility should include prompt weight, mode, and task state in one row");
 	assert(footer.includes("│ exec     software · overlays none"), "final visibility should include safe execution routing metadata");
 	assert(footer.includes("│ turn     activity r1/w2/c3/e0 · artifacts 2 meta +1 skipped"), "final visibility should summarize activity and artifact metadata in one row");
 	assert(footer.includes("│ memory   approved yes · durable writes no · vector off"), "final visibility should summarize memory/write posture without memory content");
 	assert(!footer.includes("secret.txt"), "final visibility should not include skipped-lane reasons or filenames");
+	const narrowFooter = visibility.formatFinalVisibility({ ambient, task: { state: "bound", activity: { reads: 10, writes: 20, commands: 30, errors: 1 }, artifacts: { recordedThisTurn: 12, skippedThisTurn: 3 } } }, { columns: 42, color: false });
+	assert(narrowFooter.split("\n").every((line) => line.length <= 40), "final visibility should fit within the available terminal width minus margin");
+	assert(narrowFooter.includes("…"), "narrow final visibility should clip long rows instead of wrapping");
+	const tinyFooter = visibility.formatFinalVisibility({ ambient, task: { state: "bound", activity: { reads: 1, writes: 2, commands: 3, errors: 4 }, artifacts: { recordedThisTurn: 5, skippedThisTurn: 6 } } }, { columns: 24, color: false });
+	assert(tinyFooter.split("\n").every((line) => line.length <= 22), "very narrow final visibility should still avoid terminal-width overflow when possible");
+	assert(tinyFooter.includes("╭─ Harness"), "very narrow final visibility should preserve the idempotency sentinel");
+	const wideFooter = visibility.formatFinalVisibility({ ambient, task: { state: "bound", activity: { reads: 1, writes: 0, commands: 0, errors: 0 }, artifacts: { recordedThisTurn: 0, skippedThisTurn: 0 } } }, { columns: 120, color: false });
+	assert(wideFooter.split("\n")[0].length > footer.split("\n")[0].length, "wide final visibility should expand when terminal width allows it");
+	const colorFooter = visibility.formatFinalVisibility({ ambient, task: { state: "bound", activity: { reads: 0, writes: 0, commands: 0, errors: 0 }, artifacts: { recordedThisTurn: 0, skippedThisTurn: 0 } } }, { columns: 80, color: true });
+	assert(colorFooter.includes("\x1b[") && stripAnsi(colorFooter).includes("╭─ Harness visibility"), "final visibility should support explicit ANSI color while preserving plain text shape");
+	await withEnv({ FORCE_COLOR: "1" }, async () => {
+		const defaultFooter = visibility.formatFinalVisibility({ ambient, task: { state: "bound", activity: { reads: 0, writes: 0, commands: 0, errors: 0 }, artifacts: { recordedThisTurn: 0, skippedThisTurn: 0 } } }, { columns: 80 });
+		assert(!defaultFooter.includes("\x1b["), "final visibility should not persist ANSI color by default, even under FORCE_COLOR");
+	});
 	assert(!visibility.formatFinalVisibility({ ambient: { ...ambient, weight: "trivial" } }), "trivial turns should not get final visibility noise");
 
-	const appended = visibility.appendFinalVisibilityToAssistantMessage(assistantMessage(), { ambient, task: { state: "not_bound", activity: { reads: 0, writes: 0, commands: 0, errors: 0 }, artifacts: { recordedThisTurn: 0, skippedThisTurn: 0 } } });
+	const appended = visibility.appendFinalVisibilityToAssistantMessage(assistantMessage(), { ambient, task: { state: "not_bound", activity: { reads: 0, writes: 0, commands: 0, errors: 0 }, artifacts: { recordedThisTurn: 0, skippedThisTurn: 0 } } }, { columns: 80, color: false });
 	assert(appended.content.at(-1).text.includes("Harness visibility"), "final visibility should append to assistant messages");
 	const idempotent = visibility.appendFinalVisibilityToAssistantMessage(appended, { ambient });
 	assert(idempotent === appended, "final visibility append should be idempotent");
 	const mentionsVisibility = assistantMessage();
 	mentionsVisibility.content[0].text = "This discusses Harness visibility without already appending the footer.";
-	const stillAppended = visibility.appendFinalVisibilityToAssistantMessage(mentionsVisibility, { ambient });
+	const stillAppended = visibility.appendFinalVisibilityToAssistantMessage(mentionsVisibility, { ambient }, { columns: 80, color: false });
 	assert(stillAppended !== mentionsVisibility && stillAppended.content.at(-1).text.includes("╭─ Harness visibility"), "ordinary prose mentioning Harness visibility should not suppress footer append");
 	const uiPolish = loadExtensionModule("extensions/ui-polish/index.ts");
 	const visibilityThenElapsed = uiPolish.appendElapsedToAssistantMessage(appended, "0:01");
 	assert(visibilityThenElapsed.content.some((block) => block.text?.includes("Harness visibility")) && visibilityThenElapsed.content.some((block) => block.text?.includes("Elapsed wall time: 0:01")), "final visibility should compose with elapsed footer after it");
-	const elapsedThenVisibility = visibility.appendFinalVisibilityToAssistantMessage(uiPolish.appendElapsedToAssistantMessage(assistantMessage(), "0:02"), { ambient });
+	const elapsedThenVisibility = visibility.appendFinalVisibilityToAssistantMessage(uiPolish.appendElapsedToAssistantMessage(assistantMessage(), "0:02"), { ambient }, { columns: 80, color: false });
 	assert(elapsedThenVisibility.content.some((block) => block.text?.includes("Harness visibility")) && elapsedThenVisibility.content.some((block) => block.text?.includes("Elapsed wall time: 0:02")), "final visibility should compose with elapsed footer before it");
 
 	const harness = createTaskHarness({ bindPayload: taskBindPayload() });
