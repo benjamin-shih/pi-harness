@@ -11,14 +11,14 @@ export async function runAmbientContextTests() {
 	assert(ambientPolicy.decideAmbientPolicy("standard").personalContext === "auto_scoped", "ambient policy should auto-consider scoped approved memory for nontrivial prompts");
 	assert(ambientPolicy.shouldIncludeRepoContext(ambientPolicy.decideAmbientPolicy("standard")), "ambient policy should include repo context for nontrivial prompts");
 
-	const cleanRepo = await repoContext.buildRepoContextSummary({ exec: async (_cmd, args) => {
+	const dirtyRepo = await repoContext.buildRepoContextSummary({ exec: async (_cmd, args) => {
 		if (args.join(" ") === "rev-parse --show-toplevel") return { code: 0, stdout: `${root}\n`, stderr: "" };
 		if (args.join(" ") === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
 		if (args.join(" ") === "status --porcelain=v1 --untracked-files=no") return { code: 0, stdout: " M README.md\n", stderr: "" };
 		return { code: 1, stdout: "", stderr: "" };
 	} }, root);
-	assert(cleanRepo.status === "dirty" && cleanRepo.summary === "0 staged, 1 unstaged, untracked not scanned", "repo context should summarize tracked porcelain status without scanning untracked names");
-	assert(repoContext.formatRepoContext(cleanRepo).includes("## Repo Context"), "repo context should render bounded metadata");
+	assert(dirtyRepo.status === "dirty" && dirtyRepo.summary === "0 staged, 1 unstaged, untracked not scanned", "repo context should summarize tracked porcelain status without scanning untracked names");
+	assert(repoContext.formatRepoContext(dirtyRepo).includes("## Repo Context"), "repo context should render bounded metadata");
 	assert(memoryContext.memoryAdminGuidance("Remember this project preference: use scoped candidates by default")?.includes("candidate by default"), "remember prompts should get memory admin guidance");
 	assert(memoryContext.memoryAdminGuidance("Remember: I prefer concise answers")?.includes("candidate by default"), "remember-colon preference prompts should get memory admin guidance");
 	assert(memoryContext.memoryAdminGuidance("Remember I prefer scoped candidates")?.includes("candidate by default"), "remember preference prompts should get memory admin guidance");

@@ -32,7 +32,7 @@ type HarnessFacts = {
 
 type DoctorFacts = HarnessFacts & { audit: HarnessAuditResult };
 
-export type StatusTaskLayer = {
+type StatusTaskLayer = {
 	statusLines(): string[];
 	doctorSection(): string;
 	health(): "ok" | "warning";

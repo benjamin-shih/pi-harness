@@ -1,11 +1,11 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-export type GitOutputOptions = {
+type GitOutputOptions = {
 	timeoutMs?: number;
 	preserveLeading?: boolean;
 };
 
-export type TrackedPorcelainCounts = {
+type TrackedPorcelainCounts = {
 	staged: number;
 	unstaged: number;
 };
