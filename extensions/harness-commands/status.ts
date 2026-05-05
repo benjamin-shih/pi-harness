@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { ambientDoctorSection, type AmbientContextSnapshot } from "../shared/ambient-context";
+import { countTrackedPorcelain, gitOutput } from "../shared/git-summary";
 import { buildMemoryStats, formatMemoryReviewHintLines, formatMemoryStatsLines, type MemoryStatsResult } from "../shared/memory-context";
 import { formatStatusView } from "../shared/status-view";
 import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemorySpineDiagnostics } from "../session-continuity/diagnostics";
@@ -40,29 +41,14 @@ export type StatusTaskLayer = {
 
 const PACKAGE_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
-async function gitOutput(pi: ExtensionAPI, cwd: string, args: string[]): Promise<string | undefined> {
-	try {
-		const result = await pi.exec("git", args, { cwd, timeout: 5_000 });
-		if (result.code !== 0) return undefined;
-		return result.stdout.trim();
-	} catch {
-		return undefined;
-	}
-}
-
 async function gitSummary(pi: ExtensionAPI, cwd: string): Promise<GitSummary> {
-	const root = await gitOutput(pi, cwd, ["rev-parse", "--show-toplevel"]);
-	const branch = await gitOutput(pi, cwd, ["branch", "--show-current"]);
-	const status = await gitOutput(pi, cwd, ["status", "--porcelain=v1", "--untracked-files=no"]);
+	const root = await gitOutput(pi, cwd, ["rev-parse", "--show-toplevel"], { timeoutMs: 5_000 });
+	const branch = await gitOutput(pi, cwd, ["branch", "--show-current"], { timeoutMs: 5_000 });
+	const status = await gitOutput(pi, cwd, ["status", "--porcelain=v1", "--untracked-files=no"], { timeoutMs: 5_000, preserveLeading: true });
 	if (status === undefined) return { branch: undefined, root, summary: "not a git repo" };
 	if (!status) return { branch, root, summary: "tracked clean (untracked not scanned)" };
 
-	let staged = 0;
-	let unstaged = 0;
-	for (const line of status.split(/\r?\n/)) {
-		if (line[0] && line[0] !== " ") staged++;
-		if (line[1] && line[1] !== " ") unstaged++;
-	}
+	const { staged, unstaged } = countTrackedPorcelain(status);
 	return { branch, root, summary: `${staged} staged, ${unstaged} unstaged tracked (untracked not scanned)` };
 }
 

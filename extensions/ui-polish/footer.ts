@@ -8,8 +8,8 @@ function formatCount(n: number): string {
 }
 
 const SEGMENT_BG = "customMessageBg";
-const OLD_FOOTER_MAUVE = "\x1b[38;2;203;166;247m";
-const OLD_FOOTER_PINK = "\x1b[38;2;245;194;231m";
+const FOOTER_MAUVE = "\x1b[38;2;203;166;247m";
+const FOOTER_PINK = "\x1b[38;2;245;194;231m";
 
 type FooterColor = string | ((text: string) => string);
 type UsageTotals = {
@@ -41,12 +41,17 @@ type StatusItem = {
 	bg?: string;
 };
 
+type StatusRule = {
+	matches(key: string, value: string): boolean;
+	item(key: string, value: string): StatusItem;
+};
+
 function mauve(text: string): string {
-	return `${OLD_FOOTER_MAUVE}${text}\x1b[39m`;
+	return `${FOOTER_MAUVE}${text}\x1b[39m`;
 }
 
 function pink(text: string): string {
-	return `${OLD_FOOTER_PINK}${text}\x1b[39m`;
+	return `${FOOTER_PINK}${text}\x1b[39m`;
 }
 
 function applyFooterColor(theme: any, color: FooterColor, text: string): string {
@@ -126,29 +131,35 @@ function compactTimerValue(value: string): string {
 	return truncateToWidth(value.replace(/^(?:elapsed|last):/i, ""), 8, "…");
 }
 
+const STATUS_RULES: StatusRule[] = [
+	{
+		matches: (key, value) => key === "memory" || value.startsWith("memory:"),
+		item: (_key, value) => ({ label: "mem", value: compactMemoryValue(value), color: memoryStatusColor(value) }),
+	},
+	{
+		matches: (key, value) => key === "turn-timer" || /^(?:elapsed|last):/i.test(value),
+		item: (_key, value) => ({ label: "time", value: compactTimerValue(value), color: "syntaxNumber", labelColor: "text", bg: "selectedBg" }),
+	},
+	{
+		matches: (key, value) => key === "latex-preview" || value.startsWith("latex:") || value.startsWith("tex:"),
+		item: (_key, value) => ({ label: "tex", value: truncateToWidth(value.replace(/^(?:latex|tex):/i, ""), 8, "…"), color: "customMessageLabel" }),
+	},
+	{
+		matches: (key, value) => key === "mode" || value.startsWith("mode:"),
+		item: (_key, value) => ({ label: "mode", value: truncateToWidth(value.replace(/^mode:/i, ""), 8, "…"), color: "accent" }),
+	},
+];
+
+function compactStatusItem(key: string, value: string): StatusItem {
+	return STATUS_RULES.find((rule) => rule.matches(key, value))?.item(key, value) ?? { label: truncateToWidth(key, 6, "…"), value: truncateToWidth(value, 10, "…"), color: "muted" };
+}
+
 export function compactExtensionStatusItems(statuses: ReadonlyMap<string, unknown> | Iterable<[string, unknown]>): StatusItem[] {
 	const entries = statuses instanceof Map ? [...statuses.entries()] : [...statuses];
 	const items: StatusItem[] = [];
 	for (const [key, rawValue] of entries) {
 		const value = cleanStatusValue(rawValue);
-		if (!value) continue;
-		if (key === "memory" || value.startsWith("memory:")) {
-			items.push({ label: "mem", value: compactMemoryValue(value), color: memoryStatusColor(value) });
-			continue;
-		}
-		if (key === "turn-timer" || /^(?:elapsed|last):/i.test(value)) {
-			items.push({ label: "time", value: compactTimerValue(value), color: "syntaxNumber", labelColor: "text", bg: "selectedBg" });
-			continue;
-		}
-		if (key === "latex-preview" || value.startsWith("latex:") || value.startsWith("tex:")) {
-			items.push({ label: "tex", value: truncateToWidth(value.replace(/^(?:latex|tex):/i, ""), 8, "…"), color: "customMessageLabel" });
-			continue;
-		}
-		if (key === "mode" || value.startsWith("mode:")) {
-			items.push({ label: "mode", value: truncateToWidth(value.replace(/^mode:/i, ""), 8, "…"), color: "accent" });
-			continue;
-		}
-		items.push({ label: truncateToWidth(key, 6, "…"), value: truncateToWidth(value, 10, "…"), color: "muted" });
+		if (value) items.push(compactStatusItem(key, value));
 	}
 	return items;
 }

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { countTrackedPorcelain, gitOutput } from "./git-summary";
 
 export type RepoContextSummary = {
 	cwd: string;
@@ -8,24 +9,9 @@ export type RepoContextSummary = {
 	summary: string;
 };
 
-async function gitOutput(pi: ExtensionAPI, cwd: string, args: string[], preserveLeading = false): Promise<string | undefined> {
-	try {
-		const result = await pi.exec("git", args, { cwd, timeout: 2_000 });
-		if (result.code !== 0) return undefined;
-		return preserveLeading ? result.stdout.replace(/\s+$/g, "") : result.stdout.trim();
-	} catch {
-		return undefined;
-	}
-}
-
 function summarizePorcelain(status: string): string {
 	if (!status) return "clean (untracked not scanned)";
-	let staged = 0;
-	let unstaged = 0;
-	for (const line of status.split(/\r?\n/)) {
-		if (line[0] && line[0] !== " ") staged++;
-		if (line[1] && line[1] !== " ") unstaged++;
-	}
+	const { staged, unstaged } = countTrackedPorcelain(status);
 	return `${staged} staged, ${unstaged} unstaged, untracked not scanned`;
 }
 
@@ -34,7 +20,7 @@ export async function buildRepoContextSummary(pi: ExtensionAPI, cwd: string): Pr
 	if (!root) return { cwd, status: "not_git", summary: "not a git repo" };
 	const [branch, porcelain] = await Promise.all([
 		gitOutput(pi, cwd, ["branch", "--show-current"]),
-		gitOutput(pi, cwd, ["status", "--porcelain=v1", "--untracked-files=no"], true),
+		gitOutput(pi, cwd, ["status", "--porcelain=v1", "--untracked-files=no"], { preserveLeading: true }),
 	]);
 	if (porcelain === undefined) return { cwd, root, branch, status: "unavailable", summary: "git status unavailable" };
 	const summary = summarizePorcelain(porcelain);

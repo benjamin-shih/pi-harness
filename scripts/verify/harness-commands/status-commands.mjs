@@ -4,6 +4,7 @@ export async function runStatusCommandTests() {
 	const statusCommands = new Map();
 	const statusMessages = [];
 	const execCalls = [];
+	let statusPorcelain = "";
 	const memoryStatsPayload = {
 		memory_api_version: 1,
 		counts_by_state: { candidate: 2, approved: 1, deprecated: 0 },
@@ -72,7 +73,7 @@ export async function runStatusCommandTests() {
 			const key = args.join(" ");
 			if (key === "rev-parse --show-toplevel") return { code: 0, stdout: `${root}\n`, stderr: "" };
 			if (key === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
-			if (key === "status --porcelain=v1 --untracked-files=no") return { code: 0, stdout: "", stderr: "" };
+			if (key === "status --porcelain=v1 --untracked-files=no") return { code: 0, stdout: statusPorcelain, stderr: "" };
 			if (String(args[0] || "").endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload), stderr: "" };
 			if (key === "scripts/harness-audit.mjs --json" || key.endsWith("scripts/harness-audit.mjs --json")) {
 				return {
@@ -132,4 +133,7 @@ export async function runStatusCommandTests() {
 	assert(statusMessages[3].customType === "harness-memory", "/memory should send a memory diagnostics message");
 	assert(statusMessages[3].content.includes("latest diagnostic error: context_length_exceeded"), "/memory should include latest diagnostic errors");
 	assert(!execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh")), "status/doctor should not auto-run memory-review.sh");
+	statusPorcelain = " M README.md\n";
+	await statusCommands.get("status").handler("", commandCtx);
+	assert(statusMessages.at(-1).content.includes("0 staged, 1 unstaged tracked"), "/status should preserve git porcelain columns when counting unstaged-only tracked changes");
 }

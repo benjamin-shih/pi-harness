@@ -58,11 +58,15 @@ export function runFooterUsageTests() {
 		["memory", "\u001b[2mmemory:ready:12\u001b[22m"],
 		["latex-preview", "latex:auto"],
 		["turn-timer", "\u001b[2mlast:1:05\u001b[22m"],
+		["mode", "mode:deep"],
+		["custom-long-key", "custom status value"],
 	]));
-	assert(statuses.length === 3, "footer should keep memory, latex, and timer statuses as separate compact chips");
+	assert(statuses.length === 5, "footer should keep extension statuses as separate compact chips");
 	assert(statuses[0].label === "mem" && statuses[0].value === "r12", "footer should compact memory status values");
 	assert(statuses[1].label === "tex" && statuses[1].value === "auto", "footer should compact latex status values");
 	assert(statuses[2].label === "time" && statuses[2].value === "1:05", "footer should render turn timer as a clear time chip");
 	assert(statuses[2].bg === "selectedBg" && statuses[2].labelColor === "text", "footer timer chip should use an explicit readable background and label color");
+	assert(statuses[3].label === "mode" && statuses[3].value === "deep", "footer should compact mode status values");
+	assert(statuses[4].label.startsWith("custo") && statuses[4].label.includes("…") && statuses[4].value.startsWith("custom st") && statuses[4].value.includes("…"), "footer should truncate unknown status chips predictably");
 	assert(!statuses.some((status) => status.label === "state"), "footer should not collapse extension statuses into a long state segment");
 }

@@ -1,10 +1,8 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { assembleAmbientContext, type AmbientContextSnapshot } from "./shared/ambient-context";
-import { decideAmbientPolicy, shouldIncludeMemoryContext, shouldIncludeRepoContext } from "./shared/ambient-policy";
-import { buildMemoryContext, memoryAdminGuidance, memoryCandidateReminder } from "./shared/memory-context";
-import { buildRepoContextSummary, formatRepoContext } from "./shared/repo-context";
+import type { AmbientContextSnapshot } from "./shared/ambient-context";
+import { buildAmbientTurn } from "./harness-commands/ambient-turn";
 import {
 	CLEANUP_GUARD_MARKER,
 	cleanupGuardMessage,
@@ -16,19 +14,9 @@ import {
 	looksFileMutatingCommand,
 	type GitChangeSnapshot,
 } from "./harness-commands/cleanup-guard";
-import { buildExecutionGuidance } from "./shared/execution-guidance";
 import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
-import { applyMode, modeDescription, modeInstructions, modeNames } from "./harness-commands/modes";
-import {
-	cleanupReminder,
-	classifyPrompt,
-	DISPLAY_MATH_RENDERING_INSTRUCTION,
-	isCodingOrFilePrompt,
-	MARKDOWN_HEADING_RENDERING_INSTRUCTION,
-	promptSuggestsMajorCleanup,
-	skillRoutingReminder,
-} from "./shared/prompt-guidance";
-import { buildSubagentTopologyReminder } from "./shared/subagent-topology";
+import { applyMode, modeDescription, modeNames } from "./harness-commands/modes";
+import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { buildDoctor, buildStatus } from "./harness-commands/status";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
@@ -121,32 +109,14 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		const taskContext = await taskLayer.beforeAgentStart(pi, event.prompt, fallbackWeight, ctx);
 		const weight = taskLayer.currentPromptWeight();
 		currentPromptWasMajor = promptSuggestsMajorCleanup(event.prompt, weight);
-		const activeModeInstructions = modeInstructions(activeMode);
-		const reminder = skillRoutingReminder(weight);
-		const cleanup = cleanupReminder(event.prompt, weight);
-		const subagentTopology = buildSubagentTopologyReminder(event.prompt, weight);
-		const memoryCandidates = memoryCandidateReminder(weight !== "trivial");
-		const memoryAdmin = memoryAdminGuidance(event.prompt);
-		const executionRoute = buildExecutionGuidance(event.prompt);
-		const policy = decideAmbientPolicy(weight);
-		const repoSummary = shouldIncludeRepoContext(policy) ? await buildRepoContextSummary(pi, ctx.cwd) : undefined;
-		const taskScope = taskLayer.ambientScope();
-		const memoryProjectRoot = taskScope.projectRoot || repoSummary?.root;
-		const memoryContext = shouldIncludeMemoryContext(policy) ? await buildMemoryContext(pi, ctx.cwd, { projectRoot: memoryProjectRoot, taskId: taskScope.taskId }) : undefined;
-		const ambient = assembleAmbientContext(event.systemPrompt, weight, [
-			{ id: "display_math", title: "Display math rendering", priority: 10, content: DISPLAY_MATH_RENDERING_INSTRUCTION },
-			{ id: "markdown_heading", title: "Markdown heading rendering", priority: 20, content: MARKDOWN_HEADING_RENDERING_INSTRUCTION },
-			{ id: "mode", title: "Active harness mode", priority: 30, content: activeModeInstructions, reason: "no active mode override" },
-			{ id: "skill_routing", title: "Skill routing", priority: 40, content: reminder, reason: "trivial prompt" },
-			{ id: "cleanup", title: "Post-change cleanup gate", priority: 50, content: cleanup, reason: "non-coding prompt" },
-			{ id: "subagent_topology", title: "Subagent topology", priority: 55, content: subagentTopology, reason: "not a detailed subagent-worthy prompt" },
-			{ id: "agents_task", title: "Active AGENTS task context", priority: 60, content: taskContext, reason: "no scoped active task context" },
-			{ id: "memory", title: "Approved scoped memory", priority: 65, content: memoryContext?.content, reason: memoryContext?.reason ?? "memory disabled" },
-			{ id: "memory_candidates", title: "Durable memory candidates", priority: 66, content: memoryCandidates, reason: "trivial prompt" },
-			{ id: "memory_admin", title: "Explicit memory admin", priority: 67, content: memoryAdmin, reason: "no explicit memory admin request" },
-			{ id: "execution", title: "Ambient execution protocol", priority: 68, content: executionRoute?.guidance, publicSummary: executionRoute?.summary, reason: "no explicit execution intent" },
-			{ id: "repo", title: "Repo metadata", priority: 70, content: repoSummary ? formatRepoContext(repoSummary) : undefined, reason: repoSummary?.summary ?? "trivial prompt" },
-		], policy);
+		const ambient = await buildAmbientTurn(pi, ctx, {
+			baseSystemPrompt: event.systemPrompt,
+			prompt: event.prompt,
+			weight,
+			activeMode,
+			taskContext,
+			taskScope: taskLayer.ambientScope(),
+		});
 		lastAmbientContext = ambient.snapshot;
 		refreshFinalVisibility();
 		return ambient.systemPrompt === event.systemPrompt ? undefined : { systemPrompt: ambient.systemPrompt };
