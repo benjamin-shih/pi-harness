@@ -47,13 +47,25 @@ function repoRows(facts: StatusViewFacts): VisibilityBoxRow[] {
 	];
 }
 
+function taskStateRows(value: string): VisibilityBoxRow[] {
+	if (value === "none") {
+		return [
+			["state", "not bound this session yet"],
+			["hint", "run a nontrivial turn to bind or reuse task context"],
+		];
+	}
+	if (value.startsWith("none")) return [["state", `not bound · ${value.replace(/^none\s*/, "") || "binding skipped"}`]];
+	if (value.startsWith("blocked") || value.startsWith("unavailable")) return [["state", value]];
+	return [["state", `bound · ${value}`]];
+}
+
 function taskRows(taskLayer: StatusViewTaskLayer): VisibilityBoxRow[] {
 	// Adapt the current task-layer display lines without widening the task-layer API in this visual-only change.
 	const rows = taskLayer.statusLines().flatMap((line): VisibilityBoxRow[] => {
 		const [rawLabel, ...rest] = line.replace(/^[-*]\s*/, "").split(":");
 		const value = rest.join(":").trim();
 		if (!value) return [];
-		if (rawLabel === "active task") return [["state", value.startsWith("none") || value.startsWith("blocked") || value.startsWith("unavailable") ? value : `bound · ${value}`]];
+		if (rawLabel === "active task") return taskStateRows(value);
 		if (rawLabel === "task project") return [["project", value]];
 		if (rawLabel === "task runtime/session") return [["runtime", value]];
 		if (rawLabel === "task artifacts") return [["artifact", value]];
@@ -67,7 +79,12 @@ function executionSummary(snapshot: AmbientContextSnapshot | undefined): string 
 }
 
 function ambientRows(snapshot: AmbientContextSnapshot | undefined): VisibilityBoxRow[] {
-	if (!snapshot) return [["state", "not assembled yet"]];
+	if (!snapshot) {
+		return [
+			["state", "not assembled this session yet"],
+			["hint", "appears after the next agent turn"],
+		];
+	}
 	const included = snapshot.lanes.filter((lane) => lane.status === "included").length;
 	const skipped = snapshot.lanes.length - included;
 	return [
@@ -80,9 +97,10 @@ function ambientRows(snapshot: AmbientContextSnapshot | undefined): VisibilityBo
 
 function memoryRows(facts: StatusViewFacts): VisibilityBoxRow[] {
 	const stats = facts.memoryApi;
+	const unavailableReason = stats.reason === "no scoped project or task" ? "waiting for task/project scope" : (stats.reason ?? "unknown");
 	const scoped = stats.available
 		? `${stats.scope} · ${stats.counts.candidate} candidate · ${stats.counts.approved} approved · ${stats.counts.deprecated} deprecated · ${stats.skipped} skipped`
-		: `unavailable · ${stats.reason ?? "unknown"}`;
+		: `unavailable · ${unavailableReason}`;
 	const rows: VisibilityBoxRow[] = [
 		["spine", `${facts.memory.health} · ${facts.memory.status}`],
 		["entries", `${facts.memory.checkpointCount} checkpoints · ${facts.memory.harnessCompactionCount}/${facts.memory.compactionCount} compactions · ${facts.memory.diagnosticCount} diagnostics`],

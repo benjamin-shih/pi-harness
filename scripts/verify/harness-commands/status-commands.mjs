@@ -100,6 +100,10 @@ export async function runStatusCommandTests() {
 	assert(statusMessages[0].content.includes("╭─ Ambient"), "/status should render a visual ambient block");
 	assert(statusMessages[0].content.includes("╭─ Memory"), "/status should render a visual memory block");
 	assert(statusMessages[0].content.includes("╭─ Repo"), "/status should render a visual repo block");
+	assert(statusMessages[0].content.includes("not bound this session yet"), "/status should distinguish uninitialized task binding from an absent task");
+	assert(statusMessages[0].content.includes("run a nontrivial turn"), "/status should hint how task binding becomes available");
+	assert(statusMessages[0].content.includes("not assembled this session yet"), "/status should distinguish uninitialized ambient context");
+	assert(statusMessages[0].content.includes("appears after the next agent turn"), "/status should hint how ambient context becomes available");
 	assert(!statusMessages[0].content.includes("harness audit:"), "/status should avoid the heavier harness audit subprocess");
 	assert(statusMessages[0].content.includes("tracked clean (untracked not scanned)"), "/status should avoid scanning untracked filenames");
 	assert(!execCalls.some((call) => String(call.args?.[0] || "").endsWith("harness-audit.mjs")), "/status should not run harness-audit.mjs");
