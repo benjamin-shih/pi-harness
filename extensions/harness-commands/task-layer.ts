@@ -1,74 +1,23 @@
-import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
 import { modelSummary } from "../session-continuity/context";
-import { agentsRoot, agentsScriptPath } from "../shared/config";
+import { agentsRoot } from "../shared/config";
 import { parseJson } from "../shared/json";
-import { withPrivateTempTextFile } from "../shared/private-temp";
 import type { FinalTaskVisibility } from "../shared/final-visibility";
 import type { TaskWeight } from "../shared/prompt-guidance";
-type BindAction = "created" | "claimed_existing" | "refreshed_existing" | "skipped" | "blocked" | "error";
-type BindResult = {
-	task_api_version?: number;
-	action: BindAction;
-	bound: boolean;
-	blocked: boolean;
-	reason: string;
-	task_id: string;
-	project_root: string;
-};
-type TaskClassification = {
-	task_api_version?: number;
-	weight: TaskWeight;
-	binding_mode: "auto" | "skip" | "reuse_only";
-};
-type ExecResult = Awaited<ReturnType<ExtensionAPI["exec"]>>;
-type TaskApiInfo = {
-	task_api_version: number;
-	agents_shared_root: string;
-	capabilities: string[];
-};
-type ArtifactAddResult = {
-	artifact_api_version?: number;
-	recorded: boolean;
-};
-type ArtifactListResult = {
-	artifact_api_version?: number;
-	count: number;
-};
-type CandidateRootResult = {
-	task_api_version: number;
-	project_root: string;
-	bindable: boolean;
-	auto_create: "auto" | "never";
-};
-type TaskLayerState = {
-	sessionId: string;
-	apiChecked: boolean;
-	apiAvailable: boolean;
-	apiInfo?: TaskApiInfo;
-	currentPromptWeight: TaskWeight;
-	currentBindingMode: TaskClassification["binding_mode"];
-	currentPromptNeedsTask: boolean;
-	meaningfulActivity: boolean;
-	activity: { reads: number; writes: number; commands: number; errors: number };
-	artifactCount: number;
-	artifactRecordedThisTurn: number;
-	artifactSkipped: number;
-	active?: BindResult;
-	context?: string;
-	lastAction?: BindAction;
-	lastReason?: string;
-	lastError?: string;
-	lastHeartbeatAt: number;
-};
-const SUPPORTED_TASK_API_VERSION = 1;
-const SUPPORTED_ARTIFACT_API_VERSION = 1;
-const HEARTBEAT_INTERVAL_MS = 60_000;
-const SCRIPT_TIMEOUT_MS = 10_000;
-function emptyActivity() {
-	return { reads: 0, writes: 0, commands: 0, errors: 0 };
-}
+import { candidateRoot, classifyTask, ensureTaskApi, runScript, shortError } from "./task-layer-api";
+import { activityFromTool, pathArtifactFromTool, pathFromTool, verificationArtifactFromTool } from "./task-layer-artifacts";
+import {
+	HEARTBEAT_INTERVAL_MS,
+	SUPPORTED_ARTIFACT_API_VERSION,
+	SUPPORTED_TASK_API_VERSION,
+	emptyActivity,
+	supportsTaskArtifacts,
+	type ArtifactAddResult,
+	type ArtifactListResult,
+	type BindResult,
+	type TaskLayerState,
+} from "./task-layer-types";
 function initialState(): TaskLayerState {
 	return {
 		sessionId: "pi-unknown-session",
@@ -118,65 +67,10 @@ function safeSessionId(ctx: ExtensionContext): string {
 	if (sessionFile) return `pi-${path.basename(sessionFile).replace(/[^A-Za-z0-9_-]/g, "-")}`;
 	return `pi-${process.pid}`;
 }
-async function runScript(pi: ExtensionAPI, scriptName: string, args: string[], cwd: string, timeout = SCRIPT_TIMEOUT_MS): Promise<ExecResult> {
-	return pi.exec("bash", [agentsScriptPath(scriptName), ...args], { cwd, timeout });
-}
-async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd: string): Promise<boolean> {
-	if (state.apiChecked) return state.apiAvailable;
-	state.apiChecked = true;
-	try {
-		const result = await runScript(pi, "task-api.sh", ["info"], cwd, 5_000);
-		if (result.code !== 0) {
-			state.lastError = shortError(result);
-			return false;
-		}
-		const payload = parseJson<TaskApiInfo>(result.stdout);
-		if (!payload || payload.task_api_version !== SUPPORTED_TASK_API_VERSION) {
-			state.lastError = `unsupported AGENTS task API version: ${payload?.task_api_version ?? "unknown"}`;
-			return false;
-		}
-		state.apiInfo = payload;
-		state.apiAvailable = true;
-		return true;
-	} catch (error) {
-		state.lastError = error instanceof Error ? error.message : String(error);
-		return false;
-	}
-}
-async function candidateRoot(pi: ExtensionAPI, candidate: string, cwd: string): Promise<CandidateRootResult | undefined> {
-	try {
-		const result = await runScript(pi, "task-candidate-root.sh", ["--candidate", candidate, "--cwd", cwd], cwd, 5_000);
-		if (result.code !== 0) return undefined;
-		const payload = parseJson<CandidateRootResult>(result.stdout);
-		if (!payload || payload.task_api_version !== SUPPORTED_TASK_API_VERSION) return undefined;
-		return payload;
-	} catch {
-		return undefined;
-	}
-}
-async function classifyTask(pi: ExtensionAPI, prompt: string, cwd: string): Promise<TaskClassification | undefined> {
-	try {
-		return await withPrivateTempTextFile("pi-task-classify-", prompt, async (promptFile) => {
-			const result = await runScript(pi, "task-classify.sh", ["--prompt-file", promptFile, "--cwd", cwd], cwd, 5_000);
-			if (result.code !== 0) return undefined;
-			const payload = parseJson<TaskClassification>(result.stdout);
-			if (!payload) return undefined;
-			return payload.task_api_version === SUPPORTED_TASK_API_VERSION ? payload : undefined;
-		});
-	} catch {
-		return undefined;
-	}
-}
 function bindAutoCreateMode(state: TaskLayerState, suggested: "auto" | "never"): "auto" | "never" {
 	if (state.currentBindingMode === "skip" || state.currentBindingMode === "reuse_only") return "never";
 	if (state.currentPromptWeight === "trivial") return "never";
 	return suggested;
-}
-function shortError(result: ExecResult): string {
-	return (result.stderr || result.stdout || `exit ${result.code}`).replace(/\s+/g, " ").trim().slice(0, 500);
-}
-function supportsTaskArtifacts(state: TaskLayerState): boolean {
-	return Boolean(state.apiInfo?.capabilities?.includes("task_artifacts"));
 }
 function contextBlock(context: string): string {
 	return [
@@ -188,60 +82,6 @@ function contextBlock(context: string): string {
 		"- Do not create parallel task notes when this context is present; use the existing task and let the harness checkpoint automatically.",
 		"- If durable decisions, questions, lessons, or repo-convention candidates arise, mention them clearly in the final response so they can be promoted or captured in the next artifact layer.",
 	].join("\n");
-}
-function shellUnquote(value: string): string {
-	return value.replace(/^['"]|['"]$/g, "");
-}
-function normalizeCandidatePath(candidate: string): string {
-	let value = shellUnquote(candidate.trim()).replace(/\\([\\\s;&|])/g, "$1");
-	if (value === "${HOME}") value = homedir();
-	else if (value.startsWith("${HOME}/")) value = path.join(homedir(), value.slice(8));
-	return value;
-}
-function pathFromTool(event: ToolResultEvent, fallbackCwd: string): string | undefined {
-	const input = event.input ?? {};
-	for (const key of ["path", "cwd"] as const) {
-		const value = input[key];
-		if (typeof value === "string" && value.trim()) return normalizeCandidatePath(value);
-	}
-	if (event.toolName === "bash") {
-		const command = typeof input.command === "string" ? input.command : "";
-		const cdMatch = command.match(/(?:^|[;&|])\s*cd\s+(?:--\s+)?((?:"[^"]+")|(?:'[^']+')|(?:\\.|[^\s;&|])+)/);
-		if (cdMatch?.[1]) return normalizeCandidatePath(cdMatch[1]);
-	}
-	return fallbackCwd;
-}
-function activityFromTool(state: TaskLayerState, event: ToolResultEvent): void {
-	if (event.toolName === "read" || event.toolName === "grep" || event.toolName === "find" || event.toolName === "ls") state.activity.reads++;
-	else if (event.toolName === "edit" || event.toolName === "write") state.activity.writes++;
-	else if (event.toolName === "bash") state.activity.commands++;
-	if (event.isError) state.activity.errors++;
-	state.meaningfulActivity ||= Boolean(state.activity.reads || state.activity.writes || state.activity.commands || state.activity.errors);
-}
-function pathArtifactFromTool(event: ToolResultEvent): { title: string; path: string } | undefined {
-	if (event.toolName !== "edit" && event.toolName !== "write") return undefined;
-	if (event.isError) return undefined;
-	const candidate = event.input?.path;
-	if (typeof candidate !== "string" || !candidate.trim()) return undefined;
-	return { title: event.toolName === "edit" ? "Edited path" : "Wrote path", path: normalizeCandidatePath(candidate) };
-}
-function verificationLabel(command: string): string | undefined {
-	const normalized = command.replace(/\s+/g, " ").trim();
-	if (/\bnpm\s+run\s+verify\b/.test(normalized)) return "npm verify";
-	if (/\bnpm\s+run\s+harness:audit\b/.test(normalized)) return "harness audit";
-	if (/\bnpm\s+run\s+skills:audit\b/.test(normalized)) return "skills audit";
-	if (/\bmake\s+verify-(?:ci|local)\b/.test(normalized)) return "agents verify";
-	if (/\bpython3?\s+-m\s+unittest\b/.test(normalized)) return "python unittest";
-	if (/\bgit\s+diff\s+--check\b/.test(normalized)) return "git diff check";
-	return undefined;
-}
-function verificationArtifactFromTool(event: ToolResultEvent): { title: string; summary: string } | undefined {
-	if (event.toolName !== "bash") return undefined;
-	const command = typeof event.input?.command === "string" ? event.input.command : "";
-	const label = verificationLabel(command);
-	if (!label) return undefined;
-	const status = event.isError ? "failed" : "completed";
-	return { title: `${label} ${status}`, summary: `Verification command ${status}.` };
 }
 export function createAgentsTaskLayer() {
 	const state = initialState();
