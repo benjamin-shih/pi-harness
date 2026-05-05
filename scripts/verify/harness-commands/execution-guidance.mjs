@@ -11,6 +11,9 @@ export async function runExecutionGuidanceTests() {
 	assert(!execution.buildExecutionGuidance("Continue discussing the design tradeoffs"), "discussion-continuation prompts should not trigger execution protocol");
 	assert(!execution.hasExecutionIntent("How would you implement this?"), "implementation questions should not authorize execution");
 	assert(!execution.hasExecutionIntent("Can you explain how to implement this plan?"), "explanation questions should not authorize execution");
+	assert(!execution.hasExecutionIntent("Please explain how to implement this plan"), "explanation requests should not authorize execution");
+	assert(!execution.hasExecutionIntent("Make sense?"), "conversational make-sense questions should not authorize execution");
+	assert(!execution.hasExecutionIntent("Please make sense of this plan"), "make-sense explanation requests should not authorize execution");
 	assert(!execution.hasExecutionIntent("Continue with the plan discussion"), "plan-discussion prompts should not authorize execution");
 	assert(!execution.hasExecutionIntent("Please proceed with discussing the task"), "task-discussion prompts should not authorize execution");
 	assert(!execution.hasExecutionIntent("Continue"), "bare continue should not authorize automatic execution/commit policy");
@@ -25,6 +28,11 @@ export async function runExecutionGuidanceTests() {
 	assert(execution.hasExecutionIntent("Go ahead and continue from the latest checkpoint"), "go-ahead checkpoint continuation prompts should trigger execution protocol");
 	assert(execution.hasExecutionIntent("Go ahead and complete the next steps"), "go-ahead completion prompts should trigger execution protocol");
 	assert(execution.hasExecutionIntent("Go ahead and finish the implementation"), "go-ahead finish prompts should trigger execution protocol");
+	assert(execution.hasExecutionIntent("Simplify the recently changed code. Preserve observable behavior."), "direct imperative cleanup prompts should trigger execution protocol");
+	assert(execution.hasExecutionIntent("Refactor this module preserving behavior"), "direct imperative refactor prompts should trigger execution protocol");
+	assert(execution.hasExecutionIntent("Fix the failing tests and verify locally"), "direct imperative fix prompts should trigger execution protocol");
+	assert(execution.hasExecutionIntent("Update the docs and verify the examples"), "direct imperative documentation prompts should trigger execution protocol");
+	assert(execution.hasExecutionIntent("Please update the docs and explain the new behavior"), "direct imperative prompts may include explanatory deliverables");
 
 	assert(execution.classifyExecutionProfile("Go ahead and implement the TypeScript extension tests") === "software", "software execution prompts should route to software profile");
 	assert(execution.classifyExecutionProfile("Go ahead and cut the changelog release") === "software", "release/changelog work should remain under software profile with overlay support");
@@ -40,6 +48,9 @@ export async function runExecutionGuidanceTests() {
 		{ prompt: "Go ahead and run the quant backtest statistical robustness checks", profile: "empirical_data", overlays: [] },
 		{ prompt: "Go ahead and write the documentation guide", profile: "documentation", overlays: [] },
 		{ prompt: "Go ahead and prepare changelog release notes", profile: "software", overlays: ["release_changelog"] },
+		{ prompt: "Simplify the recently changed code", profile: "software", overlays: ["repo_cleanup"] },
+		{ prompt: "Fix the failing tests and verify locally", profile: "software", overlays: [] },
+		{ prompt: "Update the docs and verify the examples", profile: "documentation", overlays: [] },
 		{ prompt: "Go ahead and run the dataset pandas visualization script", profile: "empirical_data", overlays: ["python_uv", "plotting"] },
 		{ prompt: "Go ahead and write the LaTeX proof in notes.tex", profile: "general_execution", overlays: ["math_latex"] },
 	];
@@ -68,12 +79,12 @@ export async function runExecutionGuidanceTests() {
 	const harness = createTaskHarness({ bindPayload: taskBindPayload() });
 	assert(!harness.commands.has("execute"), "ambient execution protocol should not add an /execute command yet");
 	await harness.handlers.get("session_start")({ reason: "startup" }, harness.ctx);
-	const result = await harness.handlers.get("before_agent_start")({ prompt: "Go ahead and implement the execution protocol end-to-end", systemPrompt: "base" }, harness.ctx);
+	const result = await harness.handlers.get("before_agent_start")({ prompt: "Simplify the recently changed code. Preserve observable behavior.", systemPrompt: "base" }, harness.ctx);
 	assert(result.systemPrompt.includes("## Ambient Execution Protocol"), "execution prompts should include ambient execution protocol guidance");
 	assert(result.systemPrompt.includes("execution: included"), "ambient receipt should expose execution protocol inclusion");
-	assert(result.systemPrompt.includes("profile software; overlays none"), "ambient receipt should include safe execution route summary");
+	assert(result.systemPrompt.includes("profile software; overlays repo_cleanup"), "ambient receipt should include safe execution route summary");
 	await harness.commands.get("status").handler("", harness.ctx);
-	assert(harness.sentMessages.at(-1).content.includes("exec     profile software; overlays none"), "/status should expose safe execution route metadata");
+	assert(harness.sentMessages.at(-1).content.includes("exec     profile software; overlays repo_cleanup"), "/status should expose safe execution route metadata");
 	const discussion = createTaskHarness({ bindPayload: taskBindPayload() });
 	await discussion.handlers.get("session_start")({ reason: "startup" }, discussion.ctx);
 	const discussionResult = await discussion.handlers.get("before_agent_start")({ prompt: "Continue discussing the execution protocol design", systemPrompt: "base" }, discussion.ctx);

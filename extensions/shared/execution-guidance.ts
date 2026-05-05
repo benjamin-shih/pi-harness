@@ -49,7 +49,7 @@ const OVERLAY_PATTERNS: Array<[ExecutionOverlay, RegExp]> = [
 	["subagent_orchestration", /\b(?:subagents?|oracle|reviewer|scout|planner|delegate|parallel|orchestrat|team of agents?)\b/i],
 ];
 
-const EXECUTION_INTENT_PATTERNS = [
+const EXPLICIT_EXECUTION_PATTERNS = [
 	/^\s*(?:go ahead|do it|do this|ship it|execute|one[- ]shot it)\s*[.!]*\s*$/i,
 	/\bgo ahead\b[^\n]{0,80}\b(?:implement|execute|ship|do|make|apply|run|commit|push|simplify|cleanup|clean up|refactor|write|author|continue|complete|finish|prepare)\b/i,
 	/\bgo ahead\b[^\n]{0,80}\b(?:with|from)\b[^\n]{0,80}\b(?:plan|implementation|work|task|changes|latest checkpoint|checkpoint)\b/i,
@@ -57,8 +57,10 @@ const EXECUTION_INTENT_PATTERNS = [
 	/\btake (?:this|it) (?:through|to) (?:completion|the finish line)\b/i,
 ];
 
-const DISCUSSION_PREFIX = /^\s*(?:how|what|why|can|could|should|would|do you think|explain|discuss)\b/i;
-const DISCUSSION_TERMS = /\b(?:discuss|discussion|discussing|talk through|talk about|explain)\b/i;
+const DIRECT_TASK_PREFIX = /^\s*(?:please\s+)?(?:add|apply|author|build|change|clean up|cleanup|compile|configure|create|debug|delete|draft|edit|fix|implement|make(?!\s+sense\b)|migrate|modify|prepare|refactor|remove|rename|repair|review|run|set up|setup|simplify|test|update|verify|write)\b/i;
+const DISCUSSION_PREFIX = /^\s*(?:please\s+)?(?:how|what|why|can|could|should|would|do you think|explain|discuss)\b/i;
+const DISCUSSION_TERMS = /\b(?:discuss|discussion|discussing|talk through|talk about)\b/i;
+const QUESTION_PROMPT = /\?\s*$/;
 const STRONG_EXECUTION_AUTHORIZATION = /\b(?:go ahead|execute|ship|do it|do this|implement|one[- ]shot|commit|push)\b/i;
 
 function unique<T>(values: T[]): T[] {
@@ -69,7 +71,9 @@ export function hasExecutionIntent(prompt: string): boolean {
 	const text = prompt.trim();
 	if (DISCUSSION_PREFIX.test(text)) return false;
 	if (DISCUSSION_TERMS.test(text) && !STRONG_EXECUTION_AUTHORIZATION.test(text)) return false;
-	return EXECUTION_INTENT_PATTERNS.some((pattern) => pattern.test(text));
+	if (EXPLICIT_EXECUTION_PATTERNS.some((pattern) => pattern.test(text))) return true;
+	if (QUESTION_PROMPT.test(text)) return false;
+	return DIRECT_TASK_PREFIX.test(text);
 }
 
 export function classifyExecutionProfile(prompt: string): ExecutionProfile {
