@@ -40,6 +40,7 @@ export async function runTaskLayerTests() {
 	assert(doctorText.includes("task packages: 3 scoped; 1 active, 2 terminal, 1 stale"), "/doctor should include bounded task-package retention counts");
 	assert(doctorText.includes("artifact indexes: 2 indexes, 7 records, 512 bytes, 0 oversized"), "/doctor should include bounded artifact-index counts");
 	assert(doctorText.includes("archive: available; 1 candidates, 2 archived scoped"), "/doctor should include bounded archive availability and counts");
+	assert(doctorText.includes("archive delete: available; 1 candidates, 1 skipped"), "/doctor should include bounded archived-bundle delete availability and counts");
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-retention.sh") && call.args.includes("--cwd")), "/doctor should call shared retention diagnostics with project cwd");
 	for (const secret of ["secret-runtime", "secret-owner", "secret-lifecycle-session"]) {
 		assert(!doctorText.includes(secret), "/doctor lifecycle diagnostics should not expose lease holder details");

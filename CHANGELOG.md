@@ -9,6 +9,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Task lifecycle diagnostics in `/doctor`, sourced from the shared `.agents` task lifecycle API and bounded to status, terminal/active state, lease state, route metadata, event counts, blockers count, and next action.
 - Task retention/artifact-hygiene diagnostics in `/doctor`, sourced from the shared `.agents` retention API and limited to counts/bytes/warnings with destructive cleanup disabled.
 - Archive availability and bounded archive counts in `/doctor`; archive plan/apply/restore remains an explicit `.agents` maintenance action, not harness automation.
+- Archived-bundle delete availability and bounded candidate/skip counts in `/doctor`; delete execution remains an explicit `.agents` maintenance action with confirmation-token protection.
 
 ### Changed
 - None.

@@ -40,7 +40,7 @@ export const taskRetentionPayload = (overrides = {}) => ({
 	scope: "project",
 	project_scoped: true,
 	thresholds: { stale_hours: 48, terminal_days: 30, artifact_index_warn_bytes: 1048576 },
-	policy: { destructive_actions: false, delete_supported: false, archive_supported: true },
+	policy: { destructive_actions: false, delete_supported: false, archive_supported: true, archive_delete_supported: true },
 	summary: {
 		task_packages_total: 5,
 		task_packages_scoped: 3,
@@ -69,6 +69,11 @@ export const taskRetentionPayload = (overrides = {}) => ({
 		archive_candidates: 1,
 		archived_task_packages_total: 4,
 		archived_task_packages_scoped: 2,
+		archive_delete_candidates: 1,
+		archive_delete_skipped_malformed: 0,
+		archive_delete_skipped_checksum: 0,
+		archive_delete_skipped_active_slot: 0,
+		archive_delete_skipped_blocked: 1,
 	},
 	...overrides,
 });
