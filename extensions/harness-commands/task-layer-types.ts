@@ -102,3 +102,7 @@ export function supportsTaskArtifacts(state: TaskLayerState): boolean {
 export function supportsTaskLifecycle(state: TaskLayerState): boolean {
 	return Boolean(state.apiInfo?.capabilities?.includes("task_lifecycle"));
 }
+
+export function supportsTaskRetentionDiagnostics(state: TaskLayerState): boolean {
+	return Boolean(state.apiInfo?.capabilities?.includes("task_retention_diagnostics"));
+}

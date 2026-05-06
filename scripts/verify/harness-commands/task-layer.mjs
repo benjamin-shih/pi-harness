@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { agentsRoot, assert, createTaskHarness, homeRoot, join, root, runRealAgentsTaskLayerTest, taskBindPayload, taskLifecyclePayload } from "./support.mjs";
+import { agentsRoot, assert, createTaskHarness, homeRoot, join, root, runRealAgentsTaskLayerTest, taskBindPayload, taskLifecyclePayload, taskRetentionPayload } from "./support.mjs";
 
 export async function runTaskLayerTests() {
 	const boundTask = createTaskHarness({
@@ -34,9 +34,45 @@ export async function runTaskLayerTests() {
 	assert(doctorText.includes("lifecycle API: ok (v1)"), "/doctor should report task lifecycle API health");
 	assert(doctorText.includes("lifecycle status: in_progress (active)"), "/doctor should include bounded lifecycle status");
 	assert(doctorText.includes("lifecycle route: pi / review=none / effort=standard / handoff_required=false"), "/doctor should include bounded route lifecycle metadata");
+	assert(doctorText.includes("## AGENTS task retention"), "/doctor should include shared retention diagnostics");
+	assert(doctorText.includes("retention API: ok (v1)"), "/doctor should report retention API health");
+	assert(doctorText.includes("retention scope: project; destructive actions disabled"), "/doctor should show retention policy without enabling cleanup");
+	assert(doctorText.includes("task packages: 3 scoped; 1 active, 2 terminal, 1 stale"), "/doctor should include bounded task-package retention counts");
+	assert(doctorText.includes("artifact indexes: 2 indexes, 7 records, 512 bytes, 0 oversized"), "/doctor should include bounded artifact-index counts");
+	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-retention.sh") && call.args.includes("--cwd")), "/doctor should call shared retention diagnostics with project cwd");
 	for (const secret of ["secret-runtime", "secret-owner", "secret-lifecycle-session"]) {
 		assert(!doctorText.includes(secret), "/doctor lifecycle diagnostics should not expose lease holder details");
 	}
+
+	const retentionPrivacyTask = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		retentionPayload: taskRetentionPayload({
+			summary: {
+				...taskRetentionPayload().summary,
+				artifact_records: 11,
+			},
+			secret_task_id: "secret-retention-task",
+			secret_path: "/private/project/secret-file",
+		}),
+	});
+	await retentionPrivacyTask.handlers.get("session_start")({ reason: "startup" }, retentionPrivacyTask.ctx);
+	await retentionPrivacyTask.handlers.get("before_agent_start")({ prompt: "Review retention privacy", systemPrompt: "base" }, retentionPrivacyTask.ctx);
+	await retentionPrivacyTask.commands.get("doctor").handler("", retentionPrivacyTask.ctx);
+	const retentionPrivacyDoctor = retentionPrivacyTask.sentMessages.at(-1).content;
+	assert(retentionPrivacyDoctor.includes("artifact indexes: 2 indexes, 11 records"), "/doctor should render bounded retention counts");
+	assert(!retentionPrivacyDoctor.includes("secret-retention-task"), "/doctor should not render task ids from unexpected retention payload fields");
+	assert(!retentionPrivacyDoctor.includes("secret-file"), "/doctor should not render paths from unexpected retention payload fields");
+
+	const retentionUnavailableTask = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		scriptResults: { "task-retention.sh": { code: 1, stdout: "", stderr: "private retention error" } },
+	});
+	await retentionUnavailableTask.handlers.get("session_start")({ reason: "startup" }, retentionUnavailableTask.ctx);
+	await retentionUnavailableTask.handlers.get("before_agent_start")({ prompt: "Review unavailable retention", systemPrompt: "base" }, retentionUnavailableTask.ctx);
+	await retentionUnavailableTask.commands.get("doctor").handler("", retentionUnavailableTask.ctx);
+	const retentionUnavailableDoctor = retentionUnavailableTask.sentMessages.at(-1).content;
+	assert(retentionUnavailableDoctor.includes("retention API: unavailable (script_error)"), "/doctor should degrade safely when retention diagnostics fail");
+	assert(!retentionUnavailableDoctor.includes("private retention error"), "/doctor retention diagnostics should not expose script stderr");
 
 	const terminalLifecycleTask = createTaskHarness({
 		bindPayload: taskBindPayload(),

@@ -34,6 +34,41 @@ export const taskLifecyclePayload = (overrides = {}) => ({
 	events: { count: 3, last_type: "checkpoint", last_timestamp: "2026-05-05T00:00:00Z" },
 	...overrides,
 });
+export const taskRetentionPayload = (overrides = {}) => ({
+	task_api_version: 1,
+	dry_run: true,
+	scope: "project",
+	project_scoped: true,
+	thresholds: { stale_hours: 48, terminal_days: 30, artifact_index_warn_bytes: 1048576 },
+	policy: { destructive_actions: false, delete_supported: false, archive_supported: false },
+	summary: {
+		task_packages_total: 5,
+		task_packages_scoped: 3,
+		active_tasks: 1,
+		terminal_tasks: 2,
+		stale_tasks: 1,
+		completed_tasks: 1,
+		blocked_tasks: 0,
+		live_leases: 1,
+		expired_leases: 1,
+		missing_leases: 1,
+		malformed_status_files: 0,
+		malformed_lease_files: 0,
+		stale_candidates: 1,
+		terminal_retention_candidates: 1,
+		artifact_indexes: 2,
+		artifact_records: 7,
+		artifact_index_bytes: 512,
+		oversized_artifact_indexes: 0,
+		malformed_artifact_lines: 0,
+		event_ledgers: 3,
+		event_records: 12,
+		event_log_bytes: 2048,
+		malformed_event_lines: 0,
+		lock_files: 1,
+	},
+	...overrides,
+});
 
 export async function runRealAgentsTaskLayerTest() {
 	const realAgentsRoot = agentsRoot;
@@ -142,7 +177,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, executionPayload, artifactAddPayload, lifecyclePayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, executionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
@@ -172,7 +207,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				const overridden = scriptResult(scriptName, { cmd, args, options });
 				if (overridden !== undefined) return overridden;
 			}
-			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle"] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_retention_diagnostics"] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-classify.sh")) {
 				if (classifyResult) return classifyResult;
 				const promptFileIndex = args.indexOf("--prompt-file");
@@ -199,6 +234,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("memory-context.sh")) return { code: 0, stdout: JSON.stringify(memoryContextPayload ?? { memory_api_version: 1, included: [], omitted: [], context: "" }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload ?? { memory_api_version: 1, counts_by_state: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0 }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-lifecycle.sh")) return { code: 0, stdout: JSON.stringify(taskLifecyclePayload({ task_id: args[1], ...(lifecyclePayload ?? {}) })), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-retention.sh")) return { code: 0, stdout: JSON.stringify(taskRetentionPayload(retentionPayload ?? {})), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-heartbeat.sh")) return { code: 0, stdout: "", stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-event.sh")) return { code: 0, stdout: JSON.stringify({ type: "checkpoint" }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-artifact-list.sh")) return { code: 0, stdout: JSON.stringify({ artifact_api_version: 1, task_id: args[1], count: 0, artifacts: [] }), stderr: "" };

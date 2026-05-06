@@ -7,6 +7,7 @@ import type { FinalTaskVisibility } from "../shared/final-visibility";
 import type { TaskWeight } from "../shared/prompt-guidance";
 import { candidateRoot, classifyTask, ensureTaskApi, runScript, shortError } from "./task-layer-api";
 import { activityFromTool, pathArtifactFromTool, pathFromTool, verificationArtifactFromTool } from "./task-layer-artifacts";
+import { retentionSection } from "./task-layer-retention";
 import {
 	HEARTBEAT_INTERVAL_MS,
 	SUPPORTED_ARTIFACT_API_VERSION,
@@ -335,6 +336,9 @@ export function createAgentsTaskLayer() {
 				"",
 				"## AGENTS task lifecycle",
 				...(await lifecycleSection(pi, ctx)),
+				"",
+				"## AGENTS task retention",
+				...(await retentionSection(pi, ctx, state)),
 			].join("\n");
 		},
 		health(): "ok" | "warning" {
