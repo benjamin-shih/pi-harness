@@ -1,7 +1,13 @@
-import { assert, loadExtensionModule } from "./harness.mjs";
+import { assert, loadExtensionModule, withEnv } from "./harness.mjs";
 
-export function runFooterUsageTests() {
+export async function runFooterUsageTests() {
 	const footer = loadExtensionModule("extensions/ui-polish/index.ts");
+	await withEnv({ PI_SUBAGENT_CHILD: "1" }, async () => {
+		const handlers = new Map();
+		const factory = footer.default ?? footer;
+		factory({ on: (event, handler) => handlers.set(event, handler) });
+		assert(handlers.size === 0, "ui-polish should not register UI or final-message handlers inside subagent children");
+	});
 	assert(typeof footer.calculateFooterUsage === "function", "ui-polish should export calculateFooterUsage");
 	assert(typeof footer.compactExtensionStatusItems === "function", "ui-polish should export compactExtensionStatusItems");
 	assert(typeof footer.piTitle === "function", "ui-polish should export piTitle");

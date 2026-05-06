@@ -10,12 +10,15 @@ All notable changes to this personal pi harness package are tracked here.
 - Task retention/artifact-hygiene diagnostics in `/doctor`, sourced from the shared `.agents` retention API and limited to counts/bytes/warnings with destructive cleanup disabled.
 - Archive availability and bounded archive counts in `/doctor`; archive plan/apply/restore remains an explicit `.agents` maintenance action, not harness automation.
 - Archived-bundle delete availability and bounded candidate/skip counts in `/doctor`; delete execution remains an explicit `.agents` maintenance action with confirmation-token protection.
+- Local `smoke:user-packages` verification for the actual configured Pi package set, including `pi-subagents` and `pi-intercom` extension loading.
 
 ### Changed
-- None.
+- Updated the local Pi development dependency to `@mariozechner/pi-coding-agent@0.73.0`.
 
 ### Fixed
-- None.
+- Harness ambient/task/continuity/UI extensions now no-op inside `pi-subagents` child processes while keeping the safety gate active.
+- Task API availability checks now retry transient startup failures instead of caching a degraded state for the entire session.
+- Retention diagnostics now render missing same-version numeric fields as zero instead of `NaN`.
 
 ### Breaking
 - None.

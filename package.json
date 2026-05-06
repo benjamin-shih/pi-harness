@@ -13,6 +13,7 @@
     "verify:integration": "npm run verify:mock && npm run smoke:pi",
     "verify:full-local": "npm run verify:integration && npm run harness:audit && npm run skills:audit",
     "smoke:pi": "node scripts/pi-lifecycle-smoke.mjs",
+    "smoke:user-packages": "node scripts/pi-user-package-smoke.mjs",
     "harness:audit": "node scripts/harness-audit.mjs",
     "skills:audit": "node scripts/skills-audit.mjs",
     "changelog": "node scripts/changelog.mjs",
@@ -24,7 +25,7 @@
     "@mariozechner/pi-tui": "*"
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "0.71.0",
+    "@mariozechner/pi-coding-agent": "0.73.0",
     "@types/node": "25.6.0",
     "typescript": "6.0.3"
   },

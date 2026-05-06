@@ -7,6 +7,7 @@ import {
 	type SessionBeforeCompactEvent,
 	type SessionCompactEvent,
 } from "@mariozechner/pi-coding-agent";
+import { isPiSubagentChild } from "../shared/runtime";
 import { CHECKPOINT_TYPE, COMPACTION_SYSTEM_PROMPT, MIN_CHECKPOINT_INTERVAL_MS } from "./constants";
 import {
 	appendCompactionDiagnostic,
@@ -44,6 +45,8 @@ type CompleteFn = typeof complete;
 export function createSessionContinuity(deps: { completeFn?: CompleteFn } = {}) {
 	const completeFn = deps.completeFn ?? complete;
 	return function sessionContinuity(pi: ExtensionAPI) {
+		if (isPiSubagentChild()) return;
+
 		let turnState = emptyTurnState();
 		let checkpointCount = 0;
 		let lastCheckpointHash: string | undefined;

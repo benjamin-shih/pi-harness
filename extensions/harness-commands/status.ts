@@ -37,6 +37,7 @@ type StatusTaskLayer = {
 	doctorSection(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string>;
 	health(): "ok" | "warning";
 	ambientScope?(): { taskId?: string; projectRoot?: string };
+	refresh?(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void>;
 };
 
 const PACKAGE_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -81,6 +82,7 @@ function formatHarnessAuditLines(result: HarnessAuditResult): string[] {
 }
 
 async function buildHarnessFacts(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer): Promise<HarnessFacts> {
+	await taskLayer.refresh?.(pi, ctx);
 	const git = await gitSummary(pi, ctx.cwd);
 	const branch = ctx.sessionManager.getBranch();
 	const taskScope = taskLayer.ambientScope?.() ?? {};

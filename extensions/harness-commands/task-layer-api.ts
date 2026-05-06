@@ -22,8 +22,10 @@ export function shortError(result: ExecResult): string {
 }
 
 export async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd: string): Promise<boolean> {
-	if (state.apiChecked) return state.apiAvailable;
+	if (state.apiChecked && state.apiAvailable) return true;
 	state.apiChecked = true;
+	state.apiAvailable = false;
+	state.apiInfo = undefined;
 	try {
 		const result = await runScript(pi, "task-api.sh", ["info"], cwd, 5_000);
 		if (result.code !== 0) {
@@ -37,6 +39,7 @@ export async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd
 		}
 		state.apiInfo = payload;
 		state.apiAvailable = true;
+		state.lastError = undefined;
 		return true;
 	} catch (error) {
 		state.lastError = error instanceof Error ? error.message : String(error);

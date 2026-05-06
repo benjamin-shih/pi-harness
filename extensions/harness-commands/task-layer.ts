@@ -243,6 +243,9 @@ export function createAgentsTaskLayer() {
 			resetSessionState(state);
 			await ensureTaskApi(pi, state, ctx.cwd);
 		},
+		async refresh(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+			if (state.apiChecked && !state.apiAvailable) await ensureTaskApi(pi, state, ctx.cwd);
+		},
 		async beforeAgentStart(pi: ExtensionAPI, prompt: string, fallbackWeight: TaskWeight, ctx: ExtensionContext): Promise<string | undefined> {
 			resetPromptState(state, fallbackWeight);
 			if (!(await ensureTaskApi(pi, state, ctx.cwd))) return undefined;

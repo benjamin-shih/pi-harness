@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { assert, loadExtensionModule, root } from "./harness.mjs";
+import { assert, loadExtensionModule, root, withEnv } from "./harness.mjs";
 
 function textFromCodes(...codes) {
 	return String.fromCharCode(...codes);
@@ -27,6 +27,15 @@ export async function runSessionContinuityBehaviorTests() {
 	);
 
 	const factory = continuity.default ?? continuity;
+	await withEnv({ PI_SUBAGENT_CHILD: "1" }, async () => {
+		const childHandlers = new Map();
+		factory({
+			on: (event, handler) => childHandlers.set(event, handler),
+			appendEntry: () => assert(false, "session-continuity should not append entries inside subagent children"),
+		});
+		assert(childHandlers.size === 0, "session-continuity should not register checkpoint or compaction handlers inside subagent children");
+	});
+
 	const handlers = new Map();
 	const appended = [];
 	let registeredCommands = 0;

@@ -1,7 +1,17 @@
 import { existsSync } from "node:fs";
-import { agentsRoot, assert, createTaskHarness, homeRoot, join, root, runRealAgentsTaskLayerTest, taskBindPayload, taskLifecyclePayload, taskRetentionPayload } from "./support.mjs";
+import { agentsRoot, assert, createTaskHarness, harnessCommands, homeRoot, join, root, runRealAgentsTaskLayerTest, taskBindPayload, taskLifecyclePayload, taskRetentionPayload, withEnv } from "./support.mjs";
 
 export async function runTaskLayerTests() {
+	await withEnv({ PI_SUBAGENT_CHILD: "1" }, async () => {
+		const handlers = new Map();
+		const commands = new Map();
+		harnessCommands({
+			on: (event, handler) => handlers.set(event, handler),
+			registerCommand: (name, command) => commands.set(name, command),
+		});
+		assert(handlers.size === 0 && commands.size === 0, "harness commands should not register ambient handlers or slash commands inside subagent children");
+	});
+
 	const boundTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
 		lifecyclePayload: taskLifecyclePayload({ lease: { state: "live", runtime: "secret-runtime", owner: "secret-owner", session: "secret-lifecycle-session", expires_at: "2026-05-05T00:00:00Z" } }),
@@ -66,6 +76,26 @@ export async function runTaskLayerTests() {
 	assert(!retentionPrivacyDoctor.includes("secret-retention-task"), "/doctor should not render task ids from unexpected retention payload fields");
 	assert(!retentionPrivacyDoctor.includes("secret-file"), "/doctor should not render paths from unexpected retention payload fields");
 
+	const legacyRetentionTask = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		retentionPayload: {
+			policy: { destructive_actions: false },
+			summary: {
+				task_packages_total: 2,
+				task_packages_scoped: 1,
+				active_tasks: 1,
+				terminal_tasks: 0,
+				stale_tasks: 0,
+			},
+		},
+	});
+	await legacyRetentionTask.handlers.get("session_start")({ reason: "startup" }, legacyRetentionTask.ctx);
+	await legacyRetentionTask.handlers.get("before_agent_start")({ prompt: "Review legacy retention payload", systemPrompt: "base" }, legacyRetentionTask.ctx);
+	await legacyRetentionTask.commands.get("doctor").handler("", legacyRetentionTask.ctx);
+	const legacyRetentionDoctor = legacyRetentionTask.sentMessages.at(-1).content;
+	assert(!legacyRetentionDoctor.includes("NaN"), "/doctor should render missing same-version retention fields as zero instead of NaN");
+	assert(legacyRetentionDoctor.includes("archive delete: unavailable; 0 candidates, 0 skipped"), "/doctor should degrade optional archive-delete counts to zero for older retention payloads");
+
 	const retentionUnavailableTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
 		scriptResults: { "task-retention.sh": { code: 1, stdout: "", stderr: "private retention error" } },
@@ -125,6 +155,20 @@ export async function runTaskLayerTests() {
 		await unavailableTaskApi.commands.get("status").handler("", unavailableTaskApi.ctx);
 		assert(unavailableTaskApi.sentMessages.at(-1).content.includes("state    unavailable"), `/status should report unavailable task binding after ${label} task-api output`);
 	}
+
+	const recoveredTaskApi = createTaskHarness({
+		scriptResults: {
+			"task-api.sh": [
+				{ code: 1, stdout: "", stderr: "task api warming up" },
+				{ code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_retention_diagnostics"] }), stderr: "" },
+			],
+		},
+		bindPayload: taskBindPayload(),
+	});
+	await recoveredTaskApi.handlers.get("session_start")({ reason: "startup" }, recoveredTaskApi.ctx);
+	const recoveredTaskApiResult = await recoveredTaskApi.handlers.get("before_agent_start")({ prompt: "Implement task binding after transient API startup failure", systemPrompt: "base" }, recoveredTaskApi.ctx);
+	assert(recoveredTaskApiResult?.systemPrompt?.includes("## Active AGENTS Task Context"), "pi task layer should retry a failed task-api check and recover within the same session");
+	assert(recoveredTaskApi.execCalls.filter((call) => call.args[0]?.endsWith("task-api.sh")).length === 2, "pi task layer should cache successful task-api checks but retry transient failures");
 
 	const incompatibleClassify = createTaskHarness({
 		classifyPayload: { task_api_version: 2, weight: "standard", binding_mode: "auto" },
