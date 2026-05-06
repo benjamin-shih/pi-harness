@@ -6,10 +6,15 @@ export function runFooterUsageTests() {
 	assert(typeof footer.compactExtensionStatusItems === "function", "ui-polish should export compactExtensionStatusItems");
 	assert(typeof footer.piTitle === "function", "ui-polish should export piTitle");
 	assert(typeof footer.formatElapsed === "function", "ui-polish should export formatElapsed");
+	assert(typeof footer.formatCount === "function", "ui-polish should export formatCount");
 	assert(typeof footer.appendElapsedToAssistantMessage === "function", "ui-polish should export appendElapsedToAssistantMessage");
 	assert(footer.piTitle("/tmp/project", "session", "⠋") === "⠋ π - session - project", "ui-polish should format active titlebar spinner titles");
 	assert(footer.piTitle("/tmp/project", "session") === "π - session - project", "ui-polish should format idle titlebar titles");
 	assert(Array.isArray(footer.TITLE_SPINNER_FRAMES) && footer.TITLE_SPINNER_FRAMES.length > 0, "ui-polish should expose titlebar spinner frames");
+	assert(footer.formatCount(999) === "999", "ui-polish should format small footer counts directly");
+	assert(footer.formatCount(12_345) === "12.3k", "ui-polish should compact thousands with one decimal");
+	assert(footer.formatCount(12_345_678) === "12.35m", "ui-polish should compact millions with two decimals");
+	assert(footer.formatCount(1_002_500_000) === "1.00b", "ui-polish should compact billion-scale footer counts instead of oversized million counts");
 	assert(footer.formatElapsed(65_432) === "1:05", "ui-polish should format minute elapsed times");
 	assert(footer.formatElapsed(3_661_000) === "1:01:01", "ui-polish should format hour elapsed times");
 	const timedMessage = footer.appendElapsedToAssistantMessage({

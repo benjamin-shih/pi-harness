@@ -1,10 +1,11 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
-function formatCount(n: number): string {
+export function formatCount(n: number): string {
 	if (n < 1_000) return `${n}`;
 	if (n < 1_000_000) return `${(n / 1_000).toFixed(1)}k`;
-	return `${(n / 1_000_000).toFixed(2)}m`;
+	if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}m`;
+	return `${(n / 1_000_000_000).toFixed(2)}b`;
 }
 
 const SEGMENT_BG = "customMessageBg";

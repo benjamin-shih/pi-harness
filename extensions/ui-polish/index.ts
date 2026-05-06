@@ -4,7 +4,7 @@ import { installPromptPolish } from "./prompt";
 import { installTitlebarSpinner } from "./titlebar";
 import { installTurnTimer } from "./turn-timer";
 
-export { calculateFooterUsage, compactExtensionStatusItems } from "./footer";
+export { calculateFooterUsage, compactExtensionStatusItems, formatCount } from "./footer";
 export { piTitle, TITLE_SPINNER_FRAMES } from "./titlebar";
 export { appendElapsedToAssistantMessage, formatElapsed } from "./turn-timer";
 
