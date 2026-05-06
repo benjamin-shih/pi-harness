@@ -34,6 +34,27 @@ export const taskLifecyclePayload = (overrides = {}) => ({
 	events: { count: 3, last_type: "checkpoint", last_timestamp: "2026-05-05T00:00:00Z" },
 	...overrides,
 });
+export const piPackagePolicyPayload = (overrides = {}) => ({
+	pi_package_policy_api_version: 1,
+	approval_policy_version: 1,
+	approval_manifest: join(agentsRoot, "policy", "pi-packages-approved.json"),
+	settings_path: join(homeRoot, ".pi", "agent", "settings.json"),
+	policy: { default_action: "deny", requires_exact_pins: true, runtime_network_checks: false },
+	summary: {
+		configured_packages: 4,
+		approved_packages: 4,
+		unapproved_packages: 0,
+		unpinned_packages: 0,
+		unknown_package_entries: 0,
+		approved_manifest_entries: 4,
+	},
+	packages: [
+		{ index: 0, source: "./packages/ben-pi-harness", display_source: "./packages/ben-pi-harness", source_type: "local", pinned: true, approved: true, approval: "trusted_local", reason: "approved" },
+		{ index: 1, source: "npm:pi-subagents@0.24.0", display_source: "npm:pi-subagents@0.24.0", source_type: "npm", package: "pi-subagents", version: "0.24.0", pinned: true, approved: true, approval: "quarantine_reviewed", reason: "approved" },
+	],
+	...overrides,
+});
+
 export const taskRetentionPayload = (overrides = {}) => ({
 	task_api_version: 1,
 	dry_run: true,
@@ -185,7 +206,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, executionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, executionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
@@ -243,6 +264,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload ?? { memory_api_version: 1, counts_by_state: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0 }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-lifecycle.sh")) return { code: 0, stdout: JSON.stringify(taskLifecyclePayload({ task_id: args[1], ...(lifecyclePayload ?? {}) })), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-retention.sh")) return { code: 0, stdout: JSON.stringify(taskRetentionPayload(retentionPayload ?? {})), stderr: "" };
+			if (cmd === "bash" && script.endsWith("pi-package-doctor.sh")) return { code: 0, stdout: JSON.stringify(piPackagePolicyPayload(packagePolicyPayload ?? {})), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-heartbeat.sh")) return { code: 0, stdout: "", stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-event.sh")) return { code: 0, stdout: JSON.stringify({ type: "checkpoint" }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-artifact-list.sh")) return { code: 0, stdout: JSON.stringify({ artifact_api_version: 1, task_id: args[1], count: 0, artifacts: [] }), stderr: "" };
