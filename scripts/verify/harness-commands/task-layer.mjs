@@ -39,6 +39,7 @@ export async function runTaskLayerTests() {
 	assert(doctorText.includes("retention scope: project; destructive actions disabled"), "/doctor should show retention policy without enabling cleanup");
 	assert(doctorText.includes("task packages: 3 scoped; 1 active, 2 terminal, 1 stale"), "/doctor should include bounded task-package retention counts");
 	assert(doctorText.includes("artifact indexes: 2 indexes, 7 records, 512 bytes, 0 oversized"), "/doctor should include bounded artifact-index counts");
+	assert(doctorText.includes("archive: available; 1 candidates, 2 archived scoped"), "/doctor should include bounded archive availability and counts");
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-retention.sh") && call.args.includes("--cwd")), "/doctor should call shared retention diagnostics with project cwd");
 	for (const secret of ["secret-runtime", "secret-owner", "secret-lifecycle-session"]) {
 		assert(!doctorText.includes(secret), "/doctor lifecycle diagnostics should not expose lease holder details");
@@ -60,6 +61,7 @@ export async function runTaskLayerTests() {
 	await retentionPrivacyTask.commands.get("doctor").handler("", retentionPrivacyTask.ctx);
 	const retentionPrivacyDoctor = retentionPrivacyTask.sentMessages.at(-1).content;
 	assert(retentionPrivacyDoctor.includes("artifact indexes: 2 indexes, 11 records"), "/doctor should render bounded retention counts");
+	assert(retentionPrivacyDoctor.includes("2 archived scoped"), "/doctor should render bounded archive counts");
 	assert(!retentionPrivacyDoctor.includes("secret-retention-task"), "/doctor should not render task ids from unexpected retention payload fields");
 	assert(!retentionPrivacyDoctor.includes("secret-file"), "/doctor should not render paths from unexpected retention payload fields");
 

@@ -8,6 +8,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Route API observability in `/status` and `/doctor`: the last ambient execution-route state now distinguishes active, inactive, and safely degraded shared-route checks without exposing prompt or script-output details.
 - Task lifecycle diagnostics in `/doctor`, sourced from the shared `.agents` task lifecycle API and bounded to status, terminal/active state, lease state, route metadata, event counts, blockers count, and next action.
 - Task retention/artifact-hygiene diagnostics in `/doctor`, sourced from the shared `.agents` retention API and limited to counts/bytes/warnings with destructive cleanup disabled.
+- Archive availability and bounded archive counts in `/doctor`; archive plan/apply/restore remains an explicit `.agents` maintenance action, not harness automation.
 
 ### Changed
 - None.

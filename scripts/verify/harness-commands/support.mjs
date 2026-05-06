@@ -40,7 +40,7 @@ export const taskRetentionPayload = (overrides = {}) => ({
 	scope: "project",
 	project_scoped: true,
 	thresholds: { stale_hours: 48, terminal_days: 30, artifact_index_warn_bytes: 1048576 },
-	policy: { destructive_actions: false, delete_supported: false, archive_supported: false },
+	policy: { destructive_actions: false, delete_supported: false, archive_supported: true },
 	summary: {
 		task_packages_total: 5,
 		task_packages_scoped: 3,
@@ -66,6 +66,9 @@ export const taskRetentionPayload = (overrides = {}) => ({
 		event_log_bytes: 2048,
 		malformed_event_lines: 0,
 		lock_files: 1,
+		archive_candidates: 1,
+		archived_task_packages_total: 4,
+		archived_task_packages_scoped: 2,
 	},
 	...overrides,
 });
@@ -207,7 +210,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				const overridden = scriptResult(scriptName, { cmd, args, options });
 				if (overridden !== undefined) return overridden;
 			}
-			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_retention_diagnostics"] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_retention_diagnostics", "task_archive"] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-classify.sh")) {
 				if (classifyResult) return classifyResult;
 				const promptFileIndex = args.indexOf("--prompt-file");
