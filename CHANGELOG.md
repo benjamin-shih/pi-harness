@@ -5,7 +5,7 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
-- None.
+- Route API observability in `/status` and `/doctor`: the last ambient execution-route state now distinguishes active, inactive, and safely degraded shared-route checks without exposing prompt or script-output details.
 
 ### Changed
 - None.

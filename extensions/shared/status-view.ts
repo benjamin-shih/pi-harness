@@ -75,7 +75,11 @@ function taskRows(taskLayer: StatusViewTaskLayer): VisibilityBoxRow[] {
 }
 
 function executionSummary(snapshot: AmbientContextSnapshot | undefined): string {
-	return snapshot?.lanes.find((lane) => lane.id === "execution" && lane.status === "included")?.publicSummary ?? "not active";
+	const route = snapshot?.executionRoute;
+	if (!route) return "not active";
+	if (route.status === "routed") return route.summary;
+	if (route.status === "no_intent") return "not active";
+	return `degraded · ${route.status}`;
 }
 
 function ambientRows(snapshot: AmbientContextSnapshot | undefined): VisibilityBoxRow[] {

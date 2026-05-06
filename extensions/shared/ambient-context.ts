@@ -1,4 +1,5 @@
 import { decideAmbientPolicy, type AmbientPolicy } from "./ambient-policy";
+import type { ExecutionRouteState } from "./execution-guidance";
 import type { TaskWeight } from "./prompt-guidance";
 
 export type AmbientLaneStatus = "included" | "skipped";
@@ -10,6 +11,7 @@ export type AmbientContextLane = {
 	content?: string;
 	reason?: string;
 	publicSummary?: string;
+	executionRouteState?: ExecutionRouteState;
 };
 
 export type AmbientContextLaneSnapshot = {
@@ -21,6 +23,8 @@ export type AmbientContextLaneSnapshot = {
 	publicSummary?: string;
 };
 
+export type AmbientExecutionRouteSnapshot = Pick<ExecutionRouteState, "health" | "status" | "apiVersion" | "summary">;
+
 export type AmbientContextSnapshot = {
 	version: "v0";
 	weight: TaskWeight;
@@ -29,6 +33,7 @@ export type AmbientContextSnapshot = {
 	personalContext: AmbientPolicy["personalContext"];
 	advisorySubagents: AmbientPolicy["advisorySubagents"];
 	vectorMemory: false;
+	executionRoute?: AmbientExecutionRouteSnapshot;
 };
 
 export type AmbientContextAssembly = {
@@ -69,6 +74,16 @@ function laneSnapshot(lane: AmbientContextLane): AmbientContextLaneSnapshot {
 	};
 }
 
+function executionRouteSnapshot(state: ExecutionRouteState | undefined): AmbientExecutionRouteSnapshot | undefined {
+	if (!state) return undefined;
+	return {
+		health: state.health,
+		status: state.status,
+		summary: cleanPublicSummary(state.summary) ?? state.summary,
+		...(state.apiVersion === undefined ? {} : { apiVersion: state.apiVersion }),
+	};
+}
+
 function formatLaneReceipt(lane: AmbientContextLaneSnapshot): string {
 	if (lane.status === "included") return `  - ${lane.id}: included, ${lane.chars} chars${lane.publicSummary ? `, ${lane.publicSummary}` : ""}`;
 	return `  - ${lane.id}: skipped${lane.reason ? `, ${lane.reason}` : ""}`;
@@ -93,6 +108,7 @@ function formatAmbientReceipt(snapshot: AmbientContextSnapshot): string {
 export function assembleAmbientContext(baseSystemPrompt: string, weight: TaskWeight, lanes: AmbientContextLane[], policy = decideAmbientPolicy(weight)): AmbientContextAssembly {
 	const ordered = [...lanes].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
 	const additions = ordered.map(includedContent).filter((content): content is string => Boolean(content));
+	const executionLane = ordered.find((lane) => lane.id === "execution");
 	const snapshot: AmbientContextSnapshot = {
 		version: "v0",
 		weight,
@@ -101,6 +117,7 @@ export function assembleAmbientContext(baseSystemPrompt: string, weight: TaskWei
 		personalContext: policy.personalContext,
 		advisorySubagents: policy.advisorySubagents,
 		vectorMemory: policy.vectorMemory,
+		executionRoute: executionRouteSnapshot(executionLane?.executionRouteState),
 	};
 	const receipt = policy.receipt === "compact" ? formatAmbientReceipt(snapshot) : undefined;
 	const promptAdditions = receipt ? [...additions, receipt] : additions;
@@ -110,6 +127,14 @@ export function assembleAmbientContext(baseSystemPrompt: string, weight: TaskWei
 		receipt,
 		snapshot,
 	};
+}
+
+function formatExecutionRouteDoctor(state: AmbientExecutionRouteSnapshot | undefined): string {
+	if (!state) return "not checked";
+	const version = state.apiVersion === undefined ? "unknown" : `v${state.apiVersion}`;
+	if (state.status === "routed") return `${state.health} (${version}; ${state.summary})`;
+	if (state.status === "no_intent") return `${state.health} (${version}; not active)`;
+	return `${state.health} (${version}; ${state.status})`;
 }
 
 export function ambientDoctorSection(snapshot: AmbientContextSnapshot | undefined): string {
@@ -124,5 +149,6 @@ export function ambientDoctorSection(snapshot: AmbientContextSnapshot | undefine
 		`- personal context: ${snapshot.personalContext}`,
 		`- advisory subagents: ${snapshot.advisorySubagents}`,
 		`- vector memory: ${snapshot.vectorMemory ? "enabled" : "disabled"}`,
+		`- execution-route API: ${formatExecutionRouteDoctor(snapshot.executionRoute)}`,
 	].join("\n");
 }

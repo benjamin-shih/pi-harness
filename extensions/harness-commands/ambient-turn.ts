@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { assembleAmbientContext, type AmbientContextAssembly, type AmbientContextLane } from "../shared/ambient-context";
 import { decideAmbientPolicy, shouldIncludeMemoryContext, shouldIncludeRepoContext } from "../shared/ambient-policy";
-import { buildExecutionGuidance, type ExecutionRoute } from "../shared/execution-guidance";
+import { buildExecutionRouteState, type ExecutionRouteState } from "../shared/execution-guidance";
 import { buildMemoryContext, memoryAdminGuidance, memoryCandidateReminder, type MemoryContextResult } from "../shared/memory-context";
 import {
 	cleanupReminder,
@@ -30,9 +30,13 @@ type AmbientTurnInput = {
 
 type AmbientLaneInput = Pick<AmbientTurnInput, "prompt" | "weight" | "activeMode" | "taskContext"> & {
 	memoryContext?: MemoryContextResult;
-	executionRoute?: ExecutionRoute;
+	executionRoute?: ExecutionRouteState;
 	repoSummary?: RepoContextSummary;
 };
+
+function executionLaneReason(route: ExecutionRouteState | undefined): string {
+	return route?.health === "degraded" ? `execution-route degraded: ${route.status}` : "no explicit execution intent";
+}
 
 function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 	const repoContext = input.repoSummary ? formatRepoContext(input.repoSummary) : undefined;
@@ -47,7 +51,15 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 		{ id: "memory", title: "Approved scoped memory", priority: 65, content: input.memoryContext?.content, reason: input.memoryContext?.reason ?? "memory disabled" },
 		{ id: "memory_candidates", title: "Durable memory candidates", priority: 66, content: memoryCandidateReminder(input.weight !== "trivial"), reason: "trivial prompt" },
 		{ id: "memory_admin", title: "Explicit memory admin", priority: 67, content: memoryAdminGuidance(input.prompt), reason: "no explicit memory admin request" },
-		{ id: "execution", title: "Ambient execution protocol", priority: 68, content: input.executionRoute?.guidance, publicSummary: input.executionRoute?.summary, reason: "no explicit execution intent" },
+		{
+			id: "execution",
+			title: "Ambient execution protocol",
+			priority: 68,
+			content: input.executionRoute?.route?.guidance,
+			publicSummary: input.executionRoute?.route?.summary,
+			reason: executionLaneReason(input.executionRoute),
+			executionRouteState: input.executionRoute,
+		},
 		{ id: "repo", title: "Repo metadata", priority: 70, content: repoContext, reason: input.repoSummary?.summary ?? "trivial prompt" },
 	];
 }
@@ -57,7 +69,7 @@ export async function buildAmbientTurn(pi: ExtensionAPI, ctx: ExtensionContext, 
 	const repoSummary = shouldIncludeRepoContext(policy) ? await buildRepoContextSummary(pi, ctx.cwd) : undefined;
 	const memoryProjectRoot = input.taskScope.projectRoot || repoSummary?.root;
 	const memoryContext = shouldIncludeMemoryContext(policy) ? await buildMemoryContext(pi, ctx.cwd, { projectRoot: memoryProjectRoot, taskId: input.taskScope.taskId }) : undefined;
-	const executionRoute = await buildExecutionGuidance(pi, ctx.cwd, input.prompt);
+	const executionRoute = await buildExecutionRouteState(pi, ctx.cwd, input.prompt);
 	return assembleAmbientContext(input.baseSystemPrompt, input.weight, buildAmbientLanes({
 		...input,
 		memoryContext,

@@ -115,7 +115,7 @@ function overviewLines(facts: HarnessFacts): string[] {
 	];
 }
 
-function doctorRecommendations(facts: DoctorFacts, taskLayer: StatusTaskLayer): string[] {
+function doctorRecommendations(facts: DoctorFacts, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): string[] {
 	const recommendations: string[] = [];
 	if (!facts.audit.ok) recommendations.push("Run `npm run harness:audit` in the harness package; the slash-command audit call failed.");
 	else if (facts.audit.audit.issues?.length) recommendations.push("Fix harness audit issues before adding more harness features.");
@@ -123,11 +123,17 @@ function doctorRecommendations(facts: DoctorFacts, taskLayer: StatusTaskLayer): 
 	if (facts.memory.health === "unknown") recommendations.push("No memory-spine entries yet; run one normal agent turn and check `/memory` again.");
 	if (facts.memoryApi.available && facts.memoryApi.counts.candidate > 0) recommendations.push("Ask to review memory candidates when ready; candidate previews are read-only and promotion/forgetting remains explicit.");
 	if (taskLayer.health() === "warning") recommendations.push("Inspect AGENTS task binding state; pi could not bind or refresh the active task cleanly.");
+	if (ambientContext?.executionRoute?.health === "degraded") recommendations.push("Inspect the shared `.agents` execution-route API; the last ambient route check degraded safely.");
 	return recommendations.length ? recommendations : ["None; harness checks are green."];
 }
 
-function doctorHealth(facts: DoctorFacts, taskLayer: StatusTaskLayer): "ok" | "warning" {
-	return !facts.audit.ok || facts.audit.audit.issues?.length || facts.memory.health === "warning" || taskLayer.health() === "warning" ? "warning" : "ok";
+function doctorHealth(facts: DoctorFacts, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): "ok" | "warning" {
+	const hasWarning = !facts.audit.ok
+		|| Boolean(facts.audit.audit.issues?.length)
+		|| facts.memory.health === "warning"
+		|| taskLayer.health() === "warning"
+		|| ambientContext?.executionRoute?.health === "degraded";
+	return hasWarning ? "warning" : "ok";
 }
 
 const WRITE_SEMANTICS_DOCTOR_SECTION = [
@@ -146,7 +152,7 @@ export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 	const facts = await buildDoctorFacts(pi, ctx, taskLayer);
 	return [
 		"## Harness doctor",
-		`- health: ${doctorHealth(facts, taskLayer)}`,
+		`- health: ${doctorHealth(facts, taskLayer, ambientContext)}`,
 		`- package: ben-pi-harness ${facts.audit.ok ? facts.audit.audit.packageVersion ?? "unknown" : "unknown"}`,
 		...overviewLines(facts),
 		"",
@@ -166,6 +172,6 @@ export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		ambientDoctorSection(ambientContext),
 		"",
 		"## Recommendations",
-		...doctorRecommendations(facts, taskLayer).map((recommendation) => `- ${recommendation}`),
+		...doctorRecommendations(facts, taskLayer, ambientContext).map((recommendation) => `- ${recommendation}`),
 	].join("\n");
 }
