@@ -24,6 +24,7 @@ type PiPackagePolicyPayload = {
 		unpinned_packages?: number;
 		unknown_package_entries?: number;
 		approved_manifest_entries?: number;
+		attestation?: { verified?: number; mismatch?: number; missing?: number; skipped?: number; unapproved?: number };
 	};
 	packages?: PiPackagePolicyPackage[];
 };
@@ -57,7 +58,8 @@ function sourceTypeCounts(packages: PiPackagePolicyPackage[]): string {
 export function piPackagePolicyHealth(result: PiPackagePolicyResult): "ok" | "warning" {
 	if (!result.ok) return "warning";
 	const summary = result.payload.summary;
-	return (summary?.unapproved_packages ?? 0) || (summary?.unpinned_packages ?? 0) || (summary?.unknown_package_entries ?? 0) ? "warning" : "ok";
+	const attestation = summary?.attestation;
+	return (summary?.unapproved_packages ?? 0) || (summary?.unpinned_packages ?? 0) || (summary?.unknown_package_entries ?? 0) || (attestation?.mismatch ?? 0) || (attestation?.missing ?? 0) ? "warning" : "ok";
 }
 
 export function formatPiPackagePolicyLines(result: PiPackagePolicyResult): string[] {
@@ -66,10 +68,12 @@ export function formatPiPackagePolicyLines(result: PiPackagePolicyResult): strin
 	const summary = payload.summary ?? {};
 	const packages = payload.packages ?? [];
 	const unapproved = packages.filter((pkg) => !pkg.approved);
+	const attestation = summary.attestation ?? {};
 	return [
 		`- package policy: ok (v${payload.pi_package_policy_api_version ?? "?"})`,
 		`- approval manifest: ${displayPath(payload.approval_manifest)} (${summary.approved_manifest_entries ?? 0} approved entries)`,
 		`- configured packages: ${summary.configured_packages ?? 0}; ${summary.approved_packages ?? 0} approved, ${summary.unapproved_packages ?? 0} unapproved, ${summary.unpinned_packages ?? 0} unpinned`,
+		`- installed attestation: ${attestation.verified ?? 0} verified, ${attestation.mismatch ?? 0} mismatch, ${attestation.missing ?? 0} missing, ${attestation.skipped ?? 0} skipped`,
 		`- package source types: ${sourceTypeCounts(packages)}`,
 		...(unapproved.length
 			? [`- unapproved package samples: ${unapproved.slice(0, 5).map((pkg) => `${pkg.display_source || "unknown"} (${pkg.reason || "unapproved"})`).join("; ")}`]

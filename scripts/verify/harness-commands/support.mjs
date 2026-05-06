@@ -47,6 +47,7 @@ export const piPackagePolicyPayload = (overrides = {}) => ({
 		unpinned_packages: 0,
 		unknown_package_entries: 0,
 		approved_manifest_entries: 4,
+		attestation: { verified: 2, mismatch: 0, missing: 0, skipped: 2, unapproved: 0 },
 	},
 	packages: [
 		{ index: 0, source: "./packages/ben-pi-harness", display_source: "./packages/ben-pi-harness", source_type: "local", pinned: true, approved: true, approval: "trusted_local", reason: "approved" },

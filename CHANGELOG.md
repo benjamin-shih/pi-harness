@@ -11,7 +11,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Archive availability and bounded archive counts in `/doctor`; archive plan/apply/restore remains an explicit `.agents` maintenance action, not harness automation.
 - Archived-bundle delete availability and bounded candidate/skip counts in `/doctor`; delete execution remains an explicit `.agents` maintenance action with confirmation-token protection.
 - Local `smoke:user-packages` verification for the actual configured Pi package set, including `pi-subagents` and `pi-intercom` extension loading.
-- Read-only `/doctor` visibility for the shared `.agents` Pi package approval manifest, including approved/unapproved/unpinned counts without checking upstream.
+- Read-only `/doctor` visibility for the shared `.agents` Pi package approval manifest, including approved/unapproved/unpinned counts and installed-byte attestation counts without checking upstream.
 
 ### Changed
 - Updated the local Pi development dependency to `@mariozechner/pi-coding-agent@0.73.0`.
