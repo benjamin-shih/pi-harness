@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
-import { agentsRoot, assert, createTaskHarness, homeRoot, join, root, runRealAgentsTaskLayerTest, taskBindPayload } from "./support.mjs";
+import { agentsRoot, assert, createTaskHarness, homeRoot, join, root, runRealAgentsTaskLayerTest, taskBindPayload, taskLifecyclePayload } from "./support.mjs";
 
 export async function runTaskLayerTests() {
 	const boundTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
+		lifecyclePayload: taskLifecyclePayload({ lease: { state: "live", runtime: "secret-runtime", owner: "secret-owner", session: "secret-lifecycle-session", expires_at: "2026-05-05T00:00:00Z" } }),
 	});
 	await boundTask.handlers.get("session_start")({ reason: "startup" }, boundTask.ctx);
 	const taskPromptResult = await boundTask.handlers.get("before_agent_start")({ prompt: "Implement ambient task binding", systemPrompt: "base" }, boundTask.ctx);
@@ -27,6 +28,37 @@ export async function runTaskLayerTests() {
 	assert(artifactCalls.some((call) => call.args.includes("verification_summary") && call.args.includes("npm verify completed")), "pi task layer should capture verification summary artifacts");
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-event.sh") && call.args.includes("checkpoint")), "pi task layer should append a checkpoint event after meaningful turns");
 	assert(boundTask.execCalls.some((call) => call.args[0]?.endsWith("task-gc.sh") && call.args.includes("--no-sweep")), "pi task layer should release only current-session tasks on shutdown");
+	await boundTask.commands.get("doctor").handler("", boundTask.ctx);
+	const doctorText = boundTask.sentMessages.at(-1).content;
+	assert(doctorText.includes("## AGENTS task lifecycle"), "/doctor should include shared lifecycle diagnostics for the active task");
+	assert(doctorText.includes("lifecycle API: ok (v1)"), "/doctor should report task lifecycle API health");
+	assert(doctorText.includes("lifecycle status: in_progress (active)"), "/doctor should include bounded lifecycle status");
+	assert(doctorText.includes("lifecycle route: pi / review=none / effort=standard / handoff_required=false"), "/doctor should include bounded route lifecycle metadata");
+	for (const secret of ["secret-runtime", "secret-owner", "secret-lifecycle-session"]) {
+		assert(!doctorText.includes(secret), "/doctor lifecycle diagnostics should not expose lease holder details");
+	}
+
+	const terminalLifecycleTask = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		lifecyclePayload: taskLifecyclePayload({ status: "completed", terminal: true, active: false, closed_at: "2026-05-05T00:00:00Z", has_closure_reason: true, lease: { state: "expired", runtime: "pi", owner: "tester", session: "secret-lifecycle-session", expires_at: "2026-05-05T00:00:00Z" } }),
+	});
+	await terminalLifecycleTask.handlers.get("session_start")({ reason: "startup" }, terminalLifecycleTask.ctx);
+	await terminalLifecycleTask.handlers.get("before_agent_start")({ prompt: "Review completed task lifecycle", systemPrompt: "base" }, terminalLifecycleTask.ctx);
+	await terminalLifecycleTask.commands.get("doctor").handler("", terminalLifecycleTask.ctx);
+	const terminalDoctor = terminalLifecycleTask.sentMessages.at(-1).content;
+	assert(terminalDoctor.includes("lifecycle status: completed (terminal)"), "/doctor should show terminal lifecycle state from the shared API");
+	assert(terminalDoctor.includes("lifecycle closure reason: recorded"), "/doctor should not print raw closure reason text");
+
+	const lifecycleUnavailableTask = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		scriptResults: { "task-lifecycle.sh": { code: 1, stdout: "", stderr: "private lifecycle error" } },
+	});
+	await lifecycleUnavailableTask.handlers.get("session_start")({ reason: "startup" }, lifecycleUnavailableTask.ctx);
+	await lifecycleUnavailableTask.handlers.get("before_agent_start")({ prompt: "Review unavailable task lifecycle", systemPrompt: "base" }, lifecycleUnavailableTask.ctx);
+	await lifecycleUnavailableTask.commands.get("doctor").handler("", lifecycleUnavailableTask.ctx);
+	const lifecycleUnavailableDoctor = lifecycleUnavailableTask.sentMessages.at(-1).content;
+	assert(lifecycleUnavailableDoctor.includes("lifecycle API: unavailable (script_error)"), "/doctor should degrade safely when lifecycle diagnostics fail");
+	assert(!lifecycleUnavailableDoctor.includes("private lifecycle error"), "/doctor lifecycle diagnostics should not expose script stderr");
 
 	const skippedArtifactTask = createTaskHarness({
 		artifactAddPayload: { artifact_api_version: 2, recorded: false },

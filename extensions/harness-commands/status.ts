@@ -34,7 +34,7 @@ type DoctorFacts = HarnessFacts & { audit: HarnessAuditResult };
 
 type StatusTaskLayer = {
 	statusLines(): string[];
-	doctorSection(): string;
+	doctorSection(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string>;
 	health(): "ok" | "warning";
 	ambientScope?(): { taskId?: string; projectRoot?: string };
 };
@@ -167,7 +167,7 @@ export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		"",
 		WRITE_SEMANTICS_DOCTOR_SECTION,
 		"",
-		taskLayer.doctorSection(),
+		await taskLayer.doctorSection(pi, ctx),
 		"",
 		ambientDoctorSection(ambientContext),
 		"",

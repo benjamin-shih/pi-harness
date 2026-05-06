@@ -13,10 +13,12 @@ import {
 	SUPPORTED_TASK_API_VERSION,
 	emptyActivity,
 	supportsTaskArtifacts,
+	supportsTaskLifecycle,
 	type ArtifactAddResult,
 	type ArtifactListResult,
 	type BindResult,
 	type TaskLayerState,
+	type TaskLifecycleResult,
 } from "./task-layer-types";
 function initialState(): TaskLayerState {
 	return {
@@ -188,6 +190,37 @@ export function createAgentsTaskLayer() {
 			// Heartbeat is best-effort; do not block the user turn.
 		}
 	}
+	function lifecycleLines(payload: TaskLifecycleResult): string[] {
+		const lifecycleState = payload.terminal ? "terminal" : payload.active ? "active" : "inactive";
+		const route = payload.route.primary_runtime
+			? `${payload.route.primary_runtime} / review=${payload.route.review_runtime || "none"} / effort=${payload.route.effort || "?"} / handoff_required=${payload.route.handoff_required}`
+			: "none";
+		const lease = payload.lease.state;
+		return [
+			`- lifecycle API: ok (v${payload.task_api_version ?? "?"})`,
+			`- lifecycle status: ${payload.status || "unknown"} (${lifecycleState}${payload.valid_status ? "" : ", invalid"})`,
+			`- lifecycle lease: ${lease}`,
+			`- lifecycle route: ${route}`,
+			`- lifecycle events: ${payload.events.count} recorded${payload.events.last_type ? `; last ${payload.events.last_type} at ${payload.events.last_timestamp || "unknown"}` : ""}`,
+			`- lifecycle blockers: ${payload.blockers_count}`,
+			...(payload.next_action ? [`- lifecycle next action: ${payload.next_action}`] : []),
+			...(payload.closed_at ? [`- lifecycle closed at: ${payload.closed_at}`] : []),
+			...(payload.has_closure_reason ? ["- lifecycle closure reason: recorded"] : []),
+		];
+	}
+	async function lifecycleSection(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string[]> {
+		if (!state.active?.task_id) return ["- lifecycle API: no active task"];
+		if (!supportsTaskLifecycle(state)) return ["- lifecycle API: unavailable (capability not advertised)"];
+		try {
+			const result = await runScript(pi, "task-lifecycle.sh", [state.active.task_id, "--cwd", ctx.cwd], ctx.cwd, 5_000);
+			if (result.code !== 0) return ["- lifecycle API: unavailable (script_error)"];
+			const payload = parseJson<TaskLifecycleResult>(result.stdout);
+			if (payload?.task_api_version !== SUPPORTED_TASK_API_VERSION) return ["- lifecycle API: unavailable (unsupported API version)"];
+			return lifecycleLines(payload);
+		} catch {
+			return ["- lifecycle API: unavailable (exception)"];
+		}
+	}
 	function statusLines(): string[] {
 		if (state.active?.task_id) {
 			const skipped = state.artifactSkipped ? `, ${state.artifactSkipped} skipped` : "";
@@ -289,7 +322,7 @@ export function createAgentsTaskLayer() {
 				artifacts: { recordedThisTurn: state.artifactRecordedThisTurn, skippedThisTurn: state.artifactSkipped },
 			};
 		},
-		doctorSection(): string {
+		async doctorSection(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string> {
 			return [
 				"## AGENTS task binding",
 				...statusLines(),
@@ -299,6 +332,9 @@ export function createAgentsTaskLayer() {
 				`- current turn activity: reads ${state.activity.reads}, writes ${state.activity.writes}, commands ${state.activity.commands}, errors ${state.activity.errors}`,
 				`- artifact capture: ${state.artifactCount} recorded, ${state.artifactSkipped} skipped this turn`,
 				...(state.lastError ? [`- last task-layer error: ${state.lastError}`] : []),
+				"",
+				"## AGENTS task lifecycle",
+				...(await lifecycleSection(pi, ctx)),
 			].join("\n");
 		},
 		health(): "ok" | "warning" {

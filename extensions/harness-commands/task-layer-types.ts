@@ -37,6 +37,21 @@ export type ArtifactListResult = {
 	count: number;
 };
 
+export type TaskLifecycleResult = {
+	task_api_version?: number;
+	status: string;
+	valid_status: boolean;
+	terminal: boolean;
+	active: boolean;
+	next_action: string;
+	blockers_count: number;
+	closed_at: string;
+	has_closure_reason: boolean;
+	lease: { state: "none" | "live" | "expired"; runtime: string; owner: string; session: string; expires_at: string };
+	route: { primary_runtime: string; review_runtime: string; effort: string; handoff_required: boolean };
+	events: { count: number; last_type: string; last_timestamp: string };
+};
+
 export type CandidateRootResult = {
 	task_api_version: number;
 	project_root: string;
@@ -82,4 +97,8 @@ export function emptyActivity(): TaskActivity {
 
 export function supportsTaskArtifacts(state: TaskLayerState): boolean {
 	return Boolean(state.apiInfo?.capabilities?.includes("task_artifacts"));
+}
+
+export function supportsTaskLifecycle(state: TaskLayerState): boolean {
+	return Boolean(state.apiInfo?.capabilities?.includes("task_lifecycle"));
 }

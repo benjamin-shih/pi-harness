@@ -13,6 +13,27 @@ export const agentsTasksRoot = join(agentsRoot, "tasks");
 
 export const taskBindPayload = (overrides = {}) => ({ action: "created", bound: true, blocked: false, reason: "", task_id: "pi-task", project_root: root, ...overrides });
 export const executionRoutePayload = (overrides = {}) => ({ execution_route_api_version: 1, execution_intent: true, profile: "software", overlays: [], summary: "profile software; overlays none", guidance: "## Ambient Execution Protocol\nExecution intent was detected.", ...overrides });
+export const taskLifecyclePayload = (overrides = {}) => ({
+	task_api_version: 1,
+	task_id: "pi-task",
+	status: "in_progress",
+	valid_status: true,
+	terminal: false,
+	active: true,
+	runtime: "pi",
+	owner: "tester",
+	project_root: root,
+	caller_project_root: root,
+	scope_match: true,
+	next_action: "Continue from latest checkpoint.",
+	blockers_count: 0,
+	closed_at: "",
+	has_closure_reason: false,
+	lease: { state: "live", runtime: "pi", owner: "tester", session: "session-1", expires_at: "2026-05-05T00:00:00Z" },
+	route: { primary_runtime: "pi", review_runtime: "none", effort: "standard", handoff_required: false },
+	events: { count: 3, last_type: "checkpoint", last_timestamp: "2026-05-05T00:00:00Z" },
+	...overrides,
+});
 
 export async function runRealAgentsTaskLayerTest() {
 	const realAgentsRoot = agentsRoot;
@@ -121,7 +142,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, executionPayload, artifactAddPayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, classifyPayload, classifyResult, executionPayload, artifactAddPayload, lifecyclePayload, memoryContextPayload, memoryStatsPayload, cwd = root }) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
@@ -151,7 +172,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				const overridden = scriptResult(scriptName, { cmd, args, options });
 				if (overridden !== undefined) return overridden;
 			}
-			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts"] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle"] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-classify.sh")) {
 				if (classifyResult) return classifyResult;
 				const promptFileIndex = args.indexOf("--prompt-file");
@@ -177,6 +198,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("task-context.sh")) return { code: 0, stdout: "Active task context\n- task_id: pi-task\n- next_action: Continue", stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-context.sh")) return { code: 0, stdout: JSON.stringify(memoryContextPayload ?? { memory_api_version: 1, included: [], omitted: [], context: "" }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload ?? { memory_api_version: 1, counts_by_state: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0 }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-lifecycle.sh")) return { code: 0, stdout: JSON.stringify(taskLifecyclePayload({ task_id: args[1], ...(lifecyclePayload ?? {}) })), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-heartbeat.sh")) return { code: 0, stdout: "", stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-event.sh")) return { code: 0, stdout: JSON.stringify({ type: "checkpoint" }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-artifact-list.sh")) return { code: 0, stdout: JSON.stringify({ artifact_api_version: 1, task_id: args[1], count: 0, artifacts: [] }), stderr: "" };
