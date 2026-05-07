@@ -145,11 +145,11 @@ or referenced as a local checkout from `settings.json`.
 
 ## Compatibility checkpoint
 
-Current release target: `v0.4.0`.
+Current release target: `v0.4.1`.
 
 Validated with:
 
-- `@mariozechner/pi-coding-agent@0.73.0`
+- `@earendil-works/pi-coding-agent@0.74.0`
 - `pi-subagents@0.24.0`
 - `pi-intercom@0.6.0`
 - shared `.agents` task, package-policy, memory, and project-instruction diagnostics APIs as of the release tag
@@ -157,7 +157,7 @@ Validated with:
 ## Release notes
 
 ```bash
-npm run changelog -- v0.4.0
+npm run changelog -- v0.4.1
 ```
 
 See `RELEASING.md` for the release checklist.

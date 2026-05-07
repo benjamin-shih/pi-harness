@@ -3,8 +3,8 @@ import {
 	UserMessageComponent,
 	type ExtensionAPI,
 	type KeybindingsManager,
-} from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type EditorTheme, type TUI } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";

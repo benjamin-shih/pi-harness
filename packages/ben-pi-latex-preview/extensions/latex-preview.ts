@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { readdirSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { getMarkdownTheme, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { getMarkdownTheme, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	calculateImageRows,
 	Container,
@@ -13,7 +13,7 @@ import {
 	Markdown,
 	Spacer,
 	Text,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 
 const requireCore = createRequire(import.meta.url);
 const STATUS_KEY = "latex-preview";

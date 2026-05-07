@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { agentsScriptPath } from "../shared/config";
 import { parseJson } from "../shared/json";
 import { withPrivateTempTextFile } from "../shared/private-temp";

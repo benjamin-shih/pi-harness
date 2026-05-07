@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assembleAmbientContext, type AmbientContextAssembly, type AmbientContextLane } from "../shared/ambient-context";
 import { decideAmbientPolicy, shouldIncludeMemoryContext, shouldIncludeRepoContext } from "../shared/ambient-policy";
 import { buildExecutionRouteState, type ExecutionRouteState } from "../shared/execution-guidance";

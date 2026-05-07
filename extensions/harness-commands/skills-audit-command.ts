@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { skillsRoot } from "../shared/config";
 function formatAudit(stdout: string): string {
 	try {

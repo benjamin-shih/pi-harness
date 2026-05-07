@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolResultEvent } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { CHECKPOINT_TYPE, CONTINUITY_VERSION, MAX_ITEMS_PER_CHECKPOINT, MAX_LEDGER_CHECKPOINTS, MAX_LEDGER_COMMANDS, MAX_LEDGER_FILES, MAX_PROMPT_CHARS } from "./constants";
 import { contextSummary, modelSummary } from "./context";
 import { truncateText } from "./redaction";

@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { parseJson } from "../shared/json";
 import { runScript } from "./task-layer-api";
 import { SUPPORTED_TASK_API_VERSION, supportsTaskRetentionDiagnostics, type TaskLayerState } from "./task-layer-types";

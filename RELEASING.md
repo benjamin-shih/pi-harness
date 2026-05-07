@@ -21,7 +21,7 @@ npm run hooks:install
 Generate a commit-based draft:
 
 ```bash
-npm run changelog -- v0.4.0
+npm run changelog -- v0.4.1
 ```
 
 Then manually edit `CHANGELOG.md`. Keep these sections for every release:
@@ -41,7 +41,7 @@ Only tag from a clean worktree after local validation passes and CI is expected 
 git status --short --branch
 npm run verify
 npm run harness:audit
-git tag -a v0.4.0 -m "v0.4.0"
+git tag -a v0.4.1 -m "v0.4.1"
 git push origin main --tags
 ```
 

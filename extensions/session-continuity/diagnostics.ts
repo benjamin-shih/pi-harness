@@ -1,4 +1,4 @@
-import type { CompactionEntry, SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { CompactionEntry, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { COMPACTION_DIAGNOSTIC_TYPE, CONTINUITY_VERSION } from "./constants";
 import { extractContinuityCheckpoints } from "./checkpoints";
 import type { CompactionDiagnosticReason, ContinuityCheckpoint, ContinuityCompactionDiagnostic, PromptSizing } from "./types";

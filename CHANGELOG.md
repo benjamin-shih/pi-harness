@@ -16,6 +16,20 @@ All notable changes to this personal pi harness package are tracked here.
 ### Breaking
 - None.
 
+## 0.4.1 - 2026-05-07
+
+### Added
+- None.
+
+### Changed
+- Migrated harness peer imports and local development baseline from the deprecated `@mariozechner/*` Pi packages to `@earendil-works/pi-coding-agent@0.74.0` and its renamed runtime peers.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
 ## 0.4.0 - 2026-05-07
 
 ### Added

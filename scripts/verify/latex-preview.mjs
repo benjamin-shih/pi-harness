@@ -305,7 +305,7 @@ export async function runLatexPreviewBehaviorTests() {
 	assert(loaderSource.includes("requireCore"), "latex-preview loader should lazy-load the heavy core renderer");
 	assert(loaderSource.includes("configureLatexPreviewRuntime"), "latex-preview loader should inject pi runtime dependencies before loading previews");
 	const source = readFileSync(join(root, "packages", "ben-pi-latex-preview", "src", "latex-preview-core.ts"), "utf8");
-	assert(!source.includes('from "@mariozechner/pi-tui"'), "latex-preview core should not native-require pi-tui peer imports");
+	assert(!source.includes('from "@earendil-works/pi-tui"'), "latex-preview core should not native-require pi-tui peer imports");
 	assert(source.includes('"-no-shell-escape"'), "latex-preview should run pdflatex with -no-shell-escape");
 	assert(!source.includes("sendMessage"), "latex-preview should not persist preview messages");
 	assert(source.includes("encodeKitty(base64Data, { columns: imageWidthCells })"), "latex-preview should not force Kitty image rows");

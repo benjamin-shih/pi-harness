@@ -1,4 +1,4 @@
-import { complete, type Message } from "@mariozechner/pi-ai";
+import { complete, type Message } from "@earendil-works/pi-ai";
 import {
 	convertToLlm,
 	serializeConversation,
@@ -6,7 +6,7 @@ import {
 	type ExtensionContext,
 	type SessionBeforeCompactEvent,
 	type SessionCompactEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { isPiSubagentChild } from "../shared/runtime";
 import { CHECKPOINT_TYPE, COMPACTION_SYSTEM_PROMPT, MIN_CHECKPOINT_INTERVAL_MS } from "./constants";
 import {

@@ -5,8 +5,8 @@
   "keywords": ["pi-package"],
   "description": "Optional auto-activating LaTeX/math preview package for Benjamin's pi setup.",
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-tui": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   },
   "pi": {
     "extensions": ["./extensions"]

@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { GIT_FINALIZATION_MARKER, getGitFinalizationState, gitFinalizationStateChanged, needsGitFinalization, summarizeGitFinalizationState, type GitFinalizationState } from "./safety-gate-lib/finalization";

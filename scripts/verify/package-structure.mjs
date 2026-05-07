@@ -27,7 +27,7 @@ export function runPackageStructureTests() {
 		assert(/^description:\s*.+$/m.test(text), `${prompt} is missing a description`);
 	}
 
-	for (const dep of ["@mariozechner/pi-ai", "@mariozechner/pi-coding-agent", "@mariozechner/pi-tui"]) {
+	for (const dep of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]) {
 		assert(Boolean(packageJson?.peerDependencies?.[dep]), `missing peerDependency ${dep}`);
 		assert(!packageJson?.dependencies?.[dep], `${dep} should not be bundled in dependencies`);
 	}

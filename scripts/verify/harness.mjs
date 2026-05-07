@@ -27,19 +27,19 @@ export function readJson(relativePath) {
 	}
 }
 
-const piRoot = join(root, "node_modules", "@mariozechner", "pi-coding-agent");
-assert(existsSync(join(piRoot, "package.json")), "@mariozechner/pi-coding-agent is not installed; run npm install or npm ci");
+const piRoot = join(root, "node_modules", "@earendil-works", "pi-coding-agent");
+assert(existsSync(join(piRoot, "package.json")), "@earendil-works/pi-coding-agent is not installed; run npm install or npm ci");
 const piNodeModules = join(root, "node_modules");
 process.env.NODE_PATH = [piNodeModules, process.env.NODE_PATH].filter(Boolean).join(process.platform === "win32" ? ";" : ":");
 Module.Module._initPaths();
 
-const { createJiti } = requireFromVerify("@mariozechner/jiti");
+const { createJiti } = requireFromVerify("jiti");
 const jitiAlias = {
-	"@mariozechner/pi-coding-agent": join(piRoot, "dist", "index.js"),
-	"@mariozechner/pi-agent-core": join(piNodeModules, "@mariozechner", "pi-agent-core", "dist", "index.js"),
-	"@mariozechner/pi-ai": join(piNodeModules, "@mariozechner", "pi-ai", "dist", "index.js"),
-	"@mariozechner/pi-ai/oauth": join(piNodeModules, "@mariozechner", "pi-ai", "dist", "oauth.js"),
-	"@mariozechner/pi-tui": join(piNodeModules, "@mariozechner", "pi-tui", "dist", "index.js"),
+	"@earendil-works/pi-coding-agent": join(piRoot, "dist", "index.js"),
+	"@earendil-works/pi-agent-core": join(piNodeModules, "@earendil-works", "pi-agent-core", "dist", "index.js"),
+	"@earendil-works/pi-ai": join(piNodeModules, "@earendil-works", "pi-ai", "dist", "index.js"),
+	"@earendil-works/pi-ai/oauth": join(piNodeModules, "@earendil-works", "pi-ai", "dist", "oauth.js"),
+	"@earendil-works/pi-tui": join(piNodeModules, "@earendil-works", "pi-tui", "dist", "index.js"),
 };
 
 export function loadModuleAt(fullPath) {

@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TaskWeight } from "../shared/prompt-guidance";
 
 export type BindAction = "created" | "claimed_existing" | "refreshed_existing" | "skipped" | "blocked" | "error";

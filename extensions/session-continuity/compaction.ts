@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, SessionBeforeCompactEvent, SessionCompactEvent } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionBeforeCompactEvent, SessionCompactEvent } from "@earendil-works/pi-coding-agent";
 import { COMPACTION_DIAGNOSTIC_TYPE, CONTINUITY_VERSION, MAX_COMPACTION_PROMPT_CHARS, MAX_SUMMARY_TOKENS, MIN_COMPACTION_PROMPT_CHARS, MODEL_PROMPT_CHARS_PER_TOKEN } from "./constants";
 import { modelSummary } from "./context";
 import { buildDeterministicContinuitySummary } from "./prompts";

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 process.env.PI_OFFLINE = "1";
 
-const { DefaultResourceLoader, SettingsManager } = await import("@mariozechner/pi-coding-agent");
+const { DefaultResourceLoader, SettingsManager } = await import("@earendil-works/pi-coding-agent");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const agentDir = mkdtempSync(join(tmpdir(), "ben-pi-harness-smoke-"));
 
