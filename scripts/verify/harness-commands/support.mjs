@@ -13,6 +13,7 @@ export const agentsTasksRoot = join(agentsRoot, "tasks");
 
 export const taskBindPayload = (overrides = {}) => ({ action: "created", bound: true, blocked: false, reason: "", task_id: "pi-task", project_root: root, ...overrides });
 export const taskDiscoverPayload = (overrides = {}) => ({ task_api_version: 1, found: true, task_id: "pi-task", project_root: root, task_project_root: root, blocked: false, reason: "", ...overrides });
+export const memoryReviewPayload = (overrides = {}) => ({ memory_api_version: 1, count: 0, skipped: 0, candidates: [], omitted: [], scope: { project: true, task: true, global: false, all: false }, warnings: [], ...overrides });
 export const executionRoutePayload = (overrides = {}) => ({ execution_route_api_version: 1, execution_intent: true, profile: "software", overlays: [], summary: "profile software; overlays none", guidance: "## Ambient Execution Protocol\nExecution intent was detected.", ...overrides });
 export const taskLifecyclePayload = (overrides = {}) => ({
 	task_api_version: 1,
@@ -230,7 +231,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, cwd = root, gitRoot = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root }) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
@@ -287,6 +288,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("task-context.sh")) return { code: 0, stdout: "Active task context\n- task_id: pi-task\n- next_action: Continue", stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-context.sh")) return { code: 0, stdout: JSON.stringify(memoryContextPayload ?? { memory_api_version: 1, included: [], omitted: [], context: "" }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload ?? { memory_api_version: 1, counts_by_state: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0 }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("memory-review.sh")) return { code: 0, stdout: JSON.stringify(reviewPayload ?? memoryReviewPayload()), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-lifecycle.sh")) return { code: 0, stdout: JSON.stringify(taskLifecyclePayload({ task_id: args[1], ...(lifecyclePayload ?? {}) })), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-retention.sh")) return { code: 0, stdout: JSON.stringify(taskRetentionPayload(retentionPayload ?? {})), stderr: "" };
 			if (cmd === "bash" && script.endsWith("pi-package-doctor.sh")) return { code: 0, stdout: JSON.stringify(piPackagePolicyPayload(packagePolicyPayload ?? {})), stderr: "" };

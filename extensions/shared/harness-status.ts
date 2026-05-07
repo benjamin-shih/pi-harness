@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ambientDoctorSection, type AmbientContextSnapshot } from "./ambient-context";
 import { countTrackedPorcelain, gitOutput } from "./git-summary";
-import { buildMemoryStats, formatMemoryReviewHintLines, formatMemoryStatsLines, type MemoryStatsResult } from "./memory-context";
+import { buildMemoryReview, buildMemoryStats, formatMemoryAdminHelpLines, formatMemoryReviewHintLines, formatMemoryReviewLines, formatMemoryStatsLines, type MemoryContextScope, type MemoryStatsResult } from "./memory-context";
 import { buildPiPackagePolicy, formatPiPackagePolicyLines, piPackagePolicyHealth, type PiPackagePolicyResult } from "./pi-package-policy";
 import { buildProjectInstructions, formatProjectInstructionLines, projectInstructionHealth, type ProjectInstructionResult } from "./project-instructions";
 import { formatStatusView } from "./status-view";
@@ -30,6 +30,7 @@ type HarnessFacts = {
 	sessionEntries: number;
 	memory: MemorySpineDiagnostics;
 	memoryApi: MemoryStatsResult;
+	memoryScope: MemoryContextScope;
 };
 
 type DoctorFacts = HarnessFacts & { audit: HarnessAuditResult; piPackagePolicy: PiPackagePolicyResult; projectInstructions: ProjectInstructionResult };
@@ -88,7 +89,8 @@ async function buildHarnessFacts(pi: ExtensionAPI, ctx: ExtensionContext, taskLa
 	const git = await gitSummary(pi, ctx.cwd);
 	const branch = ctx.sessionManager.getBranch();
 	const taskScope = taskLayer.ambientScope?.() ?? {};
-	const memoryApi = await buildMemoryStats(pi, ctx.cwd, { projectRoot: taskScope.projectRoot || git.root, taskId: taskScope.taskId });
+	const memoryScope = { projectRoot: taskScope.projectRoot || git.root, taskId: taskScope.taskId };
+	const memoryApi = await buildMemoryStats(pi, ctx.cwd, memoryScope);
 	return {
 		cwd: ctx.cwd,
 		model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none",
@@ -99,6 +101,7 @@ async function buildHarnessFacts(pi: ExtensionAPI, ctx: ExtensionContext, taskLa
 		sessionEntries: branch.length,
 		memory: buildMemorySpineDiagnostics(branch),
 		memoryApi,
+		memoryScope,
 	};
 }
 
@@ -156,14 +159,28 @@ export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 	return ["## Harness status", formatStatusView(facts, taskLayer, ambientContext)].join("\n");
 }
 
-export async function buildMemoryReport(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer): Promise<string> {
+export async function buildMemoryReport(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, args = ""): Promise<string> {
 	const facts = await buildHarnessFacts(pi, ctx, taskLayer);
+	const command = args.trim().toLowerCase();
+	if (command === "review" || command === "candidates") {
+		const review = await buildMemoryReview(pi, ctx.cwd, facts.memoryScope);
+		return [
+			"## Memory candidate review",
+			...formatMemoryReviewLines(review),
+			"",
+			WRITE_SEMANTICS_DOCTOR_SECTION,
+		].join("\n");
+	}
+	if (command === "help" || command === "admin" || command === "commands") return formatMemoryAdminHelpLines(facts.memoryScope).join("\n");
+	if (command) return ["## Memory command", `- unknown subcommand: ${command}`, "- available: `/memory`, `/memory review`, `/memory help`"].join("\n");
 	return [
 		formatMemorySpineDiagnostics(facts.memory, { verbose: true }),
 		"",
 		"## Scoped memory API",
 		...formatMemoryStatsLines(facts.memoryApi),
 		...formatMemoryReviewHintLines(facts.memoryApi),
+		"",
+		...formatMemoryAdminHelpLines(facts.memoryScope),
 		"",
 		WRITE_SEMANTICS_DOCTOR_SECTION,
 	].join("\n");

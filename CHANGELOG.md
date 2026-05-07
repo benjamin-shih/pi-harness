@@ -5,7 +5,8 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
-- None.
+- `/memory review` now runs the shared read-only candidate review API and shows bounded previews for explicit promote/forget follow-up.
+- `/memory help` now documents the explicit-only memory admin flow for remember, approve, and forget requests.
 
 ### Changed
 - `/memory` now includes scoped-memory API health and explicit durable-write semantics in addition to memory-spine diagnostics.

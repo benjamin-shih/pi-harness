@@ -1,5 +1,5 @@
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, createTaskHarness, homeRoot, root, taskBindPayload, taskDiscoverPayload } from "./support.mjs";
+import { assert, createTaskHarness, homeRoot, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload } from "./support.mjs";
 
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
@@ -125,6 +125,22 @@ export async function runAmbientContextTests() {
 	const memoryStatsCall = slashOnlyMemoryTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("memory-stats.sh"));
 	assert(memoryStatsCall?.args.includes("--task-id"), "/memory should pass discovered task id to scoped memory stats");
 	assert(slashOnlyMemoryTask.sentMessages.at(-1).content.includes("scoped memory API: ok (task; 0 candidate, 0 approved, 0 deprecated; 0 skipped; 1 warning)"), "/memory should report task-scoped memory API health for home-root slash-only sessions");
+
+	const reviewMemoryTask = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		memoryStatsPayload: { memory_api_version: 1, counts_by_state: { candidate: 1, approved: 0, deprecated: 0 }, skipped: 0 },
+		memoryReviewPayload: memoryReviewPayload({ count: 1, candidates: [{ id: "mem_candidate_1", state: "candidate", title: "Prefer scoped memory", body_preview: "Keep durable memories scoped unless the user explicitly says always.", body_chars: 68, scope: { type: "task" }, provenance: { source: "manual", reason: "explicit test" } }] }),
+	});
+	await reviewMemoryTask.handlers.get("session_start")({ reason: "startup" }, reviewMemoryTask.ctx);
+	await reviewMemoryTask.commands.get("memory").handler("review", reviewMemoryTask.ctx);
+	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("## Memory candidate review"), "/memory review should render candidate review output");
+	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("read-only"), "/memory review should state that review is read-only");
+	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("mem_candidate_1"), "/memory review should show candidate ids so users can explicitly choose promote/forget");
+	assert(reviewMemoryTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh")), "/memory review should call the shared read-only review script");
+	assert(!reviewMemoryTask.execCalls.some((call) => /memory-(add|promote|forget)\.sh$/.test(String(call.args?.[0] || ""))), "/memory review should not perform memory mutations");
+	await reviewMemoryTask.commands.get("memory").handler("help", reviewMemoryTask.ctx);
+	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("explicit user request only"), "/memory help should explain explicit-only durable write semantics");
+	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("memory-add.sh"), "/memory help should point explicit remember requests at the shared add script");
 
 	const rememberTask = createTaskHarness({
 		bindPayload: taskBindPayload(),

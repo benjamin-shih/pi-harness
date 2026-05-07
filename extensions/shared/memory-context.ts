@@ -32,12 +32,42 @@ type MemoryPayload = {
 	omitted?: unknown[];
 };
 
-type MemoryStatsPayload = {
+type MemoryScopePayload = { scope?: { project?: boolean; task?: boolean; global?: boolean; all?: boolean } };
+
+type MemoryStatsPayload = MemoryScopePayload & {
 	memory_api_version?: number;
 	counts_by_state?: Partial<Record<"candidate" | "approved" | "deprecated", number>>;
 	skipped?: number;
-	scope?: { project?: boolean; task?: boolean; global?: boolean; all?: boolean };
 	warnings?: unknown[];
+};
+
+type MemoryReviewCandidate = {
+	id?: string;
+	title?: string;
+	body_preview?: string;
+	body_chars?: number;
+	scope?: { type?: string };
+	provenance?: { source?: string; reason?: string };
+};
+
+type MemoryReviewPayload = MemoryScopePayload & {
+	memory_api_version?: number;
+	count?: number;
+	skipped?: number;
+	candidates?: MemoryReviewCandidate[];
+	omitted?: unknown[];
+	warnings?: unknown[];
+};
+
+export type MemoryReviewResult = {
+	available: boolean;
+	reason?: string;
+	count: number;
+	skipped: number;
+	omitted: number;
+	warnings: number;
+	scope: MemoryStatsScope;
+	candidates: MemoryReviewCandidate[];
 };
 
 export function memoryCandidateReminder(enabled: boolean): string | undefined {
@@ -96,7 +126,7 @@ function emptyStats(available: boolean, reason: string, scope: MemoryStatsResult
 	return { available, reason, counts: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0, scope, warnings: 0 };
 }
 
-function statsScope(payload: MemoryStatsPayload, fallback: MemoryStatsScope): MemoryStatsScope {
+function statsScope(payload: MemoryScopePayload, fallback: MemoryStatsScope): MemoryStatsScope {
 	const scope = payload.scope ?? {};
 	if (scope.all) return "all";
 	if (scope.project) return "project";
@@ -105,17 +135,35 @@ function statsScope(payload: MemoryStatsPayload, fallback: MemoryStatsScope): Me
 	return fallback;
 }
 
+function scopedBy(scope: MemoryContextScope): MemoryStatsScope {
+	return scope.projectRoot ? "project" : (scope.taskId ? "task" : "none");
+}
+
+function scopedArgs(scope: MemoryContextScope): string[] {
+	const args: string[] = [];
+	if (scope.projectRoot) args.push("--project-root", scope.projectRoot);
+	if (scope.taskId) args.push("--task-id", scope.taskId);
+	return args;
+}
+
+function cleanInline(value: unknown, limit = 500): string {
+	const text = String(value ?? "").replace(/\s+/g, " ").trim();
+	return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+}
+
+function scopeLabel(scope: MemoryReviewCandidate["scope"]): string {
+	return cleanInline(scope?.type || "scoped", 40);
+}
+
 export async function buildMemoryStats(pi: ExtensionAPI, cwd: string, scope: MemoryContextScope): Promise<MemoryStatsResult> {
-	const scopedBy: MemoryStatsScope = scope.projectRoot ? "project" : (scope.taskId ? "task" : "none");
-	if (!scope.projectRoot && !scope.taskId) return emptyStats(false, "no scoped project or task", scopedBy);
+	const fallbackScope = scopedBy(scope);
+	if (!scope.projectRoot && !scope.taskId) return emptyStats(false, "no scoped project or task", fallbackScope);
 	try {
-		const args = [agentsScriptPath("memory-stats.sh"), "--cwd", cwd, "--json"];
-		if (scope.projectRoot) args.push("--project-root", scope.projectRoot);
-		if (scope.taskId) args.push("--task-id", scope.taskId);
+		const args = [agentsScriptPath("memory-stats.sh"), "--cwd", cwd, "--json", ...scopedArgs(scope)];
 		const result = await pi.exec("bash", args, { cwd, timeout: 5_000 });
-		if (result.code !== 0) return emptyStats(false, "memory API unavailable", scopedBy);
+		if (result.code !== 0) return emptyStats(false, "memory API unavailable", fallbackScope);
 		const payload = parseJson<MemoryStatsPayload>(result.stdout);
-		if (payload?.memory_api_version !== 1) return emptyStats(false, "memory API unavailable", scopedBy);
+		if (payload?.memory_api_version !== 1) return emptyStats(false, "memory API unavailable", fallbackScope);
 		const counts = payload.counts_by_state ?? {};
 		return {
 			available: true,
@@ -125,11 +173,34 @@ export async function buildMemoryStats(pi: ExtensionAPI, cwd: string, scope: Mem
 				deprecated: counts.deprecated ?? 0,
 			},
 			skipped: payload.skipped ?? 0,
-			scope: statsScope(payload, scopedBy),
+			scope: statsScope(payload, fallbackScope),
 			warnings: Array.isArray(payload.warnings) ? payload.warnings.length : 0,
 		};
 	} catch {
-		return emptyStats(false, "memory API unavailable", scopedBy);
+		return emptyStats(false, "memory API unavailable", fallbackScope);
+	}
+}
+
+export async function buildMemoryReview(pi: ExtensionAPI, cwd: string, scope: MemoryContextScope): Promise<MemoryReviewResult> {
+	const fallbackScope = scopedBy(scope);
+	if (!scope.projectRoot && !scope.taskId) return { available: false, reason: "no scoped project or task", count: 0, skipped: 0, omitted: 0, warnings: 0, scope: fallbackScope, candidates: [] };
+	try {
+		const args = [agentsScriptPath("memory-review.sh"), "--cwd", cwd, "--max-records", "10", "--max-body-chars", "500", "--json", ...scopedArgs(scope)];
+		const result = await pi.exec("bash", args, { cwd, timeout: 5_000 });
+		if (result.code !== 0) return { available: false, reason: "memory review unavailable", count: 0, skipped: 0, omitted: 0, warnings: 0, scope: fallbackScope, candidates: [] };
+		const payload = parseJson<MemoryReviewPayload>(result.stdout);
+		if (payload?.memory_api_version !== 1) return { available: false, reason: "memory review unavailable", count: 0, skipped: 0, omitted: 0, warnings: 0, scope: fallbackScope, candidates: [] };
+		return {
+			available: true,
+			count: payload.count ?? 0,
+			skipped: payload.skipped ?? 0,
+			omitted: Array.isArray(payload.omitted) ? payload.omitted.length : 0,
+			warnings: Array.isArray(payload.warnings) ? payload.warnings.length : 0,
+			scope: statsScope(payload, fallbackScope),
+			candidates: Array.isArray(payload.candidates) ? payload.candidates : [],
+		};
+	} catch {
+		return { available: false, reason: "memory review unavailable", count: 0, skipped: 0, omitted: 0, warnings: 0, scope: fallbackScope, candidates: [] };
 	}
 }
 
@@ -145,7 +216,38 @@ export function formatMemoryReviewHintLines(stats: MemoryStatsResult): string[] 
 	const candidateCount = stats.counts.candidate;
 	if (candidateCount <= 0) return [];
 	const plural = candidateCount === 1 ? "candidate" : "candidates";
-	return [`- memory review: ${candidateCount} ${plural} pending; ask to review memory candidates to inspect bounded previews via read-only memory-review.sh`];
+	return [`- memory review: ${candidateCount} ${plural} pending; run \`/memory review\` for bounded read-only previews, then ask with an explicit memory id before promote/forget`];
+}
+
+export function formatMemoryReviewLines(review: MemoryReviewResult): string[] {
+	if (!review.available) return [`- memory review API: unavailable (${review.reason})`];
+	const warningText = review.warnings ? `; ${review.warnings} warning${review.warnings === 1 ? "" : "s"}` : "";
+	const lines = [
+		`- memory review API: ok (${review.scope}; ${review.count} candidate preview${review.count === 1 ? "" : "s"}; ${review.skipped} skipped; ${review.omitted} omitted${warningText})`,
+		"- review mode: read-only; promote/forget requires a separate explicit user request with a memory id",
+	];
+	if (review.candidates.length === 0) return [...lines, "- candidates: none"];
+	for (const candidate of review.candidates) {
+		const id = cleanInline(candidate.id || "unknown", 120);
+		const title = cleanInline(candidate.title || "Memory candidate", 160);
+		const chars = typeof candidate.body_chars === "number" ? `${candidate.body_chars} chars` : "unknown size";
+		const preview = cleanInline(candidate.body_preview || "", 500);
+		lines.push(`- \`${id}\` — ${title} (${scopeLabel(candidate.scope)}; ${chars})`);
+		if (preview) lines.push(`  preview: ${preview}`);
+	}
+	return lines;
+}
+
+export function formatMemoryAdminHelpLines(scope: MemoryContextScope): string[] {
+	const scopeText = scope.taskId ? `task ${scope.taskId}` : (scope.projectRoot ? `project ${scope.projectRoot}` : "no scoped task/project yet");
+	return [
+		"## Memory admin",
+		`- current scope: ${scopeText}`,
+		"- read-only review: `/memory review` shows bounded candidate previews from `.agents/scripts/memory-review.sh`.",
+		"- remember/save: ask explicitly with `remember ...`; the agent creates a candidate by default via `.agents/scripts/memory-add.sh` using private temp files.",
+		"- approve/forget: ask explicitly with a `mem_...` id; the agent uses `.agents/scripts/memory-promote.sh` or `.agents/scripts/memory-forget.sh`.",
+		"- durable writes: explicit user request only; no automatic pending-memory writes or approvals.",
+	];
 }
 
 export async function buildMemoryContext(pi: ExtensionAPI, cwd: string, scope: MemoryContextScope): Promise<MemoryContextResult> {

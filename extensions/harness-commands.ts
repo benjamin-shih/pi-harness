@@ -79,9 +79,9 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		handler: async (_args, ctx) => sendDoctor(ctx),
 	});
 	pi.registerCommand("memory", {
-		description: "Show memory-spine and scoped-memory API diagnostics",
-		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "harness-memory", content: await buildMemoryReport(pi, ctx, taskLayer), display: true });
+		description: "Show memory diagnostics; use `/memory review` for read-only candidate previews or `/memory help` for explicit admin flow",
+		handler: async (args, ctx) => {
+			pi.sendMessage({ customType: "harness-memory", content: await buildMemoryReport(pi, ctx, taskLayer, args), display: true });
 		},
 	});
 	pi.registerCommand("checkpoint", {
