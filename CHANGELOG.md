@@ -8,10 +8,10 @@ All notable changes to this personal pi harness package are tracked here.
 - None.
 
 ### Changed
-- None.
+- `/memory` now includes scoped-memory API health and explicit durable-write semantics in addition to memory-spine diagnostics.
 
 ### Fixed
-- None.
+- Scoped-memory status now uses the effective scope reported by `.agents`, so home-root project warnings can still show task-scoped memory API health instead of an unavailable state.
 
 ### Breaking
 - None.

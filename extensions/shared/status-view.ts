@@ -103,7 +103,7 @@ function memoryRows(facts: StatusViewFacts): VisibilityBoxRow[] {
 	const stats = facts.memoryApi;
 	const unavailableReason = stats.reason === "no scoped project or task" ? "waiting for task/project scope" : (stats.reason ?? "unknown");
 	const scoped = stats.available
-		? `${stats.scope} · ${stats.counts.candidate} candidate · ${stats.counts.approved} approved · ${stats.counts.deprecated} deprecated · ${stats.skipped} skipped`
+		? `${stats.scope} · ${stats.counts.candidate} candidate · ${stats.counts.approved} approved · ${stats.counts.deprecated} deprecated · ${stats.skipped} skipped${stats.warnings ? ` · ${stats.warnings} warning${stats.warnings === 1 ? "" : "s"}` : ""}`
 		: `unavailable · ${unavailableReason}`;
 	const rows: VisibilityBoxRow[] = [
 		["spine", `${facts.memory.health} · ${facts.memory.status}`],

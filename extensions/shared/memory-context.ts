@@ -14,12 +14,15 @@ export type MemoryContextResult = {
 	omitted: number;
 };
 
+export type MemoryStatsScope = "project" | "task" | "global" | "all" | "none";
+
 export type MemoryStatsResult = {
 	available: boolean;
 	reason?: string;
 	counts: { candidate: number; approved: number; deprecated: number };
 	skipped: number;
-	scope: "project" | "task" | "none";
+	scope: MemoryStatsScope;
+	warnings: number;
 };
 
 type MemoryPayload = {
@@ -33,6 +36,8 @@ type MemoryStatsPayload = {
 	memory_api_version?: number;
 	counts_by_state?: Partial<Record<"candidate" | "approved" | "deprecated", number>>;
 	skipped?: number;
+	scope?: { project?: boolean; task?: boolean; global?: boolean; all?: boolean };
+	warnings?: unknown[];
 };
 
 export function memoryCandidateReminder(enabled: boolean): string | undefined {
@@ -88,11 +93,20 @@ export function memoryAdminGuidance(prompt: string): string | undefined {
 }
 
 function emptyStats(available: boolean, reason: string, scope: MemoryStatsResult["scope"] = "none"): MemoryStatsResult {
-	return { available, reason, counts: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0, scope };
+	return { available, reason, counts: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0, scope, warnings: 0 };
+}
+
+function statsScope(payload: MemoryStatsPayload, fallback: MemoryStatsScope): MemoryStatsScope {
+	const scope = payload.scope ?? {};
+	if (scope.all) return "all";
+	if (scope.project) return "project";
+	if (scope.task) return "task";
+	if (scope.global) return "global";
+	return fallback;
 }
 
 export async function buildMemoryStats(pi: ExtensionAPI, cwd: string, scope: MemoryContextScope): Promise<MemoryStatsResult> {
-	const scopedBy = scope.projectRoot ? "project" : (scope.taskId ? "task" : "none");
+	const scopedBy: MemoryStatsScope = scope.projectRoot ? "project" : (scope.taskId ? "task" : "none");
 	if (!scope.projectRoot && !scope.taskId) return emptyStats(false, "no scoped project or task", scopedBy);
 	try {
 		const args = [agentsScriptPath("memory-stats.sh"), "--cwd", cwd, "--json"];
@@ -111,7 +125,8 @@ export async function buildMemoryStats(pi: ExtensionAPI, cwd: string, scope: Mem
 				deprecated: counts.deprecated ?? 0,
 			},
 			skipped: payload.skipped ?? 0,
-			scope: scopedBy,
+			scope: statsScope(payload, scopedBy),
+			warnings: Array.isArray(payload.warnings) ? payload.warnings.length : 0,
 		};
 	} catch {
 		return emptyStats(false, "memory API unavailable", scopedBy);
@@ -121,7 +136,8 @@ export async function buildMemoryStats(pi: ExtensionAPI, cwd: string, scope: Mem
 export function formatMemoryStatsLines(stats: MemoryStatsResult): string[] {
 	if (!stats.available) return [`- scoped memory API: unavailable (${stats.reason})`];
 	const { candidate, approved, deprecated } = stats.counts;
-	return [`- scoped memory API: ok (${stats.scope}; ${candidate} candidate, ${approved} approved, ${deprecated} deprecated; ${stats.skipped} skipped)`];
+	const warningText = stats.warnings ? `; ${stats.warnings} warning${stats.warnings === 1 ? "" : "s"}` : "";
+	return [`- scoped memory API: ok (${stats.scope}; ${candidate} candidate, ${approved} approved, ${deprecated} deprecated; ${stats.skipped} skipped${warningText})`];
 }
 
 export function formatMemoryReviewHintLines(stats: MemoryStatsResult): string[] {

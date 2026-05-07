@@ -145,6 +145,9 @@ export async function runStatusCommandTests() {
 	await statusCommands.get("memory").handler("", commandCtx);
 	assert(statusMessages[3].customType === "harness-memory", "/memory should send a memory diagnostics message");
 	assert(statusMessages[3].content.includes("latest diagnostic error: context_length_exceeded"), "/memory should include latest diagnostic errors");
+	assert(statusMessages[3].content.includes("## Scoped memory API"), "/memory should include scoped memory API diagnostics");
+	assert(statusMessages[3].content.includes("scoped memory API: ok"), "/memory should report scoped memory API health");
+	assert(statusMessages[3].content.includes("## Write semantics"), "/memory should make explicit durable-write semantics visible");
 	assert(!execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh")), "status/doctor should not auto-run memory-review.sh");
 	statusPorcelain = " M README.md\n";
 	await statusCommands.get("status").handler("", commandCtx);

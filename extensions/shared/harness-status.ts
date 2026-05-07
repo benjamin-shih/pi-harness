@@ -156,6 +156,19 @@ export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 	return ["## Harness status", formatStatusView(facts, taskLayer, ambientContext)].join("\n");
 }
 
+export async function buildMemoryReport(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer): Promise<string> {
+	const facts = await buildHarnessFacts(pi, ctx, taskLayer);
+	return [
+		formatMemorySpineDiagnostics(facts.memory, { verbose: true }),
+		"",
+		"## Scoped memory API",
+		...formatMemoryStatsLines(facts.memoryApi),
+		...formatMemoryReviewHintLines(facts.memoryApi),
+		"",
+		WRITE_SEMANTICS_DOCTOR_SECTION,
+	].join("\n");
+}
+
 export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, ambientContext?: AmbientContextSnapshot): Promise<string> {
 	const facts = await buildDoctorFacts(pi, ctx, taskLayer);
 	return [

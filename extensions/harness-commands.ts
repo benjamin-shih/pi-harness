@@ -19,9 +19,9 @@ import { applyMode, modeDescription, modeNames } from "./harness-commands/modes"
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
-import { buildDoctor, buildStatus } from "./shared/harness-status";
+import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
-import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics } from "./session-continuity/diagnostics";
+
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 export default function harnessCommands(pi: ExtensionAPI) {
 	if (isPiSubagentChild()) return;
@@ -79,10 +79,9 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		handler: async (_args, ctx) => sendDoctor(ctx),
 	});
 	pi.registerCommand("memory", {
-		description: "Show session memory-spine checkpoint and compaction diagnostics",
+		description: "Show memory-spine and scoped-memory API diagnostics",
 		handler: async (_args, ctx) => {
-			const content = formatMemorySpineDiagnostics(buildMemorySpineDiagnostics(ctx.sessionManager.getBranch()), { verbose: true });
-			pi.sendMessage({ customType: "harness-memory", content, display: true });
+			pi.sendMessage({ customType: "harness-memory", content: await buildMemoryReport(pi, ctx, taskLayer), display: true });
 		},
 	});
 	pi.registerCommand("checkpoint", {
