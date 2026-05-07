@@ -34,6 +34,28 @@ export const taskLifecyclePayload = (overrides = {}) => ({
 	events: { count: 3, last_type: "checkpoint", last_timestamp: "2026-05-05T00:00:00Z" },
 	...overrides,
 });
+export const projectInstructionPayload = (overrides = {}) => ({
+	instruction_doctor_api_version: 1,
+	cwd: root,
+	project_root: root,
+	health: "ok",
+	summary: {
+		instruction_files_found: 2,
+		thin_style_files: 2,
+		dispatch_mentions: 0,
+		launcher_mentions: 0,
+		task_file_reading_lists: 0,
+		duplicated_shared_blocks: 0,
+		local_skills_index: false,
+	},
+	files: [
+		{ path: `${root}/AGENTS.md`, exists: true, line_count: 42, has_shared_pointer: true, has_ambient_context: true, thin_style: true, stale: { dispatch_mentions: 0, launcher_mentions: 0, task_file_reading_lists: 0, duplicated_shared_blocks: 0 } },
+		{ path: `${root}/CLAUDE.md`, exists: true, line_count: 24, has_shared_pointer: true, has_ambient_context: true, thin_style: true, stale: { dispatch_mentions: 0, launcher_mentions: 0, task_file_reading_lists: 0, duplicated_shared_blocks: 0 } },
+	],
+	warnings: [],
+	...overrides,
+});
+
 export const piPackagePolicyPayload = (overrides = {}) => ({
 	pi_package_policy_api_version: 1,
 	approval_policy_version: 1,

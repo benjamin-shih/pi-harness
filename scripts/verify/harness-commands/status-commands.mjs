@@ -1,4 +1,4 @@
-import { assert, harnessCommands, piPackagePolicyPayload, root } from "./support.mjs";
+import { assert, harnessCommands, piPackagePolicyPayload, projectInstructionPayload, root } from "./support.mjs";
 
 export async function runStatusCommandTests() {
 	const statusCommands = new Map();
@@ -76,6 +76,7 @@ export async function runStatusCommandTests() {
 			if (key === "status --porcelain=v1 --untracked-files=no") return { code: 0, stdout: statusPorcelain, stderr: "" };
 			if (String(args[0] || "").endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload), stderr: "" };
 			if (String(args[0] || "").endsWith("pi-package-doctor.sh")) return { code: 0, stdout: JSON.stringify(piPackagePolicyPayload()), stderr: "" };
+			if (String(args[0] || "").endsWith("project-instruction-doctor.sh")) return { code: 0, stdout: JSON.stringify(projectInstructionPayload()), stderr: "" };
 			if (key === "scripts/harness-audit.mjs --json" || key.endsWith("scripts/harness-audit.mjs --json")) {
 				return {
 					code: 0,
@@ -130,7 +131,11 @@ export async function runStatusCommandTests() {
 	assert(statusMessages[1].content.includes("4 approved, 0 unapproved, 0 unpinned"), "/doctor should summarize configured Pi package approval counts");
 	assert(statusMessages[1].content.includes("installed attestation: 2 verified, 0 mismatch, 0 missing, 2 skipped; cache 2 hit, 0 miss, 0 disabled"), "/doctor should summarize installed-byte attestation cache state without listing file manifests");
 	assert(statusMessages[1].content.includes("upstream checks: disabled in harness"), "/doctor should not encourage runtime package update checks");
+	assert(statusMessages[1].content.includes("## Project instructions"), "/doctor should include project instruction health diagnostics");
+	assert(statusMessages[1].content.includes("instruction health: ok"), "/doctor should report project instruction health");
+	assert(statusMessages[1].content.includes("stale markers: 0 dispatch, 0 launcher, 0 task-file lists, 0 duplicated blocks"), "/doctor should summarize stale instruction markers without dumping file contents");
 	assert(execCalls.some((call) => String(call.args?.[0] || "").endsWith("pi-package-doctor.sh")), "/doctor should call the shared read-only Pi package policy script");
+	assert(execCalls.some((call) => String(call.args?.[0] || "").endsWith("project-instruction-doctor.sh")), "/doctor should call the shared read-only project instruction script");
 	assert(!execCalls.some((call) => String(call.args?.[0] || "").endsWith("pi-package-check-upstream.sh")), "/doctor should not run networked upstream package checks");
 	assert(statusMessages[1].content.includes("task artifacts: metadata-only and policy-filtered"), "/doctor should describe artifact metadata write semantics");
 	assert(statusMessages[1].content.includes("Ask to review memory candidates when ready"), "/doctor should recommend explicit candidate review when candidates are pending");

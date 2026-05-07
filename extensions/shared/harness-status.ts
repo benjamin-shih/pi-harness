@@ -5,6 +5,7 @@ import { ambientDoctorSection, type AmbientContextSnapshot } from "./ambient-con
 import { countTrackedPorcelain, gitOutput } from "./git-summary";
 import { buildMemoryStats, formatMemoryReviewHintLines, formatMemoryStatsLines, type MemoryStatsResult } from "./memory-context";
 import { buildPiPackagePolicy, formatPiPackagePolicyLines, piPackagePolicyHealth, type PiPackagePolicyResult } from "./pi-package-policy";
+import { buildProjectInstructions, formatProjectInstructionLines, projectInstructionHealth, type ProjectInstructionResult } from "./project-instructions";
 import { formatStatusView } from "./status-view";
 import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemorySpineDiagnostics } from "../session-continuity/diagnostics";
 
@@ -31,7 +32,7 @@ type HarnessFacts = {
 	memoryApi: MemoryStatsResult;
 };
 
-type DoctorFacts = HarnessFacts & { audit: HarnessAuditResult; piPackagePolicy: PiPackagePolicyResult };
+type DoctorFacts = HarnessFacts & { audit: HarnessAuditResult; piPackagePolicy: PiPackagePolicyResult; projectInstructions: ProjectInstructionResult };
 
 type StatusTaskLayer = {
 	statusLines(): string[];
@@ -102,8 +103,8 @@ async function buildHarnessFacts(pi: ExtensionAPI, ctx: ExtensionContext, taskLa
 }
 
 async function buildDoctorFacts(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer): Promise<DoctorFacts> {
-	const [facts, audit, piPackagePolicy] = await Promise.all([buildHarnessFacts(pi, ctx, taskLayer), runHarnessAudit(pi), buildPiPackagePolicy(pi, ctx)]);
-	return { ...facts, audit, piPackagePolicy };
+	const [facts, audit, piPackagePolicy, projectInstructions] = await Promise.all([buildHarnessFacts(pi, ctx, taskLayer), runHarnessAudit(pi), buildPiPackagePolicy(pi, ctx), buildProjectInstructions(pi, ctx)]);
+	return { ...facts, audit, piPackagePolicy, projectInstructions };
 }
 
 function overviewLines(facts: HarnessFacts): string[] {
@@ -126,6 +127,7 @@ function doctorRecommendations(facts: DoctorFacts, taskLayer: StatusTaskLayer, a
 	if (facts.memory.health === "unknown") recommendations.push("No memory-spine entries yet; run one normal agent turn and check `/memory` again.");
 	if (facts.memoryApi.available && facts.memoryApi.counts.candidate > 0) recommendations.push("Ask to review memory candidates when ready; candidate previews are read-only and promotion/forgetting remains explicit.");
 	if (piPackagePolicyHealth(facts.piPackagePolicy) === "warning") recommendations.push("Inspect Pi package approvals; configured packages should be exact-pinned and locally approved before use.");
+	if (projectInstructionHealth(facts.projectInstructions) === "warning") recommendations.push("Inspect project instruction files; `/doctor` found stale or missing ambient-style guidance.");
 	if (taskLayer.health() === "warning") recommendations.push("Inspect AGENTS task binding state; pi could not bind or refresh the active task cleanly.");
 	if (ambientContext?.executionRoute?.health === "degraded") recommendations.push("Inspect the shared `.agents` execution-route API; the last ambient route check degraded safely.");
 	return recommendations.length ? recommendations : ["None; harness checks are green."];
@@ -136,6 +138,7 @@ function doctorHealth(facts: DoctorFacts, taskLayer: StatusTaskLayer, ambientCon
 		|| Boolean(facts.audit.audit.issues?.length)
 		|| facts.memory.health === "warning"
 		|| piPackagePolicyHealth(facts.piPackagePolicy) === "warning"
+		|| projectInstructionHealth(facts.projectInstructions) === "warning"
 		|| taskLayer.health() === "warning"
 		|| ambientContext?.executionRoute?.health === "degraded";
 	return hasWarning ? "warning" : "ok";
@@ -174,6 +177,9 @@ export async function buildDoctor(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 		"",
 		"## Pi package approvals",
 		...formatPiPackagePolicyLines(facts.piPackagePolicy),
+		"",
+		"## Project instructions",
+		...formatProjectInstructionLines(facts.projectInstructions),
 		"",
 		await taskLayer.doctorSection(pi, ctx),
 		"",
