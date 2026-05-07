@@ -15,6 +15,7 @@ All notable changes to this personal pi harness package are tracked here.
 
 ### Changed
 - Updated the local Pi development dependency to `@mariozechner/pi-coding-agent@0.73.0`.
+- Moved status/doctor assembly into shared support to keep the harness command extension below audit size thresholds.
 
 ### Fixed
 - Harness ambient/task/continuity/UI extensions now no-op inside `pi-subagents` child processes while keeping the safety gate active.

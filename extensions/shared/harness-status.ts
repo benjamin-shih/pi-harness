@@ -1,11 +1,11 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { ambientDoctorSection, type AmbientContextSnapshot } from "../shared/ambient-context";
-import { countTrackedPorcelain, gitOutput } from "../shared/git-summary";
-import { buildMemoryStats, formatMemoryReviewHintLines, formatMemoryStatsLines, type MemoryStatsResult } from "../shared/memory-context";
-import { buildPiPackagePolicy, formatPiPackagePolicyLines, piPackagePolicyHealth, type PiPackagePolicyResult } from "../shared/pi-package-policy";
-import { formatStatusView } from "../shared/status-view";
+import { ambientDoctorSection, type AmbientContextSnapshot } from "./ambient-context";
+import { countTrackedPorcelain, gitOutput } from "./git-summary";
+import { buildMemoryStats, formatMemoryReviewHintLines, formatMemoryStatsLines, type MemoryStatsResult } from "./memory-context";
+import { buildPiPackagePolicy, formatPiPackagePolicyLines, piPackagePolicyHealth, type PiPackagePolicyResult } from "./pi-package-policy";
+import { formatStatusView } from "./status-view";
 import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemorySpineDiagnostics } from "../session-continuity/diagnostics";
 
 type HarnessAudit = {

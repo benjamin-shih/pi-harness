@@ -19,7 +19,7 @@ import { applyMode, modeDescription, modeNames } from "./harness-commands/modes"
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
-import { buildDoctor, buildStatus } from "./harness-commands/status";
+import { buildDoctor, buildStatus } from "./shared/harness-status";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
 import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics } from "./session-continuity/diagnostics";
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
