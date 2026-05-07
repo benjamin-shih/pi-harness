@@ -128,7 +128,7 @@ export async function runStatusCommandTests() {
 	assert(statusMessages[1].content.includes("## Pi package approvals"), "/doctor should include local Pi package approval diagnostics");
 	assert(statusMessages[1].content.includes("package policy: ok"), "/doctor should report Pi package policy health without checking upstream");
 	assert(statusMessages[1].content.includes("4 approved, 0 unapproved, 0 unpinned"), "/doctor should summarize configured Pi package approval counts");
-	assert(statusMessages[1].content.includes("installed attestation: 2 verified, 0 mismatch, 0 missing, 2 skipped"), "/doctor should summarize installed-byte attestation without listing file manifests");
+	assert(statusMessages[1].content.includes("installed attestation: 2 verified, 0 mismatch, 0 missing, 2 skipped; cache 2 hit, 0 miss, 0 disabled"), "/doctor should summarize installed-byte attestation cache state without listing file manifests");
 	assert(statusMessages[1].content.includes("upstream checks: disabled in harness"), "/doctor should not encourage runtime package update checks");
 	assert(execCalls.some((call) => String(call.args?.[0] || "").endsWith("pi-package-doctor.sh")), "/doctor should call the shared read-only Pi package policy script");
 	assert(!execCalls.some((call) => String(call.args?.[0] || "").endsWith("pi-package-check-upstream.sh")), "/doctor should not run networked upstream package checks");

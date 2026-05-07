@@ -24,7 +24,7 @@ type PiPackagePolicyPayload = {
 		unpinned_packages?: number;
 		unknown_package_entries?: number;
 		approved_manifest_entries?: number;
-		attestation?: { verified?: number; mismatch?: number; missing?: number; skipped?: number; unapproved?: number };
+		attestation?: { verified?: number; mismatch?: number; missing?: number; skipped?: number; unapproved?: number; cache_hit?: number; cache_miss?: number; cache_disabled?: number };
 	};
 	packages?: PiPackagePolicyPackage[];
 };
@@ -73,7 +73,7 @@ export function formatPiPackagePolicyLines(result: PiPackagePolicyResult): strin
 		`- package policy: ok (v${payload.pi_package_policy_api_version ?? "?"})`,
 		`- approval manifest: ${displayPath(payload.approval_manifest)} (${summary.approved_manifest_entries ?? 0} approved entries)`,
 		`- configured packages: ${summary.configured_packages ?? 0}; ${summary.approved_packages ?? 0} approved, ${summary.unapproved_packages ?? 0} unapproved, ${summary.unpinned_packages ?? 0} unpinned`,
-		`- installed attestation: ${attestation.verified ?? 0} verified, ${attestation.mismatch ?? 0} mismatch, ${attestation.missing ?? 0} missing, ${attestation.skipped ?? 0} skipped`,
+		`- installed attestation: ${attestation.verified ?? 0} verified, ${attestation.mismatch ?? 0} mismatch, ${attestation.missing ?? 0} missing, ${attestation.skipped ?? 0} skipped; cache ${attestation.cache_hit ?? 0} hit, ${attestation.cache_miss ?? 0} miss, ${attestation.cache_disabled ?? 0} disabled`,
 		`- package source types: ${sourceTypeCounts(packages)}`,
 		...(unapproved.length
 			? [`- unapproved package samples: ${unapproved.slice(0, 5).map((pkg) => `${pkg.display_source || "unknown"} (${pkg.reason || "unapproved"})`).join("; ")}`]
