@@ -5,7 +5,7 @@ import { agentsRoot } from "../shared/config";
 import { parseJson } from "../shared/json";
 import type { FinalTaskVisibility } from "../shared/final-visibility";
 import type { TaskWeight } from "../shared/prompt-guidance";
-import { candidateRoot, classifyTask, ensureTaskApi, runScript, shortError } from "./task-layer-api";
+import { candidateRoot, classifyTask, discoverTask, ensureTaskApi, runScript, shortError } from "./task-layer-api";
 import { activityFromTool, pathArtifactFromTool, pathFromTool, verificationArtifactFromTool } from "./task-layer-artifacts";
 import { retentionSection } from "./task-layer-retention";
 import {
@@ -38,6 +38,9 @@ function initialState(): TaskLayerState {
 	};
 }
 function resetSessionState(state: TaskLayerState): void {
+	state.active = undefined;
+	state.discovered = undefined;
+	state.context = undefined;
 	state.currentPromptWeight = "standard";
 	state.currentBindingMode = "auto";
 	state.currentPromptNeedsTask = false;
@@ -50,6 +53,7 @@ function resetSessionState(state: TaskLayerState): void {
 }
 function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): void {
 	state.active = undefined;
+	state.discovered = undefined;
 	state.context = undefined;
 	state.currentPromptWeight = fallbackWeight;
 	state.currentPromptNeedsTask = false;
@@ -146,6 +150,15 @@ export function createAgentsTaskLayer() {
 			else state.lastError = shortError(result);
 		} catch (error) {
 			state.lastError = error instanceof Error ? error.message : String(error);
+		}
+	}
+	async function refreshDiscoveredTaskScope(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+		if (state.active?.task_id) return;
+		const payload = await discoverTask(pi, ctx.cwd, state.sessionId);
+		if (payload?.found && !payload.blocked && payload.task_id) {
+			state.discovered = { task_id: payload.task_id, project_root: payload.task_project_root || payload.project_root || ctx.cwd };
+		} else {
+			state.discovered = undefined;
 		}
 	}
 	async function refreshArtifactCount(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
@@ -245,6 +258,7 @@ export function createAgentsTaskLayer() {
 		},
 		async refresh(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 			if (state.apiChecked && !state.apiAvailable) await ensureTaskApi(pi, state, ctx.cwd);
+			if (state.apiAvailable) await refreshDiscoveredTaskScope(pi, ctx);
 		},
 		async beforeAgentStart(pi: ExtensionAPI, prompt: string, fallbackWeight: TaskWeight, ctx: ExtensionContext): Promise<string | undefined> {
 			resetPromptState(state, fallbackWeight);
@@ -316,7 +330,7 @@ export function createAgentsTaskLayer() {
 			return state.currentPromptWeight;
 		},
 		ambientScope(): { taskId?: string; projectRoot?: string } {
-			return { taskId: state.active?.task_id, projectRoot: state.active?.project_root };
+			return { taskId: state.active?.task_id || state.discovered?.task_id, projectRoot: state.active?.project_root || state.discovered?.project_root };
 		},
 		finalVisibility(): FinalTaskVisibility {
 			const visibilityState: FinalTaskVisibility["state"] = state.active?.task_id ? "bound" : state.lastAction === "blocked" ? "blocked" : state.lastError ? "unavailable" : "not_bound";

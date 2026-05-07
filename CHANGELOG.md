@@ -12,6 +12,7 @@ All notable changes to this personal pi harness package are tracked here.
 
 ### Fixed
 - Scoped-memory status now uses the effective scope reported by `.agents`, so home-root project warnings can still show task-scoped memory API health instead of an unavailable state.
+- `/memory`, `/status`, and `/doctor` can now discover the active AGENTS task scope before any post-reload agent turn has rebound the in-memory task layer.
 
 ### Breaking
 - None.

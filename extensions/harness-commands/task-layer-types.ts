@@ -59,6 +59,16 @@ export type CandidateRootResult = {
 	auto_create: "auto" | "never";
 };
 
+export type TaskDiscoverResult = {
+	task_api_version?: number;
+	found: boolean;
+	task_id: string;
+	project_root: string;
+	task_project_root?: string;
+	blocked?: boolean;
+	reason?: string;
+};
+
 export type TaskActivity = {
 	reads: number;
 	writes: number;
@@ -80,6 +90,7 @@ export type TaskLayerState = {
 	artifactRecordedThisTurn: number;
 	artifactSkipped: number;
 	active?: BindResult;
+	discovered?: { task_id: string; project_root: string };
 	context?: string;
 	lastAction?: BindAction;
 	lastReason?: string;

@@ -1,5 +1,5 @@
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, createTaskHarness, root, taskBindPayload } from "./support.mjs";
+import { assert, createTaskHarness, homeRoot, root, taskBindPayload, taskDiscoverPayload } from "./support.mjs";
 
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
@@ -112,6 +112,19 @@ export async function runAmbientContextTests() {
 	await boundTask.commands.get("doctor").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Ambient context"), "/doctor should include ambient context diagnostics");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");
+
+	const slashOnlyMemoryTask = createTaskHarness({
+		cwd: homeRoot,
+		gitRoot: false,
+		taskDiscoverPayload: taskDiscoverPayload({ project_root: homeRoot, task_project_root: homeRoot }),
+		memoryStatsPayload: { memory_api_version: 1, counts_by_state: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0, scope: { project: false, task: true, global: false, all: false, requested_project: true }, warnings: [{ scope: "project", reason: "home_root" }] },
+	});
+	await slashOnlyMemoryTask.handlers.get("session_start")({ reason: "startup" }, slashOnlyMemoryTask.ctx);
+	await slashOnlyMemoryTask.commands.get("memory").handler("", slashOnlyMemoryTask.ctx);
+	assert(slashOnlyMemoryTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-discover.sh")), "/memory should discover active task scope when no agent turn has bound this session yet");
+	const memoryStatsCall = slashOnlyMemoryTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("memory-stats.sh"));
+	assert(memoryStatsCall?.args.includes("--task-id"), "/memory should pass discovered task id to scoped memory stats");
+	assert(slashOnlyMemoryTask.sentMessages.at(-1).content.includes("scoped memory API: ok (task; 0 candidate, 0 approved, 0 deprecated; 0 skipped; 1 warning)"), "/memory should report task-scoped memory API health for home-root slash-only sessions");
 
 	const rememberTask = createTaskHarness({
 		bindPayload: taskBindPayload(),

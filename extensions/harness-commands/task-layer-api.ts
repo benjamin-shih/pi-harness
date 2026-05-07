@@ -6,6 +6,7 @@ import {
 	SUPPORTED_TASK_API_VERSION,
 	type CandidateRootResult,
 	type ExecResult,
+	type TaskDiscoverResult,
 	type TaskApiInfo,
 	type TaskClassification,
 	type TaskLayerState,
@@ -52,6 +53,18 @@ export async function candidateRoot(pi: ExtensionAPI, candidate: string, cwd: st
 		const result = await runScript(pi, "task-candidate-root.sh", ["--candidate", candidate, "--cwd", cwd], cwd, 5_000);
 		if (result.code !== 0) return undefined;
 		const payload = parseJson<CandidateRootResult>(result.stdout);
+		if (!payload || payload.task_api_version !== SUPPORTED_TASK_API_VERSION) return undefined;
+		return payload;
+	} catch {
+		return undefined;
+	}
+}
+
+export async function discoverTask(pi: ExtensionAPI, cwd: string, sessionId: string): Promise<TaskDiscoverResult | undefined> {
+	try {
+		const result = await runScript(pi, "task-discover.sh", ["--cwd", cwd, "--runtime", "pi", "--session", sessionId], cwd, 5_000);
+		if (result.code !== 0) return undefined;
+		const payload = parseJson<TaskDiscoverResult>(result.stdout);
 		if (!payload || payload.task_api_version !== SUPPORTED_TASK_API_VERSION) return undefined;
 		return payload;
 	} catch {
