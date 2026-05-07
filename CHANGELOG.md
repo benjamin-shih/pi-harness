@@ -5,6 +5,20 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## 0.4.0 - 2026-05-07
+
+### Added
 - Route API observability in `/status` and `/doctor`: the last ambient execution-route state now distinguishes active, inactive, and safely degraded shared-route checks without exposing prompt or script-output details.
 - Task lifecycle diagnostics in `/doctor`, sourced from the shared `.agents` task lifecycle API and bounded to status, terminal/active state, lease state, route metadata, event counts, blockers count, and next action.
 - Task retention/artifact-hygiene diagnostics in `/doctor`, sourced from the shared `.agents` retention API and limited to counts/bytes/warnings with destructive cleanup disabled.
@@ -16,6 +30,7 @@ All notable changes to this personal pi harness package are tracked here.
 
 ### Changed
 - Updated the local Pi development dependency to `@mariozechner/pi-coding-agent@0.73.0`.
+- Recorded the release compatibility checkpoint for Pi `0.73.0`, `pi-subagents@0.24.0`, `pi-intercom@0.6.0`, and the current shared `.agents` package-policy/task/instruction-health APIs.
 - Moved status/doctor assembly into shared support to keep the harness command extension below audit size thresholds.
 
 ### Fixed

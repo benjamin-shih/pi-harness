@@ -143,10 +143,21 @@ pi install git:https://github.com/benjamin-shih/pi-harness.git
 
 or referenced as a local checkout from `settings.json`.
 
+## Compatibility checkpoint
+
+Current release target: `v0.4.0`.
+
+Validated with:
+
+- `@mariozechner/pi-coding-agent@0.73.0`
+- `pi-subagents@0.24.0`
+- `pi-intercom@0.6.0`
+- shared `.agents` task, package-policy, memory, and project-instruction diagnostics APIs as of the release tag
+
 ## Release notes
 
 ```bash
-npm run changelog -- v0.3.0
+npm run changelog -- v0.4.0
 ```
 
 See `RELEASING.md` for the release checklist.
