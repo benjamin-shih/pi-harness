@@ -1,5 +1,5 @@
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, controlPlaneDashboardPayload, controlPlaneRoutePayload, createTaskHarness, homeRoot, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload } from "./support.mjs";
+import { assert, controlPlaneDashboardPayload, controlPlaneRoutePayload, createTaskHarness, harnessCommands, homeRoot, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
 
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
@@ -131,12 +131,21 @@ export async function runAmbientContextTests() {
 
 	const explicitControlCenterTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
-		controlPlaneDashboardPayload: controlPlaneDashboardPayload({ route: { task: { shape: "coursework", complexity: "complex", risk: "medium" }, run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" } }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "prompt_alias", steward: "course-steward", default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" } }),
+		controlPlaneDashboardPayload: controlPlaneDashboardPayload({ route: { task: { shape: "coursework", complexity: "complex", risk: "medium" }, run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" } }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "explicit_project", steward: "course-steward", description: "Course project", tags: ["course"], default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" } }),
 	});
 	await explicitControlCenterTask.handlers.get("session_start")({ reason: "startup" }, explicitControlCenterTask.ctx);
-	await explicitControlCenterTask.commands.get("control-center").handler("Finish HW3 for STATS300C", explicitControlCenterTask.ctx);
+	await explicitControlCenterTask.commands.get("control-center").handler("--project STATS300C Finish HW3", explicitControlCenterTask.ctx);
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("task: coursework; complexity complex; risk medium"), "/control-center with prompt text should show route summary");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("registry: STATS300C via explicit_project"), "/control-center should pass explicit project selectors to the shared dashboard API");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/control-center should expose coursework policy read-only");
+	const dashboardCall = explicitControlCenterTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard"));
+	assert(dashboardCall?.args.includes("--project") && dashboardCall.args.includes("STATS300C"), "/control-center should forward --project to control-plane dashboard");
+	await explicitControlCenterTask.commands.get("control-center").handler("web --project STATS300C", explicitControlCenterTask.ctx);
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("## Agent Control Center web"), "/control-center web should report the local web dashboard URL");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("read-only local web dashboard"), "/control-center web should be explicitly read-only");
+	assert(explicitControlCenterTask.execCalls.some((call) => call.cmd === "open" && String(call.args?.[0] || "").startsWith("http://127.0.0.1:")), "/control-center web should open a localhost dashboard URL");
+	await explicitControlCenterTask.commands.get("control-center").handler("web stop", explicitControlCenterTask.ctx);
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("stopped: yes"), "/control-center web stop should close the local web dashboard server");
 
 	const explicitRunCardTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
@@ -199,6 +208,16 @@ export async function runAmbientContextTests() {
 	assert(rememberResult.systemPrompt.includes("memory_admin: included"), "ambient receipt should expose memory-admin guidance inclusion");
 	assert(!rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-add.sh")), "ambient memory-admin guidance should not write memory during prompt assembly");
 	assert(!rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh")), "ambient memory-admin guidance should not auto-review candidates during prompt assembly");
+	await rememberTask.commands.get("remember").handler("--task keep memory scoped and manual", rememberTask.ctx);
+	assert(rememberTask.sentMessages.at(-1).content.includes("## Remember candidate"), "/remember should render candidate-memory creation output");
+	assert(rememberTask.sentMessages.at(-1).content.includes("state: candidate"), "/remember should create candidate memory, not approved memory");
+	assert(rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-add.sh") && call.args.includes("--state") && call.args.includes("candidate")), "/remember should call memory-add.sh explicitly as candidate");
+	await rememberTask.commands.get("promote-memory").handler("mem_candidate_1 explicit approval", rememberTask.ctx);
+	assert(rememberTask.sentMessages.at(-1).content.includes("## Promote memory"), "/promote-memory should render explicit promotion output");
+	assert(rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-promote.sh")), "/promote-memory should call the shared promote script");
+	await rememberTask.commands.get("forget-memory").handler("mem_candidate_1 explicit forget", rememberTask.ctx);
+	assert(rememberTask.sentMessages.at(-1).content.includes("## Forget memory"), "/forget-memory should render explicit forget output");
+	assert(rememberTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-forget.sh")), "/forget-memory should call the shared forget script");
 
 	const omittedMemoryTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
@@ -207,4 +226,10 @@ export async function runAmbientContextTests() {
 	await omittedMemoryTask.handlers.get("session_start")({ reason: "startup" }, omittedMemoryTask.ctx);
 	const omittedResult = await omittedMemoryTask.handlers.get("before_agent_start")({ prompt: "Implement memory context", systemPrompt: "base" }, omittedMemoryTask.ctx);
 	assert(omittedResult.systemPrompt.includes("memory: skipped, memory API returned 0 included records; 1 omitted by filter/safety/budget"), "ambient receipt should distinguish omitted memory from absent memory without overstating the cause");
+
+	await withEnv({ PI_SUBAGENT_CHILD: "1" }, async () => {
+		const childCommands = new Map();
+		harnessCommands({ on: () => {}, registerCommand: (name, command) => childCommands.set(name, command) });
+		assert(childCommands.size === 0, "PI_SUBAGENT_CHILD should suppress harness slash commands in subagent children");
+	});
 }

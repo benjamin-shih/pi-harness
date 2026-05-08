@@ -288,6 +288,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "git" && args.join(" ") === "rev-parse --show-toplevel") return gitRoot ? { code: 0, stdout: `${gitRoot}\n`, stderr: "" } : { code: 1, stdout: "", stderr: "not a git repo" };
 			if (cmd === "git" && args.join(" ") === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
 			if (cmd === "git" && args.join(" ") === "status --porcelain=v1 --untracked-files=no") return { code: 0, stdout: "", stderr: "" };
+			if (cmd === "open") return { code: 0, stdout: "", stderr: "" };
 			const script = args[0] || "";
 			const scriptName = script.split(/[\\/]/).at(-1) || "";
 			if (cmd === "bash") {
@@ -329,6 +330,9 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("memory-context.sh")) return { code: 0, stdout: JSON.stringify(memoryContextPayload ?? { memory_api_version: 1, included: [], omitted: [], context: "" }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload ?? { memory_api_version: 1, counts_by_state: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0 }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-review.sh")) return { code: 0, stdout: JSON.stringify(reviewPayload ?? memoryReviewPayload()), stderr: "" };
+			if (cmd === "bash" && script.endsWith("memory-add.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, recorded: true, record: { id: "mem_candidate_1", state: "candidate", title: "Memory candidate", scope: { type: args.includes("--scope") ? args[args.indexOf("--scope") + 1] : "project" } } }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("memory-promote.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, promoted: true, record: { id: args[1], state: "approved", title: "Promoted memory", scope: { type: "task" } } }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("memory-forget.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, forgotten: true, record: { id: args[1], state: "deprecated", title: "Forgotten memory", scope: { type: "task" } } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-lifecycle.sh")) return { code: 0, stdout: JSON.stringify(taskLifecyclePayload({ task_id: args[1], ...(lifecyclePayload ?? {}) })), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-retention.sh")) return { code: 0, stdout: JSON.stringify(taskRetentionPayload(retentionPayload ?? {})), stderr: "" };
 			if (cmd === "bash" && script.endsWith("pi-package-doctor.sh")) return { code: 0, stdout: JSON.stringify(piPackagePolicyPayload(packagePolicyPayload ?? {})), stderr: "" };

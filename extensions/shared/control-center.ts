@@ -1,3 +1,5 @@
+import { createServer, type Server } from "node:http";
+import { randomBytes } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +16,8 @@ export type ControlCenterRouteSummary = {
 	run?: { shape?: string; summary?: string };
 };
 
+export type ControlCenterOptions = { prompt?: string; taskId?: string; project?: string; projectRoot?: string };
+
 export type ControlCenterPayload = {
 	control_plane_api_version?: number;
 	kind?: string;
@@ -26,6 +30,8 @@ export type ControlCenterPayload = {
 		type?: string;
 		registry_id?: string;
 		match_type?: string;
+		description?: string;
+		tags?: string[];
 		steward?: string;
 		default_checks?: string[];
 		write_policy?: string;
@@ -61,6 +67,7 @@ export type ControlCenterPayload = {
 	};
 	attention?: string[];
 	warnings?: string[];
+	notices?: string[];
 };
 
 export type ControlCenterState = {
@@ -73,6 +80,8 @@ export type ControlCenterState = {
 
 const SUPPORTED_CONTROL_PLANE_API_VERSION = 1;
 
+let webServer: { server: Server; url: string } | undefined;
+
 function state(health: ControlCenterHealth, status: ControlCenterStatus, summary: string, apiVersion?: number, payload?: ControlCenterPayload): ControlCenterState {
 	return { health, status, summary, ...(apiVersion === undefined ? {} : { apiVersion }), ...(payload ? { payload } : {}) };
 }
@@ -80,7 +89,7 @@ function state(health: ControlCenterHealth, status: ControlCenterStatus, summary
 function payloadHealth(payload: ControlCenterPayload): ControlCenterHealth {
 	if (payload.warnings?.length || payload.attention?.length) return "warning";
 	if (payload.package_policy?.health === "warning" || payload.project_instructions?.health === "warning") return "warning";
-	if (payload.tasks?.available === false || payload.memory?.available === false || payload.package_policy?.available === false) return "warning";
+	if (payload.tasks?.available === false || payload.package_policy?.available === false) return "warning";
 	return "ok";
 }
 
@@ -99,12 +108,18 @@ function stateFromPayload(payload: ControlCenterPayload | undefined): ControlCen
 	return state(payloadHealth(payload), "ready", summaryFromPayload(payload), apiVersion, payload);
 }
 
-export async function buildControlCenterState(pi: ExtensionAPI, cwd: string, options: { prompt?: string; taskId?: string } = {}): Promise<ControlCenterState> {
+function appendDashboardArgs(args: string[], options: ControlCenterOptions, promptFile?: string): string[] {
+	if (promptFile) args.push("--prompt-file", promptFile);
+	if (options.taskId) args.push("--task-id", options.taskId);
+	if (options.project) args.push("--project", options.project);
+	if (options.projectRoot) args.push("--project-root", options.projectRoot);
+	return args;
+}
+
+export async function buildControlCenterState(pi: ExtensionAPI, cwd: string, options: ControlCenterOptions = {}): Promise<ControlCenterState> {
 	try {
 		const run = async (promptFile?: string) => {
-			const args = [agentsScriptPath("control-plane.sh"), "dashboard", "--cwd", cwd, "--json"];
-			if (promptFile) args.push("--prompt-file", promptFile);
-			if (options.taskId) args.push("--task-id", options.taskId);
+			const args = appendDashboardArgs([agentsScriptPath("control-plane.sh"), "dashboard", "--cwd", cwd, "--json"], options, promptFile);
 			const result = await pi.exec("bash", args, { cwd, timeout: 8_000 });
 			if (result.code !== 0) return state("degraded", "script_error", "degraded · script_error");
 			return stateFromPayload(parseJson<ControlCenterPayload>(result.stdout));
@@ -116,12 +131,10 @@ export async function buildControlCenterState(pi: ExtensionAPI, cwd: string, opt
 	}
 }
 
-export async function openControlCenterHtml(pi: ExtensionAPI, cwd: string, options: { prompt?: string; taskId?: string } = {}): Promise<{ path?: string; opened: boolean; error?: string }> {
+export async function openControlCenterHtml(pi: ExtensionAPI, cwd: string, options: ControlCenterOptions = {}): Promise<{ path?: string; opened: boolean; error?: string }> {
 	const prompt = options.prompt?.trim();
 	const run = async (promptFile?: string) => {
-		const args = [agentsScriptPath("control-plane.sh"), "dashboard", "--cwd", cwd, "--html"];
-		if (promptFile) args.push("--prompt-file", promptFile);
-		if (options.taskId) args.push("--task-id", options.taskId);
+		const args = appendDashboardArgs([agentsScriptPath("control-plane.sh"), "dashboard", "--cwd", cwd, "--html"], options, promptFile);
 		const result = await pi.exec("bash", args, { cwd, timeout: 8_000 });
 		if (result.code !== 0 || !result.stdout.trim()) return { opened: false, error: "dashboard html unavailable" };
 		const dir = await mkdtemp(join(tmpdir(), "pi-control-center-"));
@@ -135,6 +148,87 @@ export async function openControlCenterHtml(pi: ExtensionAPI, cwd: string, optio
 	} catch (error) {
 		return { opened: false, error: error instanceof Error ? error.message : String(error) };
 	}
+}
+
+export async function stopControlCenterWeb(): Promise<boolean> {
+	if (!webServer) return false;
+	const { server } = webServer;
+	webServer = undefined;
+	await new Promise<void>((resolve) => server.close(() => resolve()));
+	return true;
+}
+
+function webShell(token: string): string {
+	const base = `/${token}/`;
+	return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Agent Control Center</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:2rem;line-height:1.45;background:#fbfbfb;color:#1f2328}header{display:flex;justify-content:space-between;gap:1rem;align-items:center}button{padding:.45rem .8rem;border:1px solid #ccc;border-radius:8px;background:white}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}section{background:white;border:1px solid #ddd;border-radius:12px;padding:1rem}h1,h2{margin-top:0}.muted{color:#666}.warn{color:#9a6700}.bad{color:#b42318}li{margin:.2rem 0}code{background:#f0f0f0;padding:.1rem .25rem;border-radius:4px}</style>
+</head><body><header><div><h1>Agent Control Center</h1><p class="muted">Read-only local dashboard · refreshes every 15s while this Pi session is alive.</p></div><button id="refresh">Refresh</button></header><p id="status" class="muted">Loading...</p><main id="cards"></main>
+<script>
+const cards = document.getElementById('cards');
+const status = document.getElementById('status');
+function esc(v){return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function list(items){return (items && items.length) ? '<ul>' + items.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' : '<p class="muted">None</p>';}
+function count(obj,key){return Number((obj || {})[key] || 0);}
+function section(title, body){return '<section><h2>' + esc(title) + '</h2>' + body + '</section>';}
+async function load(){
+  const res = await fetch('${base}api/dashboard', { cache: 'no-store' });
+  const state = await res.json();
+  const p = state.payload || {};
+  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {};
+  status.textContent = 'Health: ' + state.health + ' · ' + (p.generated_at || 'unknown') + ' · ' + state.summary;
+  status.className = state.health === 'ok' ? 'muted' : 'warn';
+  cards.innerHTML = [
+    section('Project', '<p><b>' + esc(project.name) + '</b> (' + esc(project.type) + ')</p><p><code>' + esc(project.root) + '</code></p><p>Registry: ' + esc(project.registry_id || 'unregistered') + ' via ' + esc(project.match_type || 'unknown') + '</p><p>Policy: write ' + esc(project.write_policy) + '; coursework ' + esc(project.coursework_policy || 'none') + '</p>'),
+    section('Route', route.task ? '<p>Task: ' + esc(route.task.shape) + ' · ' + esc(route.task.complexity) + ' · risk ' + esc(route.task.risk) + '</p><p>Run: ' + esc((route.run || {}).shape || 'none') + '</p>' : '<p class="muted">No prompt route requested.</p>'),
+    section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p>'),
+    section('Memory', '<p>Available: ' + esc(memory.available !== false) + '</p><p>Approved: ' + count(mem,'approved') + ' · Candidates: ' + count(mem,'candidate') + ' · Deprecated: ' + count(mem,'deprecated') + '</p>'),
+    section('Pi package policy', '<p>Health: ' + esc(pkg.health || 'unknown') + '</p><p>Configured: ' + count(pkgSummary,'configured_packages') + ' · Approved: ' + count(pkgSummary,'approved_packages') + ' · Unapproved: ' + count(pkgSummary,'unapproved_packages') + ' · Unpinned: ' + count(pkgSummary,'unpinned_packages') + '</p>'),
+    section('Project instructions', '<p>Health: ' + esc(instr.health || 'unknown') + '</p><p>Files: ' + count(instrSummary,'instruction_files_found') + ' · Thin style: ' + count(instrSummary,'thin_style_files') + '</p>'),
+    section('Attention', list([...(p.attention || []), ...(p.warnings || []), ...(p.notices || [])]))
+  ].join('');
+}
+document.getElementById('refresh').onclick = () => load().catch(e => { status.textContent = 'Refresh failed: ' + e; status.className = 'bad'; });
+load().catch(e => { status.textContent = 'Load failed: ' + e; status.className = 'bad'; });
+setInterval(() => load().catch(() => {}), 15000);
+</script></body></html>`;
+}
+
+export async function startControlCenterWeb(pi: ExtensionAPI, cwd: string, options: ControlCenterOptions = {}): Promise<{ url: string; opened: boolean; reused: boolean; error?: string }> {
+	await stopControlCenterWeb();
+	const token = randomBytes(12).toString("hex");
+	const server = createServer(async (req, res) => {
+		try {
+			const path = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`).pathname;
+			if (path === `/${token}/` || path === `/${token}`) {
+				res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+				res.end(webShell(token));
+				return;
+			}
+			if (path === `/${token}/api/dashboard`) {
+				const dashboard = await buildControlCenterState(pi, cwd, options);
+				res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+				res.end(JSON.stringify(dashboard));
+				return;
+			}
+			res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+			res.end("not found");
+		} catch (error) {
+			res.writeHead(500, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+			res.end(JSON.stringify({ health: "degraded", status: "exception", summary: error instanceof Error ? error.message : String(error) }));
+		}
+	});
+	await new Promise<void>((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", () => resolve());
+	});
+	server.unref();
+	const address = server.address();
+	const port = typeof address === "object" && address ? address.port : 0;
+	const url = `http://127.0.0.1:${port}/${token}/`;
+	webServer = { server, url };
+	const opened = await pi.exec("open", [url], { cwd, timeout: 5_000 });
+	return { url, opened: opened.code === 0, reused: false, ...(opened.code === 0 ? {} : { error: "open command failed" }) };
 }
 
 function listLine(label: string, items: string[] | undefined): string {
@@ -159,6 +253,7 @@ export function formatControlCenter(state: ControlCenterState): string {
 	const packageSummary = packagePolicy.summary ?? {};
 	const instructions = payload.project_instructions ?? {};
 	const instructionSummary = instructions.summary ?? {};
+	const warnings = [...(payload.warnings ?? []), ...(tasks.warnings ?? []), ...(memory.warnings ?? []), ...(packagePolicy.warnings ?? []), ...(instructions.warnings ?? [])];
 	const lines = [
 		"## Agent Control Center v0",
 		`- health: ${state.health} (${state.status}; v${state.apiVersion ?? "?"})`,
@@ -170,6 +265,8 @@ export function formatControlCenter(state: ControlCenterState): string {
 		`- root: ${project.root ?? "unknown"}`,
 		`- registry: ${project.registry_id || "unregistered"}${project.match_type ? ` via ${project.match_type}` : ""}`,
 		`- steward: ${project.steward || "none"}`,
+		`- description: ${project.description || "none"}`,
+		listLine("tags", project.tags),
 		`- policy: write ${project.write_policy || "unknown"}; coursework ${project.coursework_policy || "none"}`,
 		listLine("default checks", project.default_checks),
 		"",
@@ -209,7 +306,8 @@ export function formatControlCenter(state: ControlCenterState): string {
 		"",
 		"## Attention",
 		listLine("items", payload.attention),
-		listLine("warnings", [...(payload.warnings ?? []), ...(tasks.warnings ?? []), ...(memory.warnings ?? []), ...(packagePolicy.warnings ?? []), ...(instructions.warnings ?? [])]),
+		listLine("warnings", warnings),
+		listLine("notices", payload.notices),
 	];
 	return lines.join("\n");
 }
