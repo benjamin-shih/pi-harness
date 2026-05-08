@@ -20,6 +20,7 @@ import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
+import { buildControlCenterState, formatControlCenter, openControlCenterHtml } from "./shared/control-center";
 import { buildOrchestrationRouteState, formatRunCard, type OrchestrationRouteState } from "./shared/orchestration-guidance";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
 
@@ -93,6 +94,28 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			const route = prompt ? await buildOrchestrationRouteState(pi, ctx.cwd, prompt) : lastOrchestrationRoute;
 			const content = route ? formatRunCard(route) : ["## Run card", "- status: not assembled yet", "- hint: run a nontrivial turn first, or pass prompt text to `/run-card ...`"].join("\n");
 			pi.sendMessage({ customType: "harness-run-card", content, display: true });
+		},
+	});
+	pi.registerCommand("control-center", {
+		description: "Show the read-only local Agent Control Center; use `html ...` to open the static HTML dashboard",
+		handler: async (args, ctx) => {
+			const trimmed = args.trim();
+			const htmlMode = trimmed === "html" || trimmed.startsWith("html ");
+			const prompt = htmlMode ? trimmed.replace(/^html\s*/, "").trim() : trimmed;
+			const taskId = taskLayer.ambientScope?.().taskId;
+			if (htmlMode) {
+				const result = await openControlCenterHtml(pi, ctx.cwd, { prompt, taskId });
+				const content = [
+					"## Agent Control Center v0",
+					`- html: ${result.path ? result.path : "not generated"}`,
+					`- opened: ${result.opened ? "yes" : "no"}`,
+					...(result.error ? [`- warning: ${result.error}`] : []),
+					"- mode: read-only static dashboard",
+				].join("\n");
+				pi.sendMessage({ customType: "harness-control-center", content, display: true });
+				return;
+			}
+			pi.sendMessage({ customType: "harness-control-center", content: formatControlCenter(await buildControlCenterState(pi, ctx.cwd, { prompt, taskId })), display: true });
 		},
 	});
 	pi.registerCommand("checkpoint", {

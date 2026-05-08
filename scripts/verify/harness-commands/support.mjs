@@ -30,6 +30,23 @@ export const controlPlaneRoutePayload = (overrides = {}) => ({
 	warnings: [],
 	...overrides,
 });
+export const controlPlaneDashboardPayload = (overrides = {}) => ({
+	control_plane_api_version: 1,
+	kind: "dashboard",
+	generated_at: "2026-05-08T00:00:00Z",
+	cwd: root,
+	read_only: true,
+	project: { name: "project", root, type: "repo", registry_id: "project", match_type: "cwd", steward: "project-steward", default_checks: ["make verify"], write_policy: "single_writer", coursework_policy: "none" },
+	projects: { count: 1, matched: { id: "project", name: "project", root, type: "repo", match_type: "cwd" } },
+	route: null,
+	tasks: { available: true, scope: "project", project_scoped: true, summary: { task_packages_scoped: 3, active_tasks: 1, terminal_tasks: 2, stale_tasks: 0, blocked_tasks: 0, live_leases: 1, expired_leases: 0, stale_candidates: 0, artifact_records: 7, event_records: 12 }, active_task: { status: "in_progress", active: true, terminal: false, scope_match: true, lease_state: "live", events_count: 3, blockers_count: 0 }, warnings: [] },
+	memory: { available: true, count: 2, counts_by_state: { approved: 1, candidate: 1, deprecated: 0 }, skipped: 0, scope: { project: true, task: true, global: false, all: false }, warnings: [] },
+	package_policy: { available: true, health: "ok", summary: { configured_packages: 4, approved_packages: 4, unapproved_packages: 0, unpinned_packages: 0, unknown_package_entries: 0, approved_manifest_entries: 4 }, policy: { default_action: "deny", requires_exact_pins: true, runtime_network_checks: false }, warnings: [] },
+	project_instructions: { available: true, health: "ok", summary: { instruction_files_found: 2, thin_style_files: 2, dispatch_mentions: 0 }, warnings: [] },
+	attention: ["memory candidates pending explicit review"],
+	warnings: [],
+	...overrides,
+});
 export const executionRoutePayload = (overrides = {}) => ({ execution_route_api_version: 1, execution_intent: true, profile: "software", overlays: [], summary: "profile software; overlays none", guidance: "## Ambient Execution Protocol\nExecution intent was detected.", ...overrides });
 export const taskLifecyclePayload = (overrides = {}) => ({
 	task_api_version: 1,
@@ -247,7 +264,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDashboardPayload: dashboardPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root }) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
@@ -295,6 +312,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				const promptFileIndex = args.indexOf("--prompt-file");
 				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
+				if (args.includes("dashboard")) return { code: 0, stdout: args.includes("--html") ? "<!doctype html><title>Agent Control Center v0</title>" : JSON.stringify(dashboardPayload ?? controlPlaneDashboardPayload()), stderr: "" };
 				return { code: 0, stdout: JSON.stringify(controlPlanePayload ?? controlPlaneRoutePayload()), stderr: "" };
 			}
 			if (cmd === "bash" && script.endsWith("task-candidate-root.sh")) {

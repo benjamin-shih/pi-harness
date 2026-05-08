@@ -1,5 +1,5 @@
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, controlPlaneRoutePayload, createTaskHarness, homeRoot, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload } from "./support.mjs";
+import { assert, controlPlaneDashboardPayload, controlPlaneRoutePayload, createTaskHarness, homeRoot, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload } from "./support.mjs";
 
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
@@ -120,6 +120,23 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("run shape: main_agent"), "/run-card should include the recommended run shape");
 	assert(boundTask.sentMessages.at(-1).content.includes("registry: project via cwd"), "/run-card should include project registry match metadata");
 	assert(boundTask.sentMessages.at(-1).content.includes("default checks: make verify"), "/run-card should include project registry default checks");
+	await boundTask.commands.get("control-center").handler("", boundTask.ctx);
+	assert(boundTask.sentMessages.at(-1).customType === "harness-control-center", "/control-center should send a control-center message");
+	assert(boundTask.sentMessages.at(-1).content.includes("## Agent Control Center v0"), "/control-center should render the local dashboard card");
+	assert(boundTask.sentMessages.at(-1).content.includes("mode: read-only diagnostics"), "/control-center should state it is read-only");
+	assert(boundTask.sentMessages.at(-1).content.includes("active task: status in_progress; lease live"), "/control-center should summarize active task lifecycle without exposing task ids");
+	assert(boundTask.sentMessages.at(-1).content.includes("candidates: 1"), "/control-center should include scoped memory candidate counts");
+	assert(!boundTask.sentMessages.at(-1).content.includes("pi-task"), "/control-center should not display private task ids");
+	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard")), "/control-center should call the shared dashboard API");
+
+	const explicitControlCenterTask = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		controlPlaneDashboardPayload: controlPlaneDashboardPayload({ route: { task: { shape: "coursework", complexity: "complex", risk: "medium" }, run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" } }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "prompt_alias", steward: "course-steward", default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" } }),
+	});
+	await explicitControlCenterTask.handlers.get("session_start")({ reason: "startup" }, explicitControlCenterTask.ctx);
+	await explicitControlCenterTask.commands.get("control-center").handler("Finish HW3 for STATS300C", explicitControlCenterTask.ctx);
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("task: coursework; complexity complex; risk medium"), "/control-center with prompt text should show route summary");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/control-center should expose coursework policy read-only");
 
 	const explicitRunCardTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
