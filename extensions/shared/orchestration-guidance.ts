@@ -10,7 +10,7 @@ export type OrchestrationRunShape = "direct_answer" | "main_agent" | "main_agent
 
 export type OrchestrationRoute = {
 	task: { shape: OrchestrationTaskShape; complexity: OrchestrationComplexity; risk: OrchestrationRisk };
-	project: { name: string; root: string; type: string; bindable: boolean; reason: string };
+	project: { name: string; root: string; type: string; bindable: boolean; reason: string; registry_id?: string; registered?: boolean; match_type?: string; steward?: string; default_checks?: string[]; write_policy?: string; coursework_policy?: string; local_instructions_required?: boolean };
 	run: { shape: OrchestrationRunShape; summary: string };
 	delegation: Array<{ role: string; when: string; cwd: string; mode: string; constraints?: string[] }>;
 	gates: string[];
@@ -86,6 +86,18 @@ function listLine(label: string, items: string[]): string {
 	return `- ${label}: ${items.length ? items.slice(0, 4).join("; ") : "none"}`;
 }
 
+function projectDetailLines(project: OrchestrationRoute["project"]): string[] {
+	const lines = [
+		`- project: ${project.name} (${project.type})`,
+		`- project root: ${project.root}`,
+	];
+	if (project.registry_id || project.match_type) lines.push(`- registry: ${project.registry_id || "unregistered"}${project.match_type ? ` via ${project.match_type}` : ""}`);
+	if (project.steward) lines.push(`- steward: ${project.steward}`);
+	if (project.write_policy || project.coursework_policy) lines.push(`- policy: write ${project.write_policy || "unknown"}; coursework ${project.coursework_policy || "none"}`);
+	if (project.default_checks?.length) lines.push(listLine("default checks", project.default_checks));
+	return lines;
+}
+
 export function formatRunCard(state: OrchestrationRouteState): string {
 	if (!state.route) return ["## Run card", `- status: ${state.status}`, `- health: ${state.health}`, `- summary: ${state.summary}`].join("\n");
 	const route = state.route;
@@ -94,8 +106,7 @@ export function formatRunCard(state: OrchestrationRouteState): string {
 		"## Run card",
 		`- health: ${state.health} (${state.status}; v${state.apiVersion ?? "?"})`,
 		`- task: ${route.task.shape}; complexity ${route.task.complexity}; risk ${route.task.risk}`,
-		`- project: ${route.project.name} (${route.project.type})`,
-		`- project root: ${route.project.root}`,
+		...projectDetailLines(route.project),
 		`- run shape: ${route.run.shape}`,
 		`- run summary: ${route.run.summary}`,
 		listLine("delegation", delegation),

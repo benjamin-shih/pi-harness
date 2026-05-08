@@ -18,7 +18,7 @@ export const controlPlaneRoutePayload = (overrides = {}) => ({
 	control_plane_api_version: 1,
 	kind: "route",
 	task: { shape: "coding", complexity: "standard", risk: "low" },
-	project: { name: "project", root, type: "repo", bindable: true, reason: "project_path" },
+	project: { name: "project", root, type: "repo", bindable: true, reason: "project_path", registry_id: "project", registered: true, match_type: "cwd", steward: "project-steward", default_checks: ["make verify"], write_policy: "single_writer", coursework_policy: "none", local_instructions_required: true },
 	run: { shape: "main_agent", summary: "front-door main agent remains accountable; recommended main agent" },
 	delegation: [],
 	gates: ["inspect repo/project state before edits", "verify with the narrowest meaningful local check"],

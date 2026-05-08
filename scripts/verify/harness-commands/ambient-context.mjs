@@ -118,14 +118,17 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).customType === "harness-run-card", "/run-card should send a run-card message");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Run card"), "/run-card should render latest orchestration route details");
 	assert(boundTask.sentMessages.at(-1).content.includes("run shape: main_agent"), "/run-card should include the recommended run shape");
+	assert(boundTask.sentMessages.at(-1).content.includes("registry: project via cwd"), "/run-card should include project registry match metadata");
+	assert(boundTask.sentMessages.at(-1).content.includes("default checks: make verify"), "/run-card should include project registry default checks");
 
 	const explicitRunCardTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
-		controlPlanePayload: controlPlaneRoutePayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", bindable: true, reason: "project_path" }, run: { shape: "parallel_recon", summary: "front-door main agent remains accountable; coursework assist/explain/verify" }, guidance: "## Orchestration Guidance\n- shape: coursework; complexity: complex; risk: medium" }),
+		controlPlanePayload: controlPlaneRoutePayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", bindable: true, reason: "project_path", registry_id: "STATS300C", registered: true, match_type: "prompt_alias", steward: "course-steward", default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify", local_instructions_required: true }, run: { shape: "parallel_recon", summary: "front-door main agent remains accountable; coursework assist/explain/verify" }, guidance: "## Orchestration Guidance\n- shape: coursework; complexity: complex; risk: medium" }),
 	});
 	await explicitRunCardTask.handlers.get("session_start")({ reason: "startup" }, explicitRunCardTask.ctx);
 	await explicitRunCardTask.commands.get("run-card").handler("Finish HW3 for STATS300C", explicitRunCardTask.ctx);
 	assert(explicitRunCardTask.sentMessages.at(-1).content.includes("project: STATS300C (coursework)"), "/run-card with prompt text should route explicit coursework prompts");
+	assert(explicitRunCardTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/run-card should expose coursework policy from the registry");
 	assert(explicitRunCardTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("control-plane.sh")), "/run-card should call the shared control-plane route API");
 
 	const slashOnlyMemoryTask = createTaskHarness({
