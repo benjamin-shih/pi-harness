@@ -129,11 +129,12 @@ export async function runAmbientContextTests() {
 	const reviewMemoryTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
 		memoryStatsPayload: { memory_api_version: 1, counts_by_state: { candidate: 1, approved: 0, deprecated: 0 }, skipped: 0 },
-		memoryReviewPayload: memoryReviewPayload({ count: 1, candidates: [{ id: "mem_candidate_1", state: "candidate", title: "Prefer scoped memory", body_preview: "Keep durable memories scoped unless the user explicitly says always.", body_chars: 68, scope: { type: "task" }, provenance: { source: "manual", reason: "explicit test" } }] }),
+		memoryReviewPayload: memoryReviewPayload({ count: 1, scope: { project: false, task: true, global: false, all: false }, candidates: [{ id: "mem_candidate_1", state: "candidate", title: "Prefer scoped memory", body_preview: "Keep durable memories scoped unless the user explicitly says always.", body_chars: 68, scope: { type: "task" }, provenance: { source: "manual", reason: "explicit test" } }] }),
 	});
 	await reviewMemoryTask.handlers.get("session_start")({ reason: "startup" }, reviewMemoryTask.ctx);
 	await reviewMemoryTask.commands.get("memory").handler("review", reviewMemoryTask.ctx);
 	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("## Memory candidate review"), "/memory review should render candidate review output");
+	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("review scope: task"), "/memory review should make the effective review scope explicit");
 	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("read-only"), "/memory review should state that review is read-only");
 	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("mem_candidate_1"), "/memory review should show candidate ids so users can explicitly choose promote/forget");
 	assert(reviewMemoryTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh")), "/memory review should call the shared read-only review script");
@@ -141,6 +142,17 @@ export async function runAmbientContextTests() {
 	await reviewMemoryTask.commands.get("memory").handler("help", reviewMemoryTask.ctx);
 	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("explicit user request only"), "/memory help should explain explicit-only durable write semantics");
 	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("memory-add.sh"), "/memory help should point explicit remember requests at the shared add script");
+	assert(reviewMemoryTask.sentMessages.at(-1).content.includes("/memory review global"), "/memory help should document explicit global candidate review");
+
+	const globalReviewTask = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		memoryReviewPayload: memoryReviewPayload({ count: 1, scope: { project: false, task: false, global: true, all: false }, candidates: [{ id: "mem_global_1", state: "candidate", title: "Global roadmap", body_preview: "Review global roadmap themes explicitly.", body_chars: 40, scope: { type: "global" }, provenance: { source: "manual", reason: "explicit test" } }] }),
+	});
+	await globalReviewTask.handlers.get("session_start")({ reason: "startup" }, globalReviewTask.ctx);
+	await globalReviewTask.commands.get("memory").handler("review global", globalReviewTask.ctx);
+	assert(globalReviewTask.sentMessages.at(-1).content.includes("## Memory candidate review (global)"), "/memory review global should label global review output");
+	assert(globalReviewTask.sentMessages.at(-1).content.includes("review scope: global"), "/memory review global should make the global scope explicit");
+	assert(globalReviewTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("memory-review.sh") && call.args.includes("--include-global")), "/memory review global should request explicit global review from the shared script");
 
 	const rememberTask = createTaskHarness({
 		bindPayload: taskBindPayload(),

@@ -161,18 +161,21 @@ export async function buildStatus(pi: ExtensionAPI, ctx: ExtensionContext, taskL
 
 export async function buildMemoryReport(pi: ExtensionAPI, ctx: ExtensionContext, taskLayer: StatusTaskLayer, args = ""): Promise<string> {
 	const facts = await buildHarnessFacts(pi, ctx, taskLayer);
-	const command = args.trim().toLowerCase();
-	if (command === "review" || command === "candidates") {
-		const review = await buildMemoryReview(pi, ctx.cwd, facts.memoryScope);
+	const tokens = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
+	const command = tokens[0] ?? "";
+	const requestedGlobal = tokens.includes("global") || tokens.includes("--include-global");
+	if (command === "review" || command === "candidates" || (command === "list" && requestedGlobal)) {
+		const reviewScope = requestedGlobal ? { includeGlobal: true } : facts.memoryScope;
+		const review = await buildMemoryReview(pi, ctx.cwd, reviewScope);
 		return [
-			"## Memory candidate review",
+			`## Memory candidate review${requestedGlobal ? " (global)" : ""}`,
 			...formatMemoryReviewLines(review),
 			"",
 			WRITE_SEMANTICS_DOCTOR_SECTION,
 		].join("\n");
 	}
 	if (command === "help" || command === "admin" || command === "commands") return formatMemoryAdminHelpLines(facts.memoryScope).join("\n");
-	if (command) return ["## Memory command", `- unknown subcommand: ${command}`, "- available: `/memory`, `/memory review`, `/memory help`"].join("\n");
+	if (command) return ["## Memory command", `- unknown subcommand: ${tokens.join(" ")}`, "- available: `/memory`, `/memory review`, `/memory review global`, `/memory help`"].join("\n");
 	return [
 		formatMemorySpineDiagnostics(facts.memory, { verbose: true }),
 		"",
