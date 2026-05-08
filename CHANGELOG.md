@@ -5,6 +5,8 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
+- Ambient orchestration guidance now calls the shared `.agents` control-plane route API for standard/complex turns without auto-launching subagents.
+- `/run-card` shows the latest or explicitly requested orchestration route as read-only debug visibility.
 - `/memory review` now runs the shared read-only candidate review API and shows bounded previews for explicit promote/forget follow-up.
 - `/memory review global` now makes global candidate review explicit instead of hiding scope mismatches.
 - `/memory help` now documents the explicit-only memory admin flow for remember, approve, forget, and global review requests.

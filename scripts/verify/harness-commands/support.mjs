@@ -14,6 +14,22 @@ export const agentsTasksRoot = join(agentsRoot, "tasks");
 export const taskBindPayload = (overrides = {}) => ({ action: "created", bound: true, blocked: false, reason: "", task_id: "pi-task", project_root: root, ...overrides });
 export const taskDiscoverPayload = (overrides = {}) => ({ task_api_version: 1, found: true, task_id: "pi-task", project_root: root, task_project_root: root, blocked: false, reason: "", ...overrides });
 export const memoryReviewPayload = (overrides = {}) => ({ memory_api_version: 1, count: 0, skipped: 0, candidates: [], omitted: [], scope: { project: true, task: true, global: false, all: false }, warnings: [], ...overrides });
+export const controlPlaneRoutePayload = (overrides = {}) => ({
+	control_plane_api_version: 1,
+	kind: "route",
+	task: { shape: "coding", complexity: "standard", risk: "low" },
+	project: { name: "project", root, type: "repo", bindable: true, reason: "project_path" },
+	run: { shape: "main_agent", summary: "front-door main agent remains accountable; recommended main agent" },
+	delegation: [],
+	gates: ["inspect repo/project state before edits", "verify with the narrowest meaningful local check"],
+	evidence_required: ["commands/checks run", "files changed or confirmed unchanged"],
+	human_decisions: [],
+	stop_rules: ["stop if local instructions conflict with the request"],
+	guidance: "## Orchestration Guidance\n- shape: coding; complexity: standard; risk: low\n- project: project (repo)\n- run: main_agent; front-door main agent remains accountable",
+	reasons: ["deterministic heuristic route"],
+	warnings: [],
+	...overrides,
+});
 export const executionRoutePayload = (overrides = {}) => ({ execution_route_api_version: 1, execution_intent: true, profile: "software", overlays: [], summary: "profile software; overlays none", guidance: "## Ambient Execution Protocol\nExecution intent was detected.", ...overrides });
 export const taskLifecyclePayload = (overrides = {}) => ({
 	task_api_version: 1,
@@ -231,7 +247,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root }) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
@@ -274,6 +290,12 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
 				return { code: 0, stdout: JSON.stringify(executionPayload ?? { execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "", reasons: ["no explicit execution intent"] }), stderr: "" };
+			}
+			if (cmd === "bash" && script.endsWith("control-plane.sh")) {
+				const promptFileIndex = args.indexOf("--prompt-file");
+				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
+				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
+				return { code: 0, stdout: JSON.stringify(controlPlanePayload ?? controlPlaneRoutePayload()), stderr: "" };
 			}
 			if (cmd === "bash" && script.endsWith("task-candidate-root.sh")) {
 				const candidate = args[args.indexOf("--candidate") + 1] || cwd;

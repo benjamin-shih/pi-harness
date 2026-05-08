@@ -20,6 +20,7 @@ import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
+import { buildOrchestrationRouteState, formatRunCard, type OrchestrationRouteState } from "./shared/orchestration-guidance";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -34,6 +35,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	let currentPromptWasMajor = false;
 	let initialChangeSnapshot: GitChangeSnapshot | undefined;
 	let lastAmbientContext: AmbientContextSnapshot | undefined;
+	let lastOrchestrationRoute: OrchestrationRouteState | undefined;
 	let finalVisibility: FinalVisibilityState | undefined;
 	const refreshFinalVisibility = () => {
 		finalVisibility = lastAmbientContext ? { ambient: lastAmbientContext, mode: activeMode, task: taskLayer.finalVisibility() } : undefined;
@@ -84,6 +86,15 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			pi.sendMessage({ customType: "harness-memory", content: await buildMemoryReport(pi, ctx, taskLayer, args), display: true });
 		},
 	});
+	pi.registerCommand("run-card", {
+		description: "Show the latest orchestration run card, or route provided text without executing it",
+		handler: async (args, ctx) => {
+			const prompt = args.trim();
+			const route = prompt ? await buildOrchestrationRouteState(pi, ctx.cwd, prompt) : lastOrchestrationRoute;
+			const content = route ? formatRunCard(route) : ["## Run card", "- status: not assembled yet", "- hint: run a nontrivial turn first, or pass prompt text to `/run-card ...`"].join("\n");
+			pi.sendMessage({ customType: "harness-run-card", content, display: true });
+		},
+	});
 	pi.registerCommand("checkpoint", {
 		description: "Create a visible session checkpoint with current harness status",
 		handler: async (args, ctx) => {
@@ -120,6 +131,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			taskScope: taskLayer.ambientScope(),
 		});
 		lastAmbientContext = ambient.snapshot;
+		lastOrchestrationRoute = ambient.orchestrationRoute;
 		refreshFinalVisibility();
 		return ambient.systemPrompt === event.systemPrompt ? undefined : { systemPrompt: ambient.systemPrompt };
 	});
