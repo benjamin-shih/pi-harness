@@ -69,6 +69,7 @@ function taskRows(taskLayer: StatusViewTaskLayer): VisibilityBoxRow[] {
 		if (rawLabel === "task project") return [["project", value]];
 		if (rawLabel === "task runtime/session") return [["runtime", value]];
 		if (rawLabel === "task artifacts") return [["artifact", value]];
+		if (rawLabel === "orchestration") return [["orch", value]];
 		return [[rawLabel.slice(0, 8), value]];
 	});
 	return rows.length ? rows : [["state", "unknown"]];

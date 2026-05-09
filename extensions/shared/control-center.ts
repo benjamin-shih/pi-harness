@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,11 +20,20 @@ export type ControlCenterDecisionSummary = {
 	task?: { shape?: string; complexity?: string; risk?: string };
 	route?: { run?: { shape?: string; summary?: string } };
 	topology?: { recommended?: string; reason?: string; advisory_only?: boolean; subagents?: Array<{ role?: string; mode?: string; when?: string }> };
-	gates?: { ids?: string[] };
+	gates?: { ids?: string[]; preflight?: Array<{ id?: string }>; execution?: Array<{ id?: string }>; verification?: Array<{ id?: string }>; final?: Array<{ id?: string }> };
 	memory?: { ambient_reads?: string; durable_writes?: string };
 	checks?: string[];
 	evidence_required?: string[];
 	stop_conditions?: string[];
+};
+
+export type ControlCenterOrchestrationTracking = {
+	available?: boolean;
+	status?: string;
+	mismatch?: boolean;
+	events?: number;
+	recommended?: { topology?: string; timestamp?: string; gate_ids?: string[] } | null;
+	chosen?: { topology?: string; timestamp?: string; reason?: string } | null;
 };
 
 export type ControlCenterOptions = { prompt?: string; taskId?: string; project?: string; projectRoot?: string };
@@ -54,7 +63,8 @@ export type ControlCenterPayload = {
 		available?: boolean;
 		scope?: string;
 		summary?: Record<string, number>;
-		active_task?: { status?: string; active?: boolean; terminal?: boolean; scope_match?: boolean; lease_state?: string; events_count?: number; blockers_count?: number } | null;
+		active_task?: { status?: string; active?: boolean; terminal?: boolean; scope_match?: boolean; lease_state?: string; events_count?: number; blockers_count?: number; orchestration?: ControlCenterOrchestrationTracking } | null;
+		orchestration?: ControlCenterOrchestrationTracking;
 		warnings?: string[];
 	};
 	memory?: {
@@ -171,12 +181,32 @@ export async function stopControlCenterWeb(): Promise<boolean> {
 	return true;
 }
 
+async function readJsonBody(req: IncomingMessage): Promise<Record<string, string>> {
+	let body = "";
+	for await (const chunk of req) {
+		body += chunk;
+		if (body.length > 12_000) return {};
+	}
+	try {
+		const parsed = JSON.parse(body || "{}");
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+		return Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === "string")) as Record<string, string>;
+	} catch {
+		return {};
+	}
+}
+
+function webValue(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	return trimmed || undefined;
+}
+
 function webShell(token: string): string {
 	const base = `/${token}/`;
 	return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Agent Control Center</title>
 <style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:2rem;line-height:1.45;background:#fbfbfb;color:#1f2328}header{display:flex;justify-content:space-between;gap:1rem;align-items:center}button{padding:.45rem .8rem;border:1px solid #ccc;border-radius:8px;background:white}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}section{background:white;border:1px solid #ddd;border-radius:12px;padding:1rem}h1,h2{margin-top:0}.muted{color:#666}.warn{color:#9a6700}.bad{color:#b42318}li{margin:.2rem 0}code{background:#f0f0f0;padding:.1rem .25rem;border-radius:4px}</style>
-</head><body><header><div><h1>Agent Control Center</h1><p class="muted">Read-only local dashboard · refreshes every 15s while this Pi session is alive.</p></div><button id="refresh">Refresh</button></header><p id="status" class="muted">Loading...</p><main id="cards"></main>
+</head><body><header><div><h1>Agent Control Center</h1><p class="muted">Read-only local dashboard · refreshes every 15s while this Pi session is alive.</p></div><button id="refresh">Refresh</button></header><p id="status" class="muted">Loading...</p><section><h2>Project / prompt</h2><p><input id="project" placeholder="project alias" style="width:14rem"> <input id="prompt" placeholder="prompt text for routing" style="width:32rem"> <button id="apply">Apply</button></p><p class="muted">Optional; values only request a read-only dashboard decision.</p></section><main id="cards"></main>
 <script>
 const cards = document.getElementById('cards');
 const status = document.getElementById('status');
@@ -184,25 +214,35 @@ function esc(v){return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<
 function list(items){return (items && items.length) ? '<ul>' + items.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' : '<p class="muted">None</p>';}
 function count(obj,key){return Number((obj || {})[key] || 0);}
 function section(title, body){return '<section><h2>' + esc(title) + '</h2>' + body + '</section>';}
+function dashboardRequest(){
+  return JSON.stringify({
+    project: document.getElementById('project').value.trim(),
+    prompt: document.getElementById('prompt').value.trim()
+  });
+}
 async function load(){
-  const res = await fetch('${base}api/dashboard', { cache: 'no-store' });
+  const res = await fetch('${base}api/dashboard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: dashboardRequest(), cache: 'no-store' });
   const state = await res.json();
   const p = state.payload || {};
-  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {};
+  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, tracking = ((tasks.active_task || {}).orchestration || tasks.orchestration || {}), memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {};
   status.textContent = 'Health: ' + state.health + ' · ' + (p.generated_at || 'unknown') + ' · ' + state.summary;
   status.className = state.health === 'ok' ? 'muted' : 'warn';
   cards.innerHTML = [
     section('Project', '<p><b>' + esc(project.name) + '</b> (' + esc(project.type) + ')</p><p><code>' + esc(project.root) + '</code></p><p>Registry: ' + esc(project.registry_id || 'unregistered') + ' via ' + esc(project.match_type || 'unknown') + '</p><p>Policy: write ' + esc(project.write_policy) + '; coursework ' + esc(project.coursework_policy || 'none') + '</p>'),
     section('Route', route.task ? '<p>Task: ' + esc(route.task.shape) + ' · ' + esc(route.task.complexity) + ' · risk ' + esc(route.task.risk) + '</p><p>Run: ' + esc((route.run || {}).shape || 'none') + '</p>' : '<p class="muted">No prompt route requested.</p>'),
-    section('Orchestration', topology.recommended ? '<p>Topology: <b>' + esc(topology.recommended) + '</b></p><p>' + esc(topology.reason || '') + '</p><p>Gate ids: ' + esc((gates.ids || []).slice(0,8).join(', ') || 'none') + '</p><p>Memory: ' + esc(((decision.memory || {}).ambient_reads) || 'unknown') + ' reads; writes ' + esc(((decision.memory || {}).durable_writes) || 'explicit_only') + '</p>' : '<p class="muted">No orchestration decision requested.</p>'),
+    section('Orchestration', topology.recommended ? '<p>Topology: <b>' + esc(topology.recommended) + '</b></p><p>' + esc(topology.reason || '') + '</p><p>Preflight: ' + esc((gates.preflight || []).map(g => g.id).join(', ') || 'none') + '</p><p>Execution: ' + esc((gates.execution || []).map(g => g.id).join(', ') || 'none') + '</p><p>Verification: ' + esc((gates.verification || []).map(g => g.id).join(', ') || 'none') + '</p><p>Final: ' + esc((gates.final || []).map(g => g.id).join(', ') || 'none') + '</p><p>Memory: ' + esc(((decision.memory || {}).ambient_reads) || 'unknown') + ' reads; writes ' + esc(((decision.memory || {}).durable_writes) || 'explicit_only') + '</p>' : '<p class="muted">No orchestration decision requested.</p>'),
+    section('Chosen vs recommended', tracking.available ? '<p>Recommended: ' + esc(((tracking.recommended || {}).topology) || 'none') + '</p><p>Chosen: ' + esc(((tracking.chosen || {}).topology) || 'none') + '</p><p>Status: ' + esc(tracking.status || 'unknown') + ' · mismatch ' + esc(Boolean(tracking.mismatch)) + '</p>' : '<p class="muted">No orchestration tracking events.</p>'),
     section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p>'),
     section('Memory', '<p>Available: ' + esc(memory.available !== false) + '</p><p>Approved: ' + count(mem,'approved') + ' · Candidates: ' + count(mem,'candidate') + ' · Deprecated: ' + count(mem,'deprecated') + '</p>'),
     section('Pi package policy', '<p>Health: ' + esc(pkg.health || 'unknown') + '</p><p>Configured: ' + count(pkgSummary,'configured_packages') + ' · Approved: ' + count(pkgSummary,'approved_packages') + ' · Unapproved: ' + count(pkgSummary,'unapproved_packages') + ' · Unpinned: ' + count(pkgSummary,'unpinned_packages') + '</p>'),
     section('Project instructions', '<p>Health: ' + esc(instr.health || 'unknown') + '</p><p>Files: ' + count(instrSummary,'instruction_files_found') + ' · Thin style: ' + count(instrSummary,'thin_style_files') + '</p>'),
-    section('Attention', list([...(p.attention || []), ...(p.warnings || []), ...(p.notices || [])]))
+    section('Attention', list(p.attention || [])),
+    section('Warnings', list(p.warnings || [])),
+    section('Notices', list(p.notices || []))
   ].join('');
 }
 document.getElementById('refresh').onclick = () => load().catch(e => { status.textContent = 'Refresh failed: ' + e; status.className = 'bad'; });
+document.getElementById('apply').onclick = () => load().catch(e => { status.textContent = 'Refresh failed: ' + e; status.className = 'bad'; });
 load().catch(e => { status.textContent = 'Load failed: ' + e; status.className = 'bad'; });
 setInterval(() => load().catch(() => {}), 15000);
 </script></body></html>`;
@@ -213,14 +253,22 @@ export async function startControlCenterWeb(pi: ExtensionAPI, cwd: string, optio
 	const token = randomBytes(12).toString("hex");
 	const server = createServer(async (req, res) => {
 		try {
-			const path = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`).pathname;
+			const parsedUrl = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
+			const path = parsedUrl.pathname;
 			if (path === `/${token}/` || path === `/${token}`) {
 				res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
 				res.end(webShell(token));
 				return;
 			}
 			if (path === `/${token}/api/dashboard`) {
-				const dashboard = await buildControlCenterState(pi, cwd, options);
+				const body = req.method === "POST" ? await readJsonBody(req) : {};
+				const requestOptions = {
+					...options,
+					prompt: webValue(body.prompt) ?? options.prompt,
+					project: webValue(body.project) ?? options.project,
+					projectRoot: webValue(body.projectRoot) ?? options.projectRoot,
+				};
+				const dashboard = await buildControlCenterState(pi, cwd, requestOptions);
 				res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
 				res.end(JSON.stringify(dashboard));
 				return;
@@ -262,6 +310,7 @@ export function formatControlCenter(state: ControlCenterState): string {
 	const tasks = payload.tasks ?? {};
 	const taskSummary = tasks.summary ?? {};
 	const activeTask = tasks.active_task;
+	const tracking = activeTask?.orchestration ?? tasks.orchestration;
 	const memory = payload.memory ?? {};
 	const memoryCounts = memory.counts_by_state ?? {};
 	const packagePolicy = payload.package_policy ?? {};
@@ -293,6 +342,10 @@ export function formatControlCenter(state: ControlCenterState): string {
 		decision?.topology?.recommended ? `- topology: ${decision.topology.recommended}; ${decision.topology.reason ?? ""}` : "- topology: no orchestration decision requested",
 		decision?.route?.run?.shape ? `- run shape: ${decision.route.run.shape}` : "- run shape: none",
 		listLine("gate ids", decision?.gates?.ids),
+		listLine("preflight gates", decision?.gates?.preflight?.map((gate) => gate.id || "")),
+		listLine("execution gates", decision?.gates?.execution?.map((gate) => gate.id || "")),
+		listLine("verification gates", decision?.gates?.verification?.map((gate) => gate.id || "")),
+		listLine("final gates", decision?.gates?.final?.map((gate) => gate.id || "")),
 		listLine("checks", decision?.checks),
 		decision?.memory ? `- memory: ambient reads ${decision.memory.ambient_reads ?? "unknown"}; durable writes ${decision.memory.durable_writes ?? "explicit_only"}` : "- memory: no decision",
 		listLine("evidence", decision?.evidence_required),
@@ -306,6 +359,7 @@ export function formatControlCenter(state: ControlCenterState): string {
 		countLine("live leases", taskSummary.live_leases),
 		countLine("stale candidates", taskSummary.stale_candidates),
 		activeTask ? `- active task: status ${activeTask.status ?? "unknown"}; lease ${activeTask.lease_state ?? "unknown"}; scope match ${Boolean(activeTask.scope_match)}; events ${activeTask.events_count ?? 0}` : "- active task: none supplied",
+		tracking?.available ? `- orchestration tracking: recommended ${tracking.recommended?.topology || "none"}; chosen ${tracking.chosen?.topology || "none"}; status ${tracking.status || "unknown"}; mismatch ${Boolean(tracking.mismatch)}` : "- orchestration tracking: none",
 		"",
 		"## Memory",
 		`- scoped memory: ${memory.available === false ? "unavailable" : "available"}`,

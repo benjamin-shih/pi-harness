@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AmbientContextSnapshot } from "./shared/ambient-context";
 import { buildAmbientTurn } from "./harness-commands/ambient-turn";
+import { registerCheckpointCommand } from "./harness-commands/checkpoint-command";
 import {
 	CLEANUP_GUARD_MARKER,
 	cleanupGuardMessage,
@@ -21,8 +22,9 @@ import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
 import { registerControlCenterCommand } from "./shared/control-center-command";
-import { forgetMemory, promoteMemory, rememberCandidate } from "./shared/memory-admin";
-import { buildOrchestrationDecisionState, formatRunCard, type OrchestrationDecisionState } from "./shared/orchestration-guidance";
+import { registerMemoryAdminCommands } from "./shared/memory-admin-command";
+import { registerChooseTopologyCommand, registerRunCardCommand } from "./shared/orchestration-commands";
+import type { OrchestrationDecisionState } from "./shared/orchestration-guidance";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -88,57 +90,11 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			pi.sendMessage({ customType: "harness-memory", content: await buildMemoryReport(pi, ctx, taskLayer, args), display: true });
 		},
 	});
-	pi.registerCommand("run-card", {
-		description: "Show the latest orchestration run card, or decide provided text without executing it",
-		handler: async (args, ctx) => {
-			const prompt = args.trim();
-			const fallbackPrompt = "Summarize current project status";
-			const decision = prompt ? await buildOrchestrationDecisionState(pi, ctx.cwd, prompt) : (lastOrchestrationDecision ?? await buildOrchestrationDecisionState(pi, ctx.cwd, fallbackPrompt));
-			const fallbackNote = !prompt && !lastOrchestrationDecision ? "\n\n- source: generated current-project fallback because no cached turn decision exists" : "";
-			const content = decision ? `${formatRunCard(decision)}${fallbackNote}` : ["## Run card", "- status: unavailable", "- hint: pass prompt text to `/run-card ...`"].join("\n");
-			pi.sendMessage({ customType: "harness-run-card", content, display: true });
-		},
-	});
+	registerRunCardCommand(pi, taskLayer, () => lastOrchestrationDecision);
 	registerControlCenterCommand(pi, taskLayer);
-	pi.registerCommand("choose-topology", {
-		description: "Explicitly record the orchestration topology the main agent chose for the active task",
-		handler: async (args, ctx) => {
-			const [topology, ...reasonParts] = args.trim().split(/\s+/).filter(Boolean);
-			const recorded = topology ? await taskLayer.recordOrchestrationChosen(pi, ctx, topology, reasonParts.join(" ") || "explicit /choose-topology command") : false;
-			pi.sendMessage({ customType: "harness-orchestration", content: ["## Orchestration choice", `- topology: ${topology || "not supplied"}`, `- recorded: ${recorded ? "yes" : "no active task or invalid topology"}`, "- mode: explicit task-event tracking only; no execution launched"].join("\n"), display: true });
-		},
-	});
-	pi.registerCommand("remember", {
-		description: "Explicitly create a scoped candidate memory; use --task, --project, or --global",
-		handler: async (args, ctx) => {
-			pi.sendMessage({ customType: "harness-memory-admin", content: await rememberCandidate(pi, ctx, args, taskLayer.ambientScope?.() ?? {}), display: true });
-		},
-	});
-	pi.registerCommand("promote-memory", {
-		description: "Explicitly approve a candidate memory by id",
-		handler: async (args, ctx) => {
-			pi.sendMessage({ customType: "harness-memory-admin", content: await promoteMemory(pi, ctx, args), display: true });
-		},
-	});
-	pi.registerCommand("forget-memory", {
-		description: "Explicitly forget/deprecate a memory by id",
-		handler: async (args, ctx) => {
-			pi.sendMessage({ customType: "harness-memory-admin", content: await forgetMemory(pi, ctx, args), display: true });
-		},
-	});
-	pi.registerCommand("checkpoint", {
-		description: "Create a visible session checkpoint with current harness status",
-		handler: async (args, ctx) => {
-			const label = args.trim() || new Date().toISOString().replace(/[:.]/g, "-");
-			const leafId = ctx.sessionManager.getLeafId();
-			if (leafId) pi.setLabel(leafId, `checkpoint: ${label}`);
-			const content = [`## Checkpoint: ${label}`, await buildStatus(pi, ctx, taskLayer, lastAmbientContext), "", "Next-step note:", args.trim() || "None provided."].join(
-				"\n",
-			);
-			pi.sendMessage({ customType: "harness-checkpoint", content, display: true, details: { label } });
-			ctx.ui.notify(`Checkpoint created: ${label}`, "info");
-		},
-	});
+	registerChooseTopologyCommand(pi, taskLayer);
+	registerMemoryAdminCommands(pi, taskLayer);
+	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
 	registerSkillsAuditCommand(pi, PACKAGE_ROOT);
 	pi.on("session_start", async (_event, ctx) => {
 		await taskLayer.sessionStart(pi, ctx);

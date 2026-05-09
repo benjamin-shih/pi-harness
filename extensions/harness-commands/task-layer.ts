@@ -19,6 +19,7 @@ import {
 	type ArtifactAddResult,
 	type ArtifactListResult,
 	type BindResult,
+	type OrchestrationTrackingState,
 	type TaskLayerState,
 	type TaskLifecycleResult,
 } from "./task-layer-types";
@@ -51,6 +52,7 @@ function resetSessionState(state: TaskLayerState): void {
 	state.artifactRecordedThisTurn = 0;
 	state.artifactSkipped = 0;
 	state.lastHeartbeatAt = 0;
+	state.orchestration = undefined;
 }
 function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): void {
 	state.active = undefined;
@@ -63,6 +65,7 @@ function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): vo
 	state.artifactRecordedThisTurn = 0;
 	state.artifactSkipped = 0;
 	state.meaningfulActivity = false;
+	state.orchestration = undefined;
 }
 function safeSessionId(ctx: ExtensionContext): string {
 	try {
@@ -194,6 +197,22 @@ export function createAgentsTaskLayer() {
 			state.artifactSkipped++;
 		}
 	}
+	function refreshOrchestrationMismatch(tracking: OrchestrationTrackingState): OrchestrationTrackingState {
+		tracking.mismatch = Boolean(tracking.recommendedTopology && tracking.chosenTopology && tracking.recommendedTopology !== tracking.chosenTopology);
+		return tracking;
+	}
+	function orchestrationStatusLine(): string | undefined {
+		const tracking = state.orchestration;
+		if (!tracking?.recommendedTopology && !tracking?.chosenTopology) return undefined;
+		const recommended = tracking.recommendedTopology || "none";
+		const chosen = tracking.chosenTopology || "none";
+		const mismatch = tracking.mismatch ? "yes" : "no";
+		return `- orchestration: recommended ${recommended}; chosen ${chosen}; mismatch ${mismatch}`;
+	}
+	function orchestrationSummaryLines(): string[] {
+		const line = orchestrationStatusLine();
+		return line ? [line] : ["- orchestration: no session-local choice recorded"];
+	}
 	function orchestrationEventArgs(decision: OrchestrationDecision): string[] {
 		return [
 			`decision_id=${JSON.stringify((decision as { decision_id?: string }).decision_id || "")}`,
@@ -268,6 +287,7 @@ export function createAgentsTaskLayer() {
 				`- task project: ${state.active.project_root || "unknown"}`,
 				`- task runtime/session: pi / ${state.sessionId}`,
 				`- task artifacts: ${state.artifactCount} recorded${skipped}`,
+				...(orchestrationStatusLine() ? [orchestrationStatusLine() as string] : []),
 			];
 		}
 		if (state.lastAction === "skipped") return [`- active task: none (${state.lastReason || "binding skipped"})`];
@@ -330,12 +350,21 @@ export function createAgentsTaskLayer() {
 		},
 		async recordOrchestrationRecommended(pi: ExtensionAPI, ctx: ExtensionContext, decision?: OrchestrationDecision): Promise<boolean> {
 			if (!decision) return false;
+			state.orchestration = refreshOrchestrationMismatch({
+				...(state.orchestration ?? {}),
+				recommendedTopology: decision.topology.recommended,
+				decisionId: decision.decision_id,
+				gateIds: decision.gates.ids,
+			});
 			return await recordTaskEvent(pi, ctx, "orchestration_recommended", orchestrationEventArgs(decision));
 		},
-		async recordOrchestrationChosen(pi: ExtensionAPI, ctx: ExtensionContext, topology: string, reason = "explicit /choose-topology command"): Promise<boolean> {
+		async recordOrchestrationChosen(pi: ExtensionAPI, ctx: ExtensionContext, topology: string, _reason = "explicit /choose-topology command"): Promise<boolean> {
 			const chosen = topology.trim().replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 80);
 			if (!chosen) return false;
-			return await recordTaskEvent(pi, ctx, "orchestration_chosen", [`chosen_topology=${JSON.stringify(chosen)}`, `reason=${JSON.stringify(reason.slice(0, 160))}`]);
+			state.orchestration = refreshOrchestrationMismatch({ ...(state.orchestration ?? {}), chosenTopology: chosen });
+			const args = [`chosen_topology=${JSON.stringify(chosen)}`, "reason_code=explicit_choice"];
+			if (state.orchestration?.decisionId) args.push(`decision_id=${JSON.stringify(state.orchestration.decisionId)}`);
+			return await recordTaskEvent(pi, ctx, "orchestration_chosen", args);
 		},
 		async agentEnd(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 			if (!state.active?.task_id || !state.meaningfulActivity) return;
@@ -360,6 +389,7 @@ export function createAgentsTaskLayer() {
 			await runScript(pi, "task-gc.sh", ["--runtime", "pi", "--session", state.sessionId, "--cwd", ctx.cwd, "--no-sweep"], ctx.cwd, 8_000).catch((): undefined => undefined);
 		},
 		statusLines,
+		orchestrationSummaryLines,
 		currentPromptWeight(): TaskWeight {
 			return state.currentPromptWeight;
 		},
@@ -378,6 +408,7 @@ export function createAgentsTaskLayer() {
 			return [
 				"## AGENTS task binding",
 				...statusLines(),
+				...(!state.active?.task_id ? orchestrationSummaryLines() : []),
 				`- task API: ${state.apiAvailable ? `v${state.apiInfo?.task_api_version ?? "?"}` : "unavailable"}`,
 				`- agents root: ${state.apiInfo?.agents_shared_root ?? agentsRoot()}`,
 				`- prompt task mode: ${state.currentPromptWeight}/${state.currentBindingMode}`,

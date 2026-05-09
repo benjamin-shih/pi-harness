@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, controlPlaneDashboardPayload, controlPlaneDecisionPayload, createTaskHarness, harnessCommands, homeRoot, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
+import { assert, controlPlaneDashboardPayload, controlPlaneDecisionPayload, createTaskHarness, harnessCommands, homeRoot, join, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
 
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
@@ -113,6 +114,7 @@ export async function runAmbientContextTests() {
 	await boundTask.commands.get("status").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("╭─ Ambient"), "/status should expose the last ambient context decision");
 	assert(boundTask.sentMessages.at(-1).content.includes("╭─ Memory"), "/status should expose scoped memory API diagnostics");
+	assert(boundTask.sentMessages.at(-1).content.includes("recommended single_agent_standard"), "/status should expose recommended orchestration topology");
 	await boundTask.commands.get("doctor").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Ambient context"), "/doctor should include ambient context diagnostics");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");
@@ -126,13 +128,20 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("gate ids: repo_clean_preflight"), "/run-card should include decision gate ids");
 	await boundTask.commands.get("choose-topology").handler("single_agent_standard simple surgical task", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Orchestration choice"), "/choose-topology should render explicit choice tracking output");
-	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_chosen") && call.args.some((arg) => String(arg).startsWith("chosen_topology="))), "/choose-topology should record a bounded chosen-topology task event");
+	const chosenCall = boundTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_chosen"));
+	assert(chosenCall?.args.some((arg) => String(arg).startsWith("chosen_topology=")), "/choose-topology should record a bounded chosen-topology task event");
+	assert(chosenCall?.args.some((arg) => String(arg).startsWith("decision_id=")), "/choose-topology should pair the choice with the latest recommendation id without displaying it");
+	assert(!chosenCall?.args.some((arg) => String(arg).startsWith("reason=")), "/choose-topology should not persist free-form reason text in task events");
+	await boundTask.commands.get("run-card").handler("", boundTask.ctx);
+	assert(boundTask.sentMessages.at(-1).content.includes("## Chosen vs recommended"), "/run-card should include chosen-vs-recommended tracking");
+	assert(boundTask.sentMessages.at(-1).content.includes("chosen single_agent_standard"), "/run-card should show explicitly chosen topology");
 	await boundTask.commands.get("control-center").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).customType === "harness-control-center", "/control-center should send a control-center message");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Agent Control Center v0"), "/control-center should render the local dashboard card");
 	assert(boundTask.sentMessages.at(-1).content.includes("mode: read-only diagnostics"), "/control-center should state it is read-only");
 	assert(boundTask.sentMessages.at(-1).content.includes("topology: no orchestration decision requested"), "/control-center without prompt should show that no orchestration decision was requested");
 	assert(boundTask.sentMessages.at(-1).content.includes("active task: status in_progress; lease live"), "/control-center should summarize active task lifecycle without exposing task ids");
+	assert(boundTask.sentMessages.at(-1).content.includes("orchestration tracking: recommended parallel_recon; chosen single_agent_standard; status mismatch; mismatch true"), "/control-center should summarize chosen-vs-recommended tracking from the dashboard API");
 	assert(boundTask.sentMessages.at(-1).content.includes("candidates: 1"), "/control-center should include scoped memory candidate counts");
 	assert(!boundTask.sentMessages.at(-1).content.includes("pi-task"), "/control-center should not display private task ids");
 	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard")), "/control-center should call the shared dashboard API");
@@ -153,6 +162,9 @@ export async function runAmbientContextTests() {
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("## Agent Control Center web"), "/control-center web should report the local web dashboard URL");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("read-only local web dashboard"), "/control-center web should be explicitly read-only");
 	assert(explicitControlCenterTask.execCalls.some((call) => call.cmd === "open" && String(call.args?.[0] || "").startsWith("http://127.0.0.1:")), "/control-center web should open a localhost dashboard URL");
+	const controlCenterSource = readFileSync(join(root, "extensions/shared/control-center.ts"), "utf8");
+	assert(controlCenterSource.includes("method: 'POST'"), "control-center web should send project/prompt inputs in a POST body");
+	assert(!controlCenterSource.includes("searchParams.get(\"prompt\")"), "control-center web should not transport prompt text in URL query strings");
 	await explicitControlCenterTask.commands.get("control-center").handler("web stop", explicitControlCenterTask.ctx);
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("stopped: yes"), "/control-center web stop should close the local web dashboard server");
 
