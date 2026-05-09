@@ -1,5 +1,5 @@
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, controlPlaneDashboardPayload, controlPlaneRoutePayload, createTaskHarness, harnessCommands, homeRoot, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
+import { assert, controlPlaneDashboardPayload, controlPlaneDecisionPayload, createTaskHarness, harnessCommands, homeRoot, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
 
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
@@ -98,8 +98,10 @@ export async function runAmbientContextTests() {
 	await boundTask.handlers.get("session_start")({ reason: "startup" }, boundTask.ctx);
 	const result = await boundTask.handlers.get("before_agent_start")({ prompt: "Implement ambient context receipts", systemPrompt: "base" }, boundTask.ctx);
 	assert(result.systemPrompt.includes("## Ambient Context Receipt"), "standard prompts should include compact ambient context receipt");
-	assert(result.systemPrompt.includes("## Orchestration Guidance"), "standard prompts should include bounded orchestration guidance");
+	assert(result.systemPrompt.includes("## Orchestration Decision"), "standard prompts should include bounded orchestration decision guidance");
 	assert(result.systemPrompt.includes("orchestration: included"), "ambient receipt should show orchestration guidance inclusion");
+	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "ambient orchestration should call the shared decision API");
+	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_recommended") && call.args.some((arg) => String(arg).startsWith("recommended_topology="))), "ambient orchestration should record a bounded recommended-topology task event");
 	assert(result.systemPrompt.includes("agents_task: included"), "ambient receipt should show task context inclusion");
 	assert(result.systemPrompt.includes("## Approved Scoped Memory"), "standard scoped prompts should include approved memory from the .agents API");
 	assert(result.systemPrompt.includes("memory: included"), "ambient receipt should show approved memory inclusion");
@@ -116,14 +118,20 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");
 	await boundTask.commands.get("run-card").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).customType === "harness-run-card", "/run-card should send a run-card message");
-	assert(boundTask.sentMessages.at(-1).content.includes("## Run card"), "/run-card should render latest orchestration route details");
+	assert(boundTask.sentMessages.at(-1).content.includes("## Run card"), "/run-card should render latest orchestration decision details");
+	assert(boundTask.sentMessages.at(-1).content.includes("topology: single_agent_standard"), "/run-card should include the recommended topology");
 	assert(boundTask.sentMessages.at(-1).content.includes("run shape: main_agent"), "/run-card should include the recommended run shape");
 	assert(boundTask.sentMessages.at(-1).content.includes("registry: project via cwd"), "/run-card should include project registry match metadata");
 	assert(boundTask.sentMessages.at(-1).content.includes("default checks: make verify"), "/run-card should include project registry default checks");
+	assert(boundTask.sentMessages.at(-1).content.includes("gate ids: repo_clean_preflight"), "/run-card should include decision gate ids");
+	await boundTask.commands.get("choose-topology").handler("single_agent_standard simple surgical task", boundTask.ctx);
+	assert(boundTask.sentMessages.at(-1).content.includes("## Orchestration choice"), "/choose-topology should render explicit choice tracking output");
+	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_chosen") && call.args.some((arg) => String(arg).startsWith("chosen_topology="))), "/choose-topology should record a bounded chosen-topology task event");
 	await boundTask.commands.get("control-center").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).customType === "harness-control-center", "/control-center should send a control-center message");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Agent Control Center v0"), "/control-center should render the local dashboard card");
 	assert(boundTask.sentMessages.at(-1).content.includes("mode: read-only diagnostics"), "/control-center should state it is read-only");
+	assert(boundTask.sentMessages.at(-1).content.includes("topology: no orchestration decision requested"), "/control-center without prompt should show that no orchestration decision was requested");
 	assert(boundTask.sentMessages.at(-1).content.includes("active task: status in_progress; lease live"), "/control-center should summarize active task lifecycle without exposing task ids");
 	assert(boundTask.sentMessages.at(-1).content.includes("candidates: 1"), "/control-center should include scoped memory candidate counts");
 	assert(!boundTask.sentMessages.at(-1).content.includes("pi-task"), "/control-center should not display private task ids");
@@ -131,11 +139,12 @@ export async function runAmbientContextTests() {
 
 	const explicitControlCenterTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
-		controlPlaneDashboardPayload: controlPlaneDashboardPayload({ route: { task: { shape: "coursework", complexity: "complex", risk: "medium" }, run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" } }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "explicit_project", steward: "course-steward", description: "Course project", tags: ["course"], default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" } }),
+		controlPlaneDashboardPayload: controlPlaneDashboardPayload({ route: { task: { shape: "coursework", complexity: "complex", risk: "medium" }, run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" } }, orchestration_decision: controlPlaneDecisionPayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "explicit_project", steward: "course-steward", description: "Course project", tags: ["course"], default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" }, route: { run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" }, reasons: [] }, topology: { recommended: "parallel_recon", reason: "coursework needs recon", advisory_only: true, subagents: [] } }), project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "explicit_project", steward: "course-steward", description: "Course project", tags: ["course"], default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" } }),
 	});
 	await explicitControlCenterTask.handlers.get("session_start")({ reason: "startup" }, explicitControlCenterTask.ctx);
 	await explicitControlCenterTask.commands.get("control-center").handler("--project STATS300C Finish HW3", explicitControlCenterTask.ctx);
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("task: coursework; complexity complex; risk medium"), "/control-center with prompt text should show route summary");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("topology: parallel_recon"), "/control-center with prompt text should show orchestration topology");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("registry: STATS300C via explicit_project"), "/control-center should pass explicit project selectors to the shared dashboard API");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/control-center should expose coursework policy read-only");
 	const dashboardCall = explicitControlCenterTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard"));
@@ -149,13 +158,13 @@ export async function runAmbientContextTests() {
 
 	const explicitRunCardTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
-		controlPlanePayload: controlPlaneRoutePayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", bindable: true, reason: "project_path", registry_id: "STATS300C", registered: true, match_type: "prompt_alias", steward: "course-steward", default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify", local_instructions_required: true }, run: { shape: "parallel_recon", summary: "front-door main agent remains accountable; coursework assist/explain/verify" }, guidance: "## Orchestration Guidance\n- shape: coursework; complexity: complex; risk: medium" }),
+		controlPlaneDecisionPayload: controlPlaneDecisionPayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", bindable: true, reason: "project_path", registry_id: "STATS300C", registered: true, match_type: "prompt_alias", steward: "course-steward", default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify", local_instructions_required: true }, route: { run: { shape: "parallel_recon", summary: "front-door main agent remains accountable; coursework assist/explain/verify" }, reasons: [] }, topology: { recommended: "parallel_recon", reason: "coursework assist/explain/verify", advisory_only: true, subagents: [] }, guidance: "## Orchestration Decision\n- task: coursework; complexity complex; risk medium" }),
 	});
 	await explicitRunCardTask.handlers.get("session_start")({ reason: "startup" }, explicitRunCardTask.ctx);
 	await explicitRunCardTask.commands.get("run-card").handler("Finish HW3 for STATS300C", explicitRunCardTask.ctx);
 	assert(explicitRunCardTask.sentMessages.at(-1).content.includes("project: STATS300C (coursework)"), "/run-card with prompt text should route explicit coursework prompts");
 	assert(explicitRunCardTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/run-card should expose coursework policy from the registry");
-	assert(explicitRunCardTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("control-plane.sh")), "/run-card should call the shared control-plane route API");
+	assert(explicitRunCardTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "/run-card should call the shared orchestration decision API");
 
 	const slashOnlyMemoryTask = createTaskHarness({
 		cwd: homeRoot,

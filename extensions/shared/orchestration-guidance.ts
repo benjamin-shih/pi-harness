@@ -7,75 +7,99 @@ export type OrchestrationTaskShape = "coding" | "research" | "release" | "mainte
 export type OrchestrationComplexity = "trivial" | "standard" | "complex";
 export type OrchestrationRisk = "low" | "medium" | "high";
 export type OrchestrationRunShape = "direct_answer" | "main_agent" | "main_agent_plus_reviewer" | "parallel_recon" | "war_room";
+export type OrchestrationDecisionStatus = "routed" | "trivial" | "script_error" | "invalid_json" | "unsupported_api" | "invalid_payload" | "exception";
+export type OrchestrationDecisionHealth = "ok" | "inactive" | "degraded";
 
-export type OrchestrationRoute = {
+export type OrchestrationProject = {
+	name: string;
+	root: string;
+	type: string;
+	bindable?: boolean;
+	reason?: string;
+	registry_id?: string;
+	registered?: boolean;
+	match_type?: string;
+	steward?: string;
+	default_checks?: string[];
+	write_policy?: string;
+	coursework_policy?: string;
+	local_instructions_required?: boolean;
+};
+
+export type OrchestrationSubagent = { role: string; when: string; cwd: string; mode: string; constraints?: string[] };
+
+export type OrchestrationDecision = {
+	decision_id?: string;
 	task: { shape: OrchestrationTaskShape; complexity: OrchestrationComplexity; risk: OrchestrationRisk };
-	project: { name: string; root: string; type: string; bindable: boolean; reason: string; registry_id?: string; registered?: boolean; match_type?: string; steward?: string; default_checks?: string[]; write_policy?: string; coursework_policy?: string; local_instructions_required?: boolean };
-	run: { shape: OrchestrationRunShape; summary: string };
-	delegation: Array<{ role: string; when: string; cwd: string; mode: string; constraints?: string[] }>;
-	gates: string[];
+	project: OrchestrationProject;
+	route: { run: { shape: OrchestrationRunShape; summary: string }; reasons?: string[] };
+	topology: { recommended: string; name?: string; reason: string; description?: string; advisory_only: boolean; allowed_roles?: string[]; subagents: OrchestrationSubagent[] };
+	gates: { ids: string[]; preflight: Array<{ id: string; description?: string }>; execution: Array<{ id: string; description?: string }>; verification: Array<{ id: string; description?: string }>; final: Array<{ id: string; description?: string }> };
+	memory: { ambient_reads: "allowed" | "skipped" | "unavailable"; durable_writes: "explicit_only"; reason?: string };
+	checks: string[];
+	stop_conditions: string[];
 	evidence_required: string[];
 	human_decisions: string[];
-	stop_rules: string[];
 	guidance: string;
 	reasons: string[];
 	warnings?: string[];
 };
 
-export type OrchestrationRouteStatus = "routed" | "trivial" | "script_error" | "invalid_json" | "unsupported_api" | "invalid_payload" | "exception";
-export type OrchestrationRouteHealth = "ok" | "inactive" | "degraded";
-
-export type OrchestrationRouteState = {
-	health: OrchestrationRouteHealth;
-	status: OrchestrationRouteStatus;
+export type OrchestrationDecisionState = {
+	health: OrchestrationDecisionHealth;
+	status: OrchestrationDecisionStatus;
 	apiVersion?: number;
 	summary: string;
-	route?: OrchestrationRoute;
+	decision?: OrchestrationDecision;
 };
 
-type OrchestrationRoutePayload = OrchestrationRoute & {
-	control_plane_api_version?: number;
+type OrchestrationDecisionPayload = OrchestrationDecision & {
+	orchestration_api_version?: number;
 	kind?: string;
+	read_only?: boolean;
 };
 
-const SUPPORTED_CONTROL_PLANE_API_VERSION = 1;
+const SUPPORTED_ORCHESTRATION_API_VERSION = 1;
 
-function state(health: OrchestrationRouteHealth, status: OrchestrationRouteStatus, summary: string, apiVersion?: number, route?: OrchestrationRoute): OrchestrationRouteState {
-	return { health, status, summary, ...(apiVersion === undefined ? {} : { apiVersion }), ...(route ? { route } : {}) };
+function state(health: OrchestrationDecisionHealth, status: OrchestrationDecisionStatus, summary: string, apiVersion?: number, decision?: OrchestrationDecision): OrchestrationDecisionState {
+	return { health, status, summary, ...(apiVersion === undefined ? {} : { apiVersion }), ...(decision ? { decision } : {}) };
 }
 
-function summarize(route: OrchestrationRoute): string {
-	return `${route.task.shape}/${route.task.complexity}/${route.task.risk}; ${route.run.shape}; project ${route.project.name}`;
+function summarize(decision: OrchestrationDecision): string {
+	return `${decision.task.shape}/${decision.task.complexity}/${decision.task.risk}; ${decision.topology.recommended}; project ${decision.project.name}`;
 }
 
-function stateFromPayload(payload: OrchestrationRoutePayload | undefined): OrchestrationRouteState {
+function stateFromPayload(payload: OrchestrationDecisionPayload | undefined): OrchestrationDecisionState {
 	if (!payload) return state("degraded", "invalid_json", "degraded · invalid_json");
-	const apiVersion = payload.control_plane_api_version;
-	if (apiVersion !== SUPPORTED_CONTROL_PLANE_API_VERSION) return state("degraded", "unsupported_api", "degraded · unsupported_api", apiVersion);
-	if (payload.kind !== "route" || !payload.task || !payload.project || !payload.run || !payload.guidance?.trim()) return state("degraded", "invalid_payload", "degraded · invalid_payload", apiVersion);
-	const route: OrchestrationRoute = {
+	const apiVersion = payload.orchestration_api_version;
+	if (apiVersion !== SUPPORTED_ORCHESTRATION_API_VERSION) return state("degraded", "unsupported_api", "degraded · unsupported_api", apiVersion);
+	if (payload.kind !== "orchestration_decision" || payload.read_only !== true || !payload.task || !payload.project || !payload.route || !payload.topology || !payload.gates || !payload.guidance?.trim()) return state("degraded", "invalid_payload", "degraded · invalid_payload", apiVersion);
+	const decision: OrchestrationDecision = {
+		decision_id: payload.decision_id,
 		task: payload.task,
 		project: payload.project,
-		run: payload.run,
-		delegation: payload.delegation ?? [],
-		gates: payload.gates ?? [],
+		route: payload.route,
+		topology: { ...payload.topology, subagents: payload.topology.subagents ?? [] },
+		gates: payload.gates,
+		memory: payload.memory ?? { ambient_reads: "unavailable", durable_writes: "explicit_only" },
+		checks: payload.checks ?? [],
+		stop_conditions: payload.stop_conditions ?? [],
 		evidence_required: payload.evidence_required ?? [],
 		human_decisions: payload.human_decisions ?? [],
-		stop_rules: payload.stop_rules ?? [],
 		guidance: payload.guidance,
 		reasons: payload.reasons ?? [],
 		warnings: payload.warnings ?? [],
 	};
-	if (route.task.complexity === "trivial" || route.run.shape === "direct_answer") return state("inactive", "trivial", summarize(route), apiVersion, route);
-	return state("ok", "routed", summarize(route), apiVersion, route);
+	if (decision.task.complexity === "trivial" || decision.route.run.shape === "direct_answer") return state("inactive", "trivial", summarize(decision), apiVersion, decision);
+	return state("ok", "routed", summarize(decision), apiVersion, decision);
 }
 
-export async function buildOrchestrationRouteState(pi: ExtensionAPI, cwd: string, prompt: string): Promise<OrchestrationRouteState> {
+export async function buildOrchestrationDecisionState(pi: ExtensionAPI, cwd: string, prompt: string): Promise<OrchestrationDecisionState> {
 	try {
-		return await withPrivateTempTextFile("pi-control-plane-route-", prompt, async (promptFile) => {
-			const result = await pi.exec("bash", [agentsScriptPath("control-plane.sh"), "route", "--prompt-file", promptFile, "--cwd", cwd, "--json"], { cwd, timeout: 5_000 });
+		return await withPrivateTempTextFile("pi-orchestration-decision-", prompt, async (promptFile) => {
+			const result = await pi.exec("bash", [agentsScriptPath("orchestration-decision.sh"), "--prompt-file", promptFile, "--cwd", cwd, "--json"], { cwd, timeout: 5_000 });
 			if (result.code !== 0) return state("degraded", "script_error", "degraded · script_error");
-			return stateFromPayload(parseJson<OrchestrationRoutePayload>(result.stdout));
+			return stateFromPayload(parseJson<OrchestrationDecisionPayload>(result.stdout));
 		});
 	} catch {
 		return state("degraded", "exception", "degraded · exception");
@@ -83,10 +107,10 @@ export async function buildOrchestrationRouteState(pi: ExtensionAPI, cwd: string
 }
 
 function listLine(label: string, items: string[]): string {
-	return `- ${label}: ${items.length ? items.slice(0, 4).join("; ") : "none"}`;
+	return `- ${label}: ${items.length ? items.slice(0, 6).join("; ") : "none"}`;
 }
 
-function projectDetailLines(project: OrchestrationRoute["project"]): string[] {
+function projectDetailLines(project: OrchestrationProject): string[] {
 	const lines = [
 		`- project: ${project.name} (${project.type})`,
 		`- project root: ${project.root}`,
@@ -98,24 +122,34 @@ function projectDetailLines(project: OrchestrationRoute["project"]): string[] {
 	return lines;
 }
 
-export function formatRunCard(state: OrchestrationRouteState): string {
-	if (!state.route) return ["## Run card", `- status: ${state.status}`, `- health: ${state.health}`, `- summary: ${state.summary}`].join("\n");
-	const route = state.route;
-	const delegation = route.delegation.length ? route.delegation.map((item) => `${item.role} (${item.mode}) when ${item.when}`).slice(0, 6) : ["none"];
+function gateDescriptions(decision: OrchestrationDecision): string[] {
+	const all = [...decision.gates.preflight, ...decision.gates.execution, ...decision.gates.verification, ...decision.gates.final];
+	return all.map((gate) => `${gate.id}${gate.description ? `: ${gate.description}` : ""}`);
+}
+
+export function formatRunCard(state: OrchestrationDecisionState): string {
+	if (!state.decision) return ["## Run card", `- status: ${state.status}`, `- health: ${state.health}`, `- summary: ${state.summary}`].join("\n");
+	const decision = state.decision;
+	const subagents = decision.topology.subagents.length ? decision.topology.subagents.map((item) => `${item.role} (${item.mode}) when ${item.when}`).slice(0, 6) : ["none"];
 	return [
 		"## Run card",
 		`- health: ${state.health} (${state.status}; v${state.apiVersion ?? "?"})`,
-		`- task: ${route.task.shape}; complexity ${route.task.complexity}; risk ${route.task.risk}`,
-		...projectDetailLines(route.project),
-		`- run shape: ${route.run.shape}`,
-		`- run summary: ${route.run.summary}`,
-		listLine("delegation", delegation),
-		listLine("gates", route.gates),
-		listLine("evidence", route.evidence_required),
-		listLine("human decisions", route.human_decisions),
-		listLine("stop rules", route.stop_rules),
-		listLine("warnings", route.warnings ?? []),
+		"- mode: read-only orchestration decision; main/front-door agent remains accountable",
+		`- task: ${decision.task.shape}; complexity ${decision.task.complexity}; risk ${decision.task.risk}`,
+		...projectDetailLines(decision.project),
+		`- topology: ${decision.topology.recommended}; ${decision.topology.reason}`,
+		`- run shape: ${decision.route.run.shape}`,
+		`- run summary: ${decision.route.run.summary}`,
+		`- memory: ambient reads ${decision.memory.ambient_reads}; durable writes ${decision.memory.durable_writes}`,
+		listLine("subagents", subagents),
+		listLine("gate ids", decision.gates.ids),
+		listLine("gates", gateDescriptions(decision)),
+		listLine("checks", decision.checks),
+		listLine("evidence", decision.evidence_required),
+		listLine("human decisions", decision.human_decisions),
+		listLine("stop conditions", decision.stop_conditions),
+		listLine("warnings", decision.warnings ?? []),
 		"",
-		route.guidance,
+		decision.guidance,
 	].join("\n");
 }

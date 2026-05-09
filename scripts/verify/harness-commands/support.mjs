@@ -30,6 +30,31 @@ export const controlPlaneRoutePayload = (overrides = {}) => ({
 	warnings: [],
 	...overrides,
 });
+export const controlPlaneDecisionPayload = (overrides = {}) => {
+	const baseRoute = controlPlaneRoutePayload();
+	return {
+		orchestration_api_version: 1,
+		kind: "orchestration_decision",
+		generated_at: "2026-05-08T00:00:00Z",
+		cwd: root,
+		read_only: true,
+		decision_id: "decision123",
+		task: baseRoute.task,
+		project: baseRoute.project,
+		route: { run: baseRoute.run, reasons: baseRoute.reasons },
+		topology: { recommended: "single_agent_standard", name: "Single-agent standard", reason: "standard task fits main-agent execution with normal gates", advisory_only: true, allowed_roles: ["reviewer"], subagents: [] },
+		gates: { ids: ["repo_clean_preflight", "narrow_verification", "diff_inspection", "no_hidden_memory_writes", "final_evidence_report"], preflight: [{ id: "repo_clean_preflight", description: "Inspect repository/project state before edits" }], execution: [{ id: "no_hidden_memory_writes", description: "Do not mutate durable memory without explicit request" }], verification: [{ id: "narrow_verification", description: "Run narrow verification" }, { id: "diff_inspection", description: "Inspect the final diff" }], final: [{ id: "final_evidence_report", description: "Report final evidence" }] },
+		memory: { ambient_reads: "allowed", durable_writes: "explicit_only", reason: "bindable scoped project" },
+		checks: ["make verify"],
+		stop_conditions: ["stop if local instructions conflict with the request"],
+		evidence_required: ["commands/checks run", "files changed or confirmed unchanged"],
+		human_decisions: [],
+		guidance: "## Orchestration Decision\n- mode: read-only recommendation; main/front-door agent remains accountable\n- task: coding; complexity standard; risk low\n- topology: single_agent_standard; standard task fits main-agent execution with normal gates",
+		reasons: ["deterministic heuristic route", "topology=single_agent_standard"],
+		warnings: [],
+		...overrides,
+	};
+};
 export const controlPlaneDashboardPayload = (overrides = {}) => ({
 	control_plane_api_version: 1,
 	kind: "dashboard",
@@ -39,6 +64,7 @@ export const controlPlaneDashboardPayload = (overrides = {}) => ({
 	project: { name: "project", root, type: "repo", registry_id: "project", match_type: "cwd", steward: "project-steward", default_checks: ["make verify"], write_policy: "single_writer", coursework_policy: "none" },
 	projects: { count: 1, matched: { id: "project", name: "project", root, type: "repo", match_type: "cwd" } },
 	route: null,
+	orchestration_decision: null,
 	tasks: { available: true, scope: "project", project_scoped: true, summary: { task_packages_scoped: 3, active_tasks: 1, terminal_tasks: 2, stale_tasks: 0, blocked_tasks: 0, live_leases: 1, expired_leases: 0, stale_candidates: 0, artifact_records: 7, event_records: 12 }, active_task: { status: "in_progress", active: true, terminal: false, scope_match: true, lease_state: "live", events_count: 3, blockers_count: 0 }, warnings: [] },
 	memory: { available: true, count: 2, counts_by_state: { approved: 1, candidate: 1, deprecated: 0 }, skipped: 0, scope: { project: true, task: true, global: false, all: false }, warnings: [] },
 	package_policy: { available: true, health: "ok", summary: { configured_packages: 4, approved_packages: 4, unapproved_packages: 0, unpinned_packages: 0, unknown_package_entries: 0, approved_manifest_entries: 4 }, policy: { default_action: "deny", requires_exact_pins: true, runtime_network_checks: false }, warnings: [] },
@@ -264,7 +290,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDashboardPayload: dashboardPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root }) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
@@ -309,10 +335,11 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
 				return { code: 0, stdout: JSON.stringify(executionPayload ?? { execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "", reasons: ["no explicit execution intent"] }), stderr: "" };
 			}
-			if (cmd === "bash" && script.endsWith("control-plane.sh")) {
+			if (cmd === "bash" && (script.endsWith("control-plane.sh") || script.endsWith("orchestration-decision.sh"))) {
 				const promptFileIndex = args.indexOf("--prompt-file");
 				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
+				if (script.endsWith("orchestration-decision.sh") || args.includes("decision")) return { code: 0, stdout: JSON.stringify(decisionPayload ?? controlPlaneDecisionPayload()), stderr: "" };
 				if (args.includes("dashboard")) return { code: 0, stdout: args.includes("--html") ? "<!doctype html><title>Agent Control Center v0</title>" : JSON.stringify(dashboardPayload ?? controlPlaneDashboardPayload()), stderr: "" };
 				return { code: 0, stdout: JSON.stringify(controlPlanePayload ?? controlPlaneRoutePayload()), stderr: "" };
 			}
@@ -337,7 +364,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("task-retention.sh")) return { code: 0, stdout: JSON.stringify(taskRetentionPayload(retentionPayload ?? {})), stderr: "" };
 			if (cmd === "bash" && script.endsWith("pi-package-doctor.sh")) return { code: 0, stdout: JSON.stringify(piPackagePolicyPayload(packagePolicyPayload ?? {})), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-heartbeat.sh")) return { code: 0, stdout: "", stderr: "" };
-			if (cmd === "bash" && script.endsWith("task-event.sh")) return { code: 0, stdout: JSON.stringify({ type: "checkpoint" }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-event.sh")) return { code: 0, stdout: JSON.stringify({ type: args[1] || "checkpoint" }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-artifact-list.sh")) return { code: 0, stdout: JSON.stringify({ artifact_api_version: 1, task_id: args[1], count: 0, artifacts: [] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-artifact-add.sh")) return { code: 0, stdout: JSON.stringify(artifactAddPayload ?? { artifact_api_version: 1, task_id: args[1], recorded: true, artifact: { id: "artifact-1" } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-status.sh")) return { code: 0, stdout: "{}", stderr: "" };

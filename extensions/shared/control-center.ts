@@ -16,6 +16,17 @@ export type ControlCenterRouteSummary = {
 	run?: { shape?: string; summary?: string };
 };
 
+export type ControlCenterDecisionSummary = {
+	task?: { shape?: string; complexity?: string; risk?: string };
+	route?: { run?: { shape?: string; summary?: string } };
+	topology?: { recommended?: string; reason?: string; advisory_only?: boolean; subagents?: Array<{ role?: string; mode?: string; when?: string }> };
+	gates?: { ids?: string[] };
+	memory?: { ambient_reads?: string; durable_writes?: string };
+	checks?: string[];
+	evidence_required?: string[];
+	stop_conditions?: string[];
+};
+
 export type ControlCenterOptions = { prompt?: string; taskId?: string; project?: string; projectRoot?: string };
 
 export type ControlCenterPayload = {
@@ -38,6 +49,7 @@ export type ControlCenterPayload = {
 		coursework_policy?: string;
 	};
 	route?: ControlCenterRouteSummary | null;
+	orchestration_decision?: ControlCenterDecisionSummary | null;
 	tasks?: {
 		available?: boolean;
 		scope?: string;
@@ -97,7 +109,8 @@ function summaryFromPayload(payload: ControlCenterPayload): string {
 	const project = payload.project?.name || "unknown project";
 	const attention = payload.attention?.length ?? 0;
 	const route = payload.route?.task?.shape ? `${payload.route.task.shape}/${payload.route.task.complexity ?? "?"}/${payload.route.task.risk ?? "?"}` : "no route";
-	return `${project}; ${route}; ${attention} attention item(s)`;
+	const topology = payload.orchestration_decision?.topology?.recommended;
+	return `${project}; ${route}${topology ? `; topology ${topology}` : ""}; ${attention} attention item(s)`;
 }
 
 function stateFromPayload(payload: ControlCenterPayload | undefined): ControlCenterState {
@@ -175,12 +188,13 @@ async function load(){
   const res = await fetch('${base}api/dashboard', { cache: 'no-store' });
   const state = await res.json();
   const p = state.payload || {};
-  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {};
+  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {};
   status.textContent = 'Health: ' + state.health + ' · ' + (p.generated_at || 'unknown') + ' · ' + state.summary;
   status.className = state.health === 'ok' ? 'muted' : 'warn';
   cards.innerHTML = [
     section('Project', '<p><b>' + esc(project.name) + '</b> (' + esc(project.type) + ')</p><p><code>' + esc(project.root) + '</code></p><p>Registry: ' + esc(project.registry_id || 'unregistered') + ' via ' + esc(project.match_type || 'unknown') + '</p><p>Policy: write ' + esc(project.write_policy) + '; coursework ' + esc(project.coursework_policy || 'none') + '</p>'),
     section('Route', route.task ? '<p>Task: ' + esc(route.task.shape) + ' · ' + esc(route.task.complexity) + ' · risk ' + esc(route.task.risk) + '</p><p>Run: ' + esc((route.run || {}).shape || 'none') + '</p>' : '<p class="muted">No prompt route requested.</p>'),
+    section('Orchestration', topology.recommended ? '<p>Topology: <b>' + esc(topology.recommended) + '</b></p><p>' + esc(topology.reason || '') + '</p><p>Gate ids: ' + esc((gates.ids || []).slice(0,8).join(', ') || 'none') + '</p><p>Memory: ' + esc(((decision.memory || {}).ambient_reads) || 'unknown') + ' reads; writes ' + esc(((decision.memory || {}).durable_writes) || 'explicit_only') + '</p>' : '<p class="muted">No orchestration decision requested.</p>'),
     section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p>'),
     section('Memory', '<p>Available: ' + esc(memory.available !== false) + '</p><p>Approved: ' + count(mem,'approved') + ' · Candidates: ' + count(mem,'candidate') + ' · Deprecated: ' + count(mem,'deprecated') + '</p>'),
     section('Pi package policy', '<p>Health: ' + esc(pkg.health || 'unknown') + '</p><p>Configured: ' + count(pkgSummary,'configured_packages') + ' · Approved: ' + count(pkgSummary,'approved_packages') + ' · Unapproved: ' + count(pkgSummary,'unapproved_packages') + ' · Unpinned: ' + count(pkgSummary,'unpinned_packages') + '</p>'),
@@ -244,6 +258,7 @@ export function formatControlCenter(state: ControlCenterState): string {
 	const payload = state.payload;
 	const project = payload.project ?? {};
 	const route = payload.route;
+	const decision = payload.orchestration_decision;
 	const tasks = payload.tasks ?? {};
 	const taskSummary = tasks.summary ?? {};
 	const activeTask = tasks.active_task;
@@ -273,6 +288,15 @@ export function formatControlCenter(state: ControlCenterState): string {
 		"## Route",
 		route?.task?.shape ? `- task: ${route.task.shape}; complexity ${route.task.complexity ?? "unknown"}; risk ${route.task.risk ?? "unknown"}` : "- task: no prompt route requested",
 		route?.run?.shape ? `- run shape: ${route.run.shape}` : "- run shape: none",
+		"",
+		"## Orchestration",
+		decision?.topology?.recommended ? `- topology: ${decision.topology.recommended}; ${decision.topology.reason ?? ""}` : "- topology: no orchestration decision requested",
+		decision?.route?.run?.shape ? `- run shape: ${decision.route.run.shape}` : "- run shape: none",
+		listLine("gate ids", decision?.gates?.ids),
+		listLine("checks", decision?.checks),
+		decision?.memory ? `- memory: ambient reads ${decision.memory.ambient_reads ?? "unknown"}; durable writes ${decision.memory.durable_writes ?? "explicit_only"}` : "- memory: no decision",
+		listLine("evidence", decision?.evidence_required),
+		listLine("stop conditions", decision?.stop_conditions),
 		"",
 		"## Tasks",
 		`- task diagnostics: ${tasks.available === false ? "unavailable" : "available"} (${tasks.scope ?? "project"})`,

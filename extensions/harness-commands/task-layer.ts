@@ -4,6 +4,7 @@ import { modelSummary } from "../session-continuity/context";
 import { agentsRoot } from "../shared/config";
 import { parseJson } from "../shared/json";
 import type { FinalTaskVisibility } from "../shared/final-visibility";
+import type { OrchestrationDecision } from "../shared/orchestration-guidance";
 import type { TaskWeight } from "../shared/prompt-guidance";
 import { candidateRoot, classifyTask, discoverTask, ensureTaskApi, runScript, shortError } from "./task-layer-api";
 import { activityFromTool, pathArtifactFromTool, pathFromTool, verificationArtifactFromTool } from "./task-layer-artifacts";
@@ -193,6 +194,30 @@ export function createAgentsTaskLayer() {
 			state.artifactSkipped++;
 		}
 	}
+	function orchestrationEventArgs(decision: OrchestrationDecision): string[] {
+		return [
+			`decision_id=${JSON.stringify((decision as { decision_id?: string }).decision_id || "")}`,
+			`recommended_topology=${JSON.stringify(decision.topology.recommended || "")}`,
+			`task_shape=${JSON.stringify(decision.task.shape || "")}`,
+			`complexity=${JSON.stringify(decision.task.complexity || "")}`,
+			`risk=${JSON.stringify(decision.task.risk || "")}`,
+			`gate_ids=${JSON.stringify((decision.gates.ids || []).slice(0, 12))}`,
+		];
+	}
+	async function recordTaskEvent(pi: ExtensionAPI, ctx: ExtensionContext, eventType: string, args: string[]): Promise<boolean> {
+		if (!state.active?.task_id) return false;
+		try {
+			const result = await runScript(pi, "task-event.sh", [state.active.task_id, eventType, ...args], ctx.cwd, 5_000);
+			if (result.code !== 0) {
+				state.lastError = shortError(result);
+				return false;
+			}
+			return true;
+		} catch (error) {
+			state.lastError = error instanceof Error ? error.message : String(error);
+			return false;
+		}
+	}
 	async function heartbeat(pi: ExtensionAPI, ctx: ExtensionContext, force = false): Promise<void> {
 		if (!state.active?.task_id) return;
 		const now = Date.now();
@@ -302,6 +327,15 @@ export function createAgentsTaskLayer() {
 				]);
 			}
 			await heartbeat(pi, ctx);
+		},
+		async recordOrchestrationRecommended(pi: ExtensionAPI, ctx: ExtensionContext, decision?: OrchestrationDecision): Promise<boolean> {
+			if (!decision) return false;
+			return await recordTaskEvent(pi, ctx, "orchestration_recommended", orchestrationEventArgs(decision));
+		},
+		async recordOrchestrationChosen(pi: ExtensionAPI, ctx: ExtensionContext, topology: string, reason = "explicit /choose-topology command"): Promise<boolean> {
+			const chosen = topology.trim().replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 80);
+			if (!chosen) return false;
+			return await recordTaskEvent(pi, ctx, "orchestration_chosen", [`chosen_topology=${JSON.stringify(chosen)}`, `reason=${JSON.stringify(reason.slice(0, 160))}`]);
 		},
 		async agentEnd(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 			if (!state.active?.task_id || !state.meaningfulActivity) return;

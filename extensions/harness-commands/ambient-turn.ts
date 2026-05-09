@@ -3,7 +3,7 @@ import { assembleAmbientContext, type AmbientContextAssembly, type AmbientContex
 import { decideAmbientPolicy, shouldIncludeMemoryContext, shouldIncludeRepoContext } from "../shared/ambient-policy";
 import { buildExecutionRouteState, type ExecutionRouteState } from "../shared/execution-guidance";
 import { buildMemoryContext, memoryAdminGuidance, memoryCandidateReminder, type MemoryContextResult } from "../shared/memory-context";
-import { buildOrchestrationRouteState, type OrchestrationRouteState } from "../shared/orchestration-guidance";
+import { buildOrchestrationDecisionState, type OrchestrationDecisionState } from "../shared/orchestration-guidance";
 import {
 	cleanupReminder,
 	DISPLAY_MATH_RENDERING_INSTRUCTION,
@@ -31,24 +31,24 @@ type AmbientTurnInput = {
 
 type AmbientLaneInput = Pick<AmbientTurnInput, "prompt" | "weight" | "activeMode" | "taskContext"> & {
 	memoryContext?: MemoryContextResult;
-	orchestrationRoute?: OrchestrationRouteState;
+	orchestrationDecision?: OrchestrationDecisionState;
 	executionRoute?: ExecutionRouteState;
 	repoSummary?: RepoContextSummary;
 };
 
 export type AmbientTurnResult = AmbientContextAssembly & {
-	orchestrationRoute?: OrchestrationRouteState;
+	orchestrationDecision?: OrchestrationDecisionState;
 };
 
 function executionLaneReason(route: ExecutionRouteState | undefined): string {
 	return route?.health === "degraded" ? `execution-route degraded: ${route.status}` : "no explicit execution intent";
 }
 
-function orchestrationLaneReason(route: OrchestrationRouteState | undefined, weight: TaskWeight): string {
+function orchestrationLaneReason(decision: OrchestrationDecisionState | undefined, weight: TaskWeight): string {
 	if (weight === "trivial") return "trivial prompt";
-	if (!route) return "orchestration not checked";
-	if (route.health === "degraded") return `control-plane route degraded: ${route.status}`;
-	return route.status === "trivial" ? "direct-answer route" : "empty orchestration guidance";
+	if (!decision) return "orchestration not checked";
+	if (decision.health === "degraded") return `orchestration decision degraded: ${decision.status}`;
+	return decision.status === "trivial" ? "direct-answer decision" : "empty orchestration guidance";
 }
 
 function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
@@ -61,7 +61,7 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 		{ id: "cleanup", title: "Post-change cleanup gate", priority: 50, content: cleanupReminder(input.prompt, input.weight), reason: "non-coding prompt" },
 		{ id: "subagent_topology", title: "Subagent topology", priority: 55, content: buildSubagentTopologyReminder(input.prompt, input.weight), reason: "not a detailed subagent-worthy prompt" },
 		{ id: "agents_task", title: "Active AGENTS task context", priority: 60, content: input.taskContext, reason: "no scoped active task context" },
-		{ id: "orchestration", title: "Orchestration guidance", priority: 62, content: input.weight === "trivial" ? undefined : input.orchestrationRoute?.route?.guidance, publicSummary: input.orchestrationRoute?.summary, reason: orchestrationLaneReason(input.orchestrationRoute, input.weight) },
+		{ id: "orchestration", title: "Orchestration guidance", priority: 62, content: input.weight === "trivial" ? undefined : input.orchestrationDecision?.decision?.guidance, publicSummary: input.orchestrationDecision?.summary, reason: orchestrationLaneReason(input.orchestrationDecision, input.weight) },
 		{ id: "memory", title: "Approved scoped memory", priority: 65, content: input.memoryContext?.content, reason: input.memoryContext?.reason ?? "memory disabled" },
 		{ id: "memory_candidates", title: "Durable memory candidates", priority: 66, content: memoryCandidateReminder(input.weight !== "trivial"), reason: "trivial prompt" },
 		{ id: "memory_admin", title: "Explicit memory admin", priority: 67, content: memoryAdminGuidance(input.prompt), reason: "no explicit memory admin request" },
@@ -83,14 +83,14 @@ export async function buildAmbientTurn(pi: ExtensionAPI, ctx: ExtensionContext, 
 	const repoSummary = shouldIncludeRepoContext(policy) ? await buildRepoContextSummary(pi, ctx.cwd) : undefined;
 	const memoryProjectRoot = input.taskScope.projectRoot || repoSummary?.root;
 	const memoryContext = shouldIncludeMemoryContext(policy) ? await buildMemoryContext(pi, ctx.cwd, { projectRoot: memoryProjectRoot, taskId: input.taskScope.taskId }) : undefined;
-	const orchestrationRoute = input.weight === "trivial" ? undefined : await buildOrchestrationRouteState(pi, ctx.cwd, input.prompt);
+	const orchestrationDecision = input.weight === "trivial" ? undefined : await buildOrchestrationDecisionState(pi, ctx.cwd, input.prompt);
 	const executionRoute = await buildExecutionRouteState(pi, ctx.cwd, input.prompt);
 	const assembly = assembleAmbientContext(input.baseSystemPrompt, input.weight, buildAmbientLanes({
 		...input,
 		memoryContext,
-		orchestrationRoute,
+		orchestrationDecision,
 		executionRoute,
 		repoSummary,
 	}), policy);
-	return { ...assembly, orchestrationRoute };
+	return { ...assembly, orchestrationDecision };
 }

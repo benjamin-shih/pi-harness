@@ -20,9 +20,9 @@ import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
-import { buildControlCenterState, formatControlCenter, openControlCenterHtml, startControlCenterWeb, stopControlCenterWeb, type ControlCenterOptions } from "./shared/control-center";
+import { registerControlCenterCommand } from "./shared/control-center-command";
 import { forgetMemory, promoteMemory, rememberCandidate } from "./shared/memory-admin";
-import { buildOrchestrationRouteState, formatRunCard, type OrchestrationRouteState } from "./shared/orchestration-guidance";
+import { buildOrchestrationDecisionState, formatRunCard, type OrchestrationDecisionState } from "./shared/orchestration-guidance";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -37,7 +37,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	let currentPromptWasMajor = false;
 	let initialChangeSnapshot: GitChangeSnapshot | undefined;
 	let lastAmbientContext: AmbientContextSnapshot | undefined;
-	let lastOrchestrationRoute: OrchestrationRouteState | undefined;
+	let lastOrchestrationDecision: OrchestrationDecisionState | undefined;
 	let finalVisibility: FinalVisibilityState | undefined;
 	const refreshFinalVisibility = () => {
 		finalVisibility = lastAmbientContext ? { ambient: lastAmbientContext, mode: activeMode, task: taskLayer.finalVisibility() } : undefined;
@@ -89,62 +89,21 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		},
 	});
 	pi.registerCommand("run-card", {
-		description: "Show the latest orchestration run card, or route provided text without executing it",
+		description: "Show the latest orchestration run card, or decide provided text without executing it",
 		handler: async (args, ctx) => {
 			const prompt = args.trim();
-			const route = prompt ? await buildOrchestrationRouteState(pi, ctx.cwd, prompt) : lastOrchestrationRoute;
-			const content = route ? formatRunCard(route) : ["## Run card", "- status: not assembled yet", "- hint: run a nontrivial turn first, or pass prompt text to `/run-card ...`"].join("\n");
+			const decision = prompt ? await buildOrchestrationDecisionState(pi, ctx.cwd, prompt) : lastOrchestrationDecision;
+			const content = decision ? formatRunCard(decision) : ["## Run card", "- status: not assembled yet", "- hint: run a nontrivial turn first, or pass prompt text to `/run-card ...`"].join("\n");
 			pi.sendMessage({ customType: "harness-run-card", content, display: true });
 		},
 	});
-	const controlCenterOptions = (raw: string): { mode: "card" | "html" | "web" | "web-stop"; options: ControlCenterOptions } => {
-		const tokens = raw.trim().split(/\s+/).filter(Boolean);
-		let mode: "card" | "html" | "web" | "web-stop" = "card";
-		if (tokens[0] === "html") { mode = "html"; tokens.shift(); }
-		else if (tokens[0] === "web" && tokens[1] === "stop") { mode = "web-stop"; tokens.splice(0, 2); }
-		else if (tokens[0] === "web") { mode = "web"; tokens.shift(); }
-		let project = "";
-		let projectRoot = "";
-		const promptParts: string[] = [];
-		for (let i = 0; i < tokens.length; i++) {
-			const token = tokens[i];
-			if (token === "--project" && tokens[i + 1]) { project = tokens[++i]; continue; }
-			if (token.startsWith("project:")) { project = token.slice("project:".length); continue; }
-			if (token === "--project-root" && tokens[i + 1]) { projectRoot = tokens[++i]; continue; }
-			promptParts.push(token);
-		}
-		const taskScope = taskLayer.ambientScope?.() ?? {};
-		const prompt = promptParts.join(" ");
-		const fallbackProjectRoot = !project && !projectRoot && !prompt ? taskScope.projectRoot : undefined;
-		return { mode, options: { prompt, taskId: taskScope.taskId, project: project || undefined, projectRoot: projectRoot || fallbackProjectRoot || undefined } };
-	};
-	pi.registerCommand("control-center", {
-		description: "Show the read-only local Agent Control Center; use `html`, `web`, or `--project harness`",
+	registerControlCenterCommand(pi, taskLayer);
+	pi.registerCommand("choose-topology", {
+		description: "Explicitly record the orchestration topology the main agent chose for the active task",
 		handler: async (args, ctx) => {
-			const { mode, options } = controlCenterOptions(args);
-			if (mode === "web-stop") {
-				const stopped = await stopControlCenterWeb();
-				pi.sendMessage({ customType: "harness-control-center", content: ["## Agent Control Center web", `- stopped: ${stopped ? "yes" : "no active server"}`].join("\n"), display: true });
-				return;
-			}
-			if (mode === "web") {
-				const result = await startControlCenterWeb(pi, ctx.cwd, options);
-				pi.sendMessage({ customType: "harness-control-center", content: ["## Agent Control Center web", `- url: ${result.url}`, `- opened: ${result.opened ? "yes" : "no"}`, ...(result.error ? [`- warning: ${result.error}`] : []), "- mode: read-only local web dashboard with refresh"].join("\n"), display: true });
-				return;
-			}
-			if (mode === "html") {
-				const result = await openControlCenterHtml(pi, ctx.cwd, options);
-				const content = [
-					"## Agent Control Center v0",
-					`- html: ${result.path ? result.path : "not generated"}`,
-					`- opened: ${result.opened ? "yes" : "no"}`,
-					...(result.error ? [`- warning: ${result.error}`] : []),
-					"- mode: read-only static dashboard",
-				].join("\n");
-				pi.sendMessage({ customType: "harness-control-center", content, display: true });
-				return;
-			}
-			pi.sendMessage({ customType: "harness-control-center", content: formatControlCenter(await buildControlCenterState(pi, ctx.cwd, options)), display: true });
+			const [topology, ...reasonParts] = args.trim().split(/\s+/).filter(Boolean);
+			const recorded = topology ? await taskLayer.recordOrchestrationChosen(pi, ctx, topology, reasonParts.join(" ") || "explicit /choose-topology command") : false;
+			pi.sendMessage({ customType: "harness-orchestration", content: ["## Orchestration choice", `- topology: ${topology || "not supplied"}`, `- recorded: ${recorded ? "yes" : "no active task or invalid topology"}`, "- mode: explicit task-event tracking only; no execution launched"].join("\n"), display: true });
 		},
 	});
 	pi.registerCommand("remember", {
@@ -201,7 +160,8 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			taskScope: taskLayer.ambientScope(),
 		});
 		lastAmbientContext = ambient.snapshot;
-		lastOrchestrationRoute = ambient.orchestrationRoute;
+		lastOrchestrationDecision = ambient.orchestrationDecision;
+		await taskLayer.recordOrchestrationRecommended(pi, ctx, ambient.orchestrationDecision?.decision);
 		refreshFinalVisibility();
 		return ambient.systemPrompt === event.systemPrompt ? undefined : { systemPrompt: ambient.systemPrompt };
 	});
