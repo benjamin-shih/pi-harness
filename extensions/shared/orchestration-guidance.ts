@@ -28,6 +28,15 @@ export type OrchestrationProject = {
 
 export type OrchestrationSubagent = { role: string; when: string; cwd: string; mode: string; constraints?: string[] };
 
+export type HtmlArtifactDecision = {
+	publish_policy?: string;
+	source_of_truth?: string;
+	recommended?: Array<{ mode?: string; reason?: string }>;
+	modes?: Array<{ id?: string; name?: string; description?: string }>;
+	safety?: string[];
+	constraints?: string[];
+};
+
 export type OrchestrationDecision = {
 	decision_id?: string;
 	task: { shape: OrchestrationTaskShape; complexity: OrchestrationComplexity; risk: OrchestrationRisk };
@@ -36,6 +45,7 @@ export type OrchestrationDecision = {
 	topology: { recommended: string; name?: string; reason: string; description?: string; advisory_only: boolean; allowed_roles?: string[]; subagents: OrchestrationSubagent[] };
 	gates: { ids: string[]; preflight: Array<{ id: string; description?: string }>; execution: Array<{ id: string; description?: string }>; verification: Array<{ id: string; description?: string }>; final: Array<{ id: string; description?: string }> };
 	memory: { ambient_reads: "allowed" | "skipped" | "unavailable"; durable_writes: "explicit_only"; reason?: string };
+	artifacts?: { html?: HtmlArtifactDecision };
 	checks: string[];
 	stop_conditions: string[];
 	evidence_required: string[];
@@ -83,6 +93,7 @@ function stateFromPayload(payload: OrchestrationDecisionPayload | undefined): Or
 		topology: { ...payload.topology, subagents: payload.topology.subagents ?? [] },
 		gates: payload.gates,
 		memory: payload.memory ?? { ambient_reads: "unavailable", durable_writes: "explicit_only" },
+		artifacts: payload.artifacts,
 		checks: payload.checks ?? [],
 		stop_conditions: payload.stop_conditions ?? [],
 		evidence_required: payload.evidence_required ?? [],
@@ -129,6 +140,18 @@ function gateDescriptions(decision: OrchestrationDecision): string[] {
 	return all.map((gate) => `${gate.id}${gate.description ? `: ${gate.description}` : ""}`);
 }
 
+function htmlArtifactLines(decision: OrchestrationDecision): string[] {
+	const html = decision.artifacts?.html;
+	if (!html) return ["- html artifacts: none"];
+	const modes = html.modes?.map((mode) => mode.id || "").filter(Boolean) ?? [];
+	const safety = html.safety ?? [];
+	return [
+		`- html artifacts: ${modes.length ? modes.slice(0, 4).join(", ") : "none"}`,
+		`- html publish: ${html.publish_policy || "explicit_only"}; source of truth ${html.source_of_truth || "json_or_markdown"}`,
+		listLine("html safety", safety),
+	];
+}
+
 export function formatRunCard(state: OrchestrationDecisionState): string {
 	if (!state.decision) return ["## Run card", `- status: ${state.status}`, `- health: ${state.health}`, `- summary: ${state.summary}`].join("\n");
 	const decision = state.decision;
@@ -143,6 +166,7 @@ export function formatRunCard(state: OrchestrationDecisionState): string {
 		`- run shape: ${decision.route.run.shape}`,
 		`- run summary: ${decision.route.run.summary}`,
 		`- memory: ambient reads ${decision.memory.ambient_reads}; durable writes ${decision.memory.durable_writes}`,
+		...htmlArtifactLines(decision),
 		listLine("subagents", subagents),
 		listLine("gate ids", decision.gates.ids),
 		listLine("gates", gateDescriptions(decision)),

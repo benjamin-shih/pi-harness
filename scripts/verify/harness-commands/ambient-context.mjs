@@ -126,6 +126,7 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("registry: project via cwd"), "/run-card should include project registry match metadata");
 	assert(boundTask.sentMessages.at(-1).content.includes("default checks: make verify"), "/run-card should include project registry default checks");
 	assert(boundTask.sentMessages.at(-1).content.includes("gate ids: repo_clean_preflight"), "/run-card should include decision gate ids");
+	assert(boundTask.sentMessages.at(-1).content.includes("html artifacts: html_report"), "/run-card should include HTML artifact recommendations");
 	await boundTask.commands.get("choose-topology").handler("single_agent_standard simple surgical task", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Orchestration choice"), "/choose-topology should render explicit choice tracking output");
 	const chosenCall = boundTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_chosen"));
@@ -154,6 +155,7 @@ export async function runAmbientContextTests() {
 	await explicitControlCenterTask.commands.get("control-center").handler("--project STATS300C Finish HW3", explicitControlCenterTask.ctx);
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("task: coursework; complexity complex; risk medium"), "/control-center with prompt text should show route summary");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("topology: parallel_recon"), "/control-center with prompt text should show orchestration topology");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html artifact modes: html_report"), "/control-center should summarize HTML artifact modes from decision payloads");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("registry: STATS300C via explicit_project"), "/control-center should pass explicit project selectors to the shared dashboard API");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/control-center should expose coursework policy read-only");
 	const dashboardCall = explicitControlCenterTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard"));

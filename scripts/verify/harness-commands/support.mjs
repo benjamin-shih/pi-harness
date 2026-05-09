@@ -45,6 +45,7 @@ export const controlPlaneDecisionPayload = (overrides = {}) => {
 		topology: { recommended: "single_agent_standard", name: "Single-agent standard", reason: "standard task fits main-agent execution with normal gates", advisory_only: true, allowed_roles: ["reviewer"], subagents: [] },
 		gates: { ids: ["repo_clean_preflight", "narrow_verification", "diff_inspection", "no_hidden_memory_writes", "final_evidence_report"], preflight: [{ id: "repo_clean_preflight", description: "Inspect repository/project state before edits" }], execution: [{ id: "no_hidden_memory_writes", description: "Do not mutate durable memory without explicit request" }], verification: [{ id: "narrow_verification", description: "Run narrow verification" }, { id: "diff_inspection", description: "Inspect the final diff" }], final: [{ id: "final_evidence_report", description: "Report final evidence" }] },
 		memory: { ambient_reads: "allowed", durable_writes: "explicit_only", reason: "bindable scoped project" },
+		artifacts: { html: { publish_policy: "explicit_only", source_of_truth: "json_or_markdown", modes: [{ id: "html_report" }], safety: ["no_raw_prompts_or_transcripts"] } },
 		checks: ["make verify"],
 		stop_conditions: ["stop if local instructions conflict with the request"],
 		evidence_required: ["commands/checks run", "files changed or confirmed unchanged"],

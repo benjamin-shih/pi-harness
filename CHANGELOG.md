@@ -15,6 +15,7 @@ All notable changes to this personal pi harness package are tracked here.
 - `/run-card`, `/status`, and Control Center now surface chosen-vs-recommended orchestration tracking.
 - Control Center web adds read-only project/prompt inputs, separates attention/warnings/notices, and shows gate phases.
 - `smoke:user-packages` now verifies `pi-subagents`/`pi-intercom` command surfaces and the explicit `PI_SUBAGENT_CHILD=1` extension matrix, keeping safety-gate active while suppressing ambient harness commands/handlers.
+- `/run-card` and Control Center now surface `.agents` HTML artifact recommendations for local reports and dashboards.
 - Control Center cards include the orchestration decision summary when prompt text is supplied.
 - `/remember`, `/promote-memory`, and `/forget-memory` provide explicit durable-memory admin commands; `/remember` creates candidate records by default.
 - `/memory review` now runs the shared read-only candidate review API and shows bounded previews for explicit promote/forget follow-up.
