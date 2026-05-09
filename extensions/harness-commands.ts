@@ -92,8 +92,10 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		description: "Show the latest orchestration run card, or decide provided text without executing it",
 		handler: async (args, ctx) => {
 			const prompt = args.trim();
-			const decision = prompt ? await buildOrchestrationDecisionState(pi, ctx.cwd, prompt) : lastOrchestrationDecision;
-			const content = decision ? formatRunCard(decision) : ["## Run card", "- status: not assembled yet", "- hint: run a nontrivial turn first, or pass prompt text to `/run-card ...`"].join("\n");
+			const fallbackPrompt = "Summarize current project status";
+			const decision = prompt ? await buildOrchestrationDecisionState(pi, ctx.cwd, prompt) : (lastOrchestrationDecision ?? await buildOrchestrationDecisionState(pi, ctx.cwd, fallbackPrompt));
+			const fallbackNote = !prompt && !lastOrchestrationDecision ? "\n\n- source: generated current-project fallback because no cached turn decision exists" : "";
+			const content = decision ? `${formatRunCard(decision)}${fallbackNote}` : ["## Run card", "- status: unavailable", "- hint: pass prompt text to `/run-card ...`"].join("\n");
 			pi.sendMessage({ customType: "harness-run-card", content, display: true });
 		},
 	});

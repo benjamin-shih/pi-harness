@@ -52,6 +52,7 @@ export const controlPlaneDecisionPayload = (overrides = {}) => {
 		guidance: "## Orchestration Decision\n- mode: read-only recommendation; main/front-door agent remains accountable\n- task: coding; complexity standard; risk low\n- topology: single_agent_standard; standard task fits main-agent execution with normal gates",
 		reasons: ["deterministic heuristic route", "topology=single_agent_standard"],
 		warnings: [],
+		notices: [],
 		...overrides,
 	};
 };

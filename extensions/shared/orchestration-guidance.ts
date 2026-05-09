@@ -43,6 +43,7 @@ export type OrchestrationDecision = {
 	guidance: string;
 	reasons: string[];
 	warnings?: string[];
+	notices?: string[];
 };
 
 export type OrchestrationDecisionState = {
@@ -89,6 +90,7 @@ function stateFromPayload(payload: OrchestrationDecisionPayload | undefined): Or
 		guidance: payload.guidance,
 		reasons: payload.reasons ?? [],
 		warnings: payload.warnings ?? [],
+		notices: payload.notices ?? [],
 	};
 	if (decision.task.complexity === "trivial" || decision.route.run.shape === "direct_answer") return state("inactive", "trivial", summarize(decision), apiVersion, decision);
 	return state("ok", "routed", summarize(decision), apiVersion, decision);
@@ -149,6 +151,7 @@ export function formatRunCard(state: OrchestrationDecisionState): string {
 		listLine("human decisions", decision.human_decisions),
 		listLine("stop conditions", decision.stop_conditions),
 		listLine("warnings", decision.warnings ?? []),
+		listLine("notices", decision.notices ?? []),
 		"",
 		decision.guidance,
 	].join("\n");

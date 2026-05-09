@@ -11,6 +11,7 @@ All notable changes to this personal pi harness package are tracked here.
 - `/control-center web` starts a localhost read-only refreshable dashboard, and `/control-center --project ...` targets registry projects explicitly.
 - `/run-card` and ambient orchestration now consume the shared `.agents` Orchestration Decision v0 API, including topology, gates, checks, evidence, memory mode, and stop conditions.
 - Ambient turns record bounded `orchestration_recommended` task events, and `/choose-topology` explicitly records chosen topology without launching execution.
+- `/run-card` now builds a labeled current-project fallback when no cached turn decision exists, and renders decision notices separately from warnings.
 - Control Center cards include the orchestration decision summary when prompt text is supplied.
 - `/remember`, `/promote-memory`, and `/forget-memory` provide explicit durable-memory admin commands; `/remember` creates candidate records by default.
 - `/memory review` now runs the shared read-only candidate review API and shows bounded previews for explicit promote/forget follow-up.

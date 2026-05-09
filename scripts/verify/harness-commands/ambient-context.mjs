@@ -156,6 +156,14 @@ export async function runAmbientContextTests() {
 	await explicitControlCenterTask.commands.get("control-center").handler("web stop", explicitControlCenterTask.ctx);
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("stopped: yes"), "/control-center web stop should close the local web dashboard server");
 
+	const fallbackRunCardTask = createTaskHarness({
+		controlPlaneDecisionPayload: controlPlaneDecisionPayload({ notices: ["project not bindable: home_root"], warnings: [] }),
+	});
+	await fallbackRunCardTask.handlers.get("session_start")({ reason: "startup" }, fallbackRunCardTask.ctx);
+	await fallbackRunCardTask.commands.get("run-card").handler("", fallbackRunCardTask.ctx);
+	assert(!fallbackRunCardTask.sentMessages.at(-1).content.includes("not assembled yet"), "/run-card without cached decision should build a fallback current-project decision");
+	assert(fallbackRunCardTask.sentMessages.at(-1).content.includes("source: generated current-project fallback"), "/run-card fallback should label its source");
+	assert(fallbackRunCardTask.sentMessages.at(-1).content.includes("notices: project not bindable: home_root"), "/run-card should render decision notices separately from warnings");
 	const explicitRunCardTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
 		controlPlaneDecisionPayload: controlPlaneDecisionPayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", bindable: true, reason: "project_path", registry_id: "STATS300C", registered: true, match_type: "prompt_alias", steward: "course-steward", default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify", local_instructions_required: true }, route: { run: { shape: "parallel_recon", summary: "front-door main agent remains accountable; coursework assist/explain/verify" }, reasons: [] }, topology: { recommended: "parallel_recon", reason: "coursework assist/explain/verify", advisory_only: true, subagents: [] }, guidance: "## Orchestration Decision\n- task: coursework; complexity complex; risk medium" }),
