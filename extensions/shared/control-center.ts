@@ -22,7 +22,7 @@ export type ControlCenterDecisionSummary = {
 	topology?: { recommended?: string; reason?: string; advisory_only?: boolean; subagents?: Array<{ role?: string; mode?: string; when?: string }> };
 	gates?: { ids?: string[]; preflight?: Array<{ id?: string }>; execution?: Array<{ id?: string }>; verification?: Array<{ id?: string }>; final?: Array<{ id?: string }> };
 	memory?: { ambient_reads?: string; durable_writes?: string };
-	artifacts?: { html?: { publish_policy?: string; source_of_truth?: string; modes?: Array<{ id?: string }>; safety?: string[]; constraints?: string[] } };
+	artifacts?: { html?: { publish_policy?: string; source_of_truth?: string; modes?: Array<{ id?: string }>; auto_open?: { enabled?: boolean; modes?: string[]; safety?: string[] }; safety?: string[]; constraints?: string[] } };
 	checks?: string[];
 	evidence_required?: string[];
 	stop_conditions?: string[];
@@ -232,7 +232,7 @@ async function load(){
     section('Project', '<p><b>' + esc(project.name) + '</b> (' + esc(project.type) + ')</p><p><code>' + esc(project.root) + '</code></p><p>Registry: ' + esc(project.registry_id || 'unregistered') + ' via ' + esc(project.match_type || 'unknown') + '</p><p>Policy: write ' + esc(project.write_policy) + '; coursework ' + esc(project.coursework_policy || 'none') + '</p>'),
     section('Route', route.task ? '<p>Task: ' + esc(route.task.shape) + ' · ' + esc(route.task.complexity) + ' · risk ' + esc(route.task.risk) + '</p><p>Run: ' + esc((route.run || {}).shape || 'none') + '</p>' : '<p class="muted">No prompt route requested.</p>'),
     section('Orchestration', topology.recommended ? '<p>Topology: <b>' + esc(topology.recommended) + '</b></p><p>' + esc(topology.reason || '') + '</p><p>Preflight: ' + esc((gates.preflight || []).map(g => g.id).join(', ') || 'none') + '</p><p>Execution: ' + esc((gates.execution || []).map(g => g.id).join(', ') || 'none') + '</p><p>Verification: ' + esc((gates.verification || []).map(g => g.id).join(', ') || 'none') + '</p><p>Final: ' + esc((gates.final || []).map(g => g.id).join(', ') || 'none') + '</p><p>Memory: ' + esc(((decision.memory || {}).ambient_reads) || 'unknown') + ' reads; writes ' + esc(((decision.memory || {}).durable_writes) || 'explicit_only') + '</p>' : '<p class="muted">No orchestration decision requested.</p>'),
-    section('HTML artifacts', (html.modes || []).length ? '<p>Modes: ' + esc((html.modes || []).map(m => m.id).join(', ')) + '</p><p>Publish: ' + esc(html.publish_policy || 'explicit_only') + ' · source: ' + esc(html.source_of_truth || 'json_or_markdown') + '</p><p>Safety: ' + esc((html.safety || []).slice(0,6).join(', ')) + '</p>' : '<p class="muted">No HTML artifact recommendation.</p>'),
+    section('HTML artifacts', (html.modes || []).length ? '<p>Modes: ' + esc((html.modes || []).map(m => m.id).join(', ')) + '</p><p>Publish: ' + esc(html.publish_policy || 'explicit_only') + ' · source: ' + esc(html.source_of_truth || 'json_or_markdown') + '</p><p>Auto-open: ' + esc(((html.auto_open || {}).enabled) ? 'enabled' : 'disabled') + '</p><p>Safety: ' + esc((html.safety || []).slice(0,6).join(', ')) + '</p>' : '<p class="muted">No HTML artifact recommendation.</p>'),
     section('Chosen vs recommended', tracking.available ? '<p>Recommended: ' + esc(((tracking.recommended || {}).topology) || 'none') + '</p><p>Chosen: ' + esc(((tracking.chosen || {}).topology) || 'none') + '</p><p>Status: ' + esc(tracking.status || 'unknown') + ' · mismatch ' + esc(Boolean(tracking.mismatch)) + '</p>' : '<p class="muted">No orchestration tracking events.</p>'),
     section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p>'),
     section('Memory', '<p>Available: ' + esc(memory.available !== false) + '</p><p>Approved: ' + count(mem,'approved') + ' · Candidates: ' + count(mem,'candidate') + ' · Deprecated: ' + count(mem,'deprecated') + '</p>'),
@@ -352,6 +352,7 @@ export function formatControlCenter(state: ControlCenterState): string {
 		decision?.memory ? `- memory: ambient reads ${decision.memory.ambient_reads ?? "unknown"}; durable writes ${decision.memory.durable_writes ?? "explicit_only"}` : "- memory: no decision",
 		listLine("html artifact modes", decision?.artifacts?.html?.modes?.map((mode) => mode.id || "")),
 		decision?.artifacts?.html ? `- html publish: ${decision.artifacts.html.publish_policy || "explicit_only"}; source ${decision.artifacts.html.source_of_truth || "json_or_markdown"}` : "- html publish: no decision",
+		decision?.artifacts?.html ? `- html auto-open: ${decision.artifacts.html.auto_open?.enabled ? "enabled" : "disabled"}` : "- html auto-open: no decision",
 		listLine("evidence", decision?.evidence_required),
 		listLine("stop conditions", decision?.stop_conditions),
 		"",

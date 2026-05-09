@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { loadExtensionModule } from "../harness.mjs";
 import { assert, controlPlaneDashboardPayload, controlPlaneDecisionPayload, createTaskHarness, harnessCommands, homeRoot, join, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
 
@@ -127,6 +128,18 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("default checks: make verify"), "/run-card should include project registry default checks");
 	assert(boundTask.sentMessages.at(-1).content.includes("gate ids: repo_clean_preflight"), "/run-card should include decision gate ids");
 	assert(boundTask.sentMessages.at(-1).content.includes("html artifacts: html_report"), "/run-card should include HTML artifact recommendations");
+	assert(boundTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/run-card should show HTML artifact auto-open policy");
+	const htmlOpenTemp = mkdtempSync(join(tmpdir(), "pi-html-open-"));
+	try {
+		const htmlPlan = join(htmlOpenTemp, "implementation-plan.html");
+		writeFileSync(htmlPlan, "<!doctype html><title>Plan</title>");
+		await boundTask.handlers.get("tool_result")({ toolName: "write", input: { path: htmlPlan }, isError: false }, boundTask.ctx);
+		assert(!boundTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPlan), "HTML artifacts should open after the turn, not before the final file settles");
+		await boundTask.handlers.get("agent_end")({}, boundTask.ctx);
+		assert(boundTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPlan), "harness should auto-open newly written local HTML plan artifacts");
+	} finally {
+		rmSync(htmlOpenTemp, { recursive: true, force: true });
+	}
 	await boundTask.commands.get("choose-topology").handler("single_agent_standard simple surgical task", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Orchestration choice"), "/choose-topology should render explicit choice tracking output");
 	const chosenCall = boundTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_chosen"));
@@ -156,6 +169,7 @@ export async function runAmbientContextTests() {
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("task: coursework; complexity complex; risk medium"), "/control-center with prompt text should show route summary");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("topology: parallel_recon"), "/control-center with prompt text should show orchestration topology");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html artifact modes: html_report"), "/control-center should summarize HTML artifact modes from decision payloads");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/control-center should summarize HTML artifact auto-open policy");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("registry: STATS300C via explicit_project"), "/control-center should pass explicit project selectors to the shared dashboard API");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/control-center should expose coursework policy read-only");
 	const dashboardCall = explicitControlCenterTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard"));

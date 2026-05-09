@@ -16,6 +16,7 @@ import {
 	type GitChangeSnapshot,
 } from "./harness-commands/cleanup-guard";
 import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
+import { htmlArtifactPathFromTool, openHtmlArtifact } from "./shared/html-artifact-open";
 import { applyMode, modeDescription, modeNames } from "./harness-commands/modes";
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
@@ -37,6 +38,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	let currentPromptIsCleanupGuard = false;
 	let currentPromptNeedsCleanup = false;
 	let currentPromptWasMajor = false;
+	let pendingHtmlArtifacts = new Set<string>();
 	let initialChangeSnapshot: GitChangeSnapshot | undefined;
 	let lastAmbientContext: AmbientContextSnapshot | undefined;
 	let lastOrchestrationDecision: OrchestrationDecisionState | undefined;
@@ -105,6 +107,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		sawFileMutation = false;
 		currentPromptIsCleanupGuard = event.prompt.includes(CLEANUP_GUARD_MARKER);
 		currentPromptNeedsCleanup = isCodingOrFilePrompt(event.prompt);
+		pendingHtmlArtifacts = new Set<string>();
 		initialChangeSnapshot = currentPromptNeedsCleanup ? await gitChangeSnapshot(pi, ctx.cwd) : undefined;
 		const taskContext = await taskLayer.beforeAgentStart(pi, event.prompt, fallbackWeight, ctx);
 		const weight = taskLayer.currentPromptWeight();
@@ -134,6 +137,8 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	});
 	pi.on("tool_result", async (event, ctx) => {
 		await taskLayer.toolResult(pi, event, ctx);
+		const htmlArtifact = htmlArtifactPathFromTool(event, ctx.cwd, lastOrchestrationDecision);
+		if (htmlArtifact) pendingHtmlArtifacts.add(htmlArtifact);
 		refreshFinalVisibility();
 	});
 	pi.on("message_end", async (event) => {
@@ -143,6 +148,8 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	});
 	pi.on("agent_end", async (_event, ctx) => {
 		await taskLayer.agentEnd(pi, ctx);
+		for (const htmlArtifact of pendingHtmlArtifacts) await openHtmlArtifact(pi, ctx, htmlArtifact);
+		pendingHtmlArtifacts.clear();
 		if (currentPromptIsCleanupGuard || !sawFileMutation || !currentPromptNeedsCleanup) return;
 		const currentSnapshot = await gitChangeSnapshot(pi, ctx.cwd);
 		if (!currentSnapshot || currentSnapshot.signature === initialChangeSnapshot?.signature) return;
