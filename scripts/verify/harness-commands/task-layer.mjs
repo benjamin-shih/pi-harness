@@ -118,6 +118,42 @@ export async function runTaskLayerTests() {
 	assert(terminalDoctor.includes("lifecycle status: completed (terminal)"), "/doctor should show terminal lifecycle state from the shared API");
 	assert(terminalDoctor.includes("lifecycle closure reason: recorded"), "/doctor should not print raw closure reason text");
 
+	const closeCommandTask = createTaskHarness({ bindPayload: taskBindPayload() });
+	await closeCommandTask.handlers.get("session_start")({ reason: "startup" }, closeCommandTask.ctx);
+	await closeCommandTask.handlers.get("before_agent_start")({ prompt: "Implement close UX", systemPrompt: "base" }, closeCommandTask.ctx);
+	await closeCommandTask.commands.get("close-task").handler("completed done safely", closeCommandTask.ctx);
+	const closeMessage = closeCommandTask.sentMessages.at(-1).content;
+	assert(closeMessage.includes("result: completed"), "/close-task should report the terminal state");
+	assert(closeMessage.includes("closure reason: recorded"), "/close-task should confirm reason capture without printing it");
+	assert(!closeMessage.includes("done safely"), "/close-task should not echo raw closure reason text");
+	const closeCall = closeCommandTask.execCalls.find((call) => call.args[0]?.endsWith("task-close.sh"));
+	assert(closeCall?.args.includes("--reason-file"), "/close-task should pass closure reason through a private file");
+	const closeReasonPath = closeCall?.args[closeCall.args.indexOf("--reason-file") + 1];
+	assert(closeReasonPath && !existsSync(closeReasonPath), "/close-task should clean up the private reason file");
+	assert(closeCall?.args.includes("--release"), "/close-task should ask the shared API to release the current-session lease");
+	await closeCommandTask.commands.get("status").handler("", closeCommandTask.ctx);
+	assert(closeCommandTask.sentMessages.at(-1).content.includes("task completed"), "/status should show that the task was closed after /close-task");
+
+	const closeNoCapability = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		scriptResults: { "task-api.sh": { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle"] }), stderr: "" } },
+	});
+	await closeNoCapability.handlers.get("session_start")({ reason: "startup" }, closeNoCapability.ctx);
+	await closeNoCapability.handlers.get("before_agent_start")({ prompt: "Implement close UX without capability", systemPrompt: "base" }, closeNoCapability.ctx);
+	await closeNoCapability.commands.get("close-task").handler("completed", closeNoCapability.ctx);
+	assert(closeNoCapability.sentMessages.at(-1).content.includes("task-close capability not advertised"), "/close-task should degrade when shared API does not advertise close support");
+
+	const closeFailureTask = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		scriptResults: { "task-close.sh": { code: 1, stdout: "", stderr: "BLOCKED: lease is held by secret-session" } },
+	});
+	await closeFailureTask.handlers.get("session_start")({ reason: "startup" }, closeFailureTask.ctx);
+	await closeFailureTask.handlers.get("before_agent_start")({ prompt: "Implement close UX with blocked lease", systemPrompt: "base" }, closeFailureTask.ctx);
+	await closeFailureTask.commands.get("close-task").handler("blocked waiting", closeFailureTask.ctx);
+	const closeFailureText = closeFailureTask.sentMessages.at(-1).content;
+	assert(closeFailureText.includes("close blocked by the active task lease"), "/close-task should explain lease blockers generically");
+	assert(!closeFailureText.includes("secret-session"), "/close-task should not expose raw lease/session details from stderr");
+
 	const lifecycleUnavailableTask = createTaskHarness({
 		bindPayload: taskBindPayload(),
 		scriptResults: { "task-lifecycle.sh": { code: 1, stdout: "", stderr: "private lifecycle error" } },
@@ -160,7 +196,7 @@ export async function runTaskLayerTests() {
 		scriptResults: {
 			"task-api.sh": [
 				{ code: 1, stdout: "", stderr: "task api warming up" },
-				{ code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_retention_diagnostics"] }), stderr: "" },
+				{ code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_close", "task_retention_diagnostics"] }), stderr: "" },
 			],
 		},
 		bindPayload: taskBindPayload(),

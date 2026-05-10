@@ -3,6 +3,7 @@ import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-
 import { modelSummary } from "../session-continuity/context";
 import { agentsRoot } from "../shared/config";
 import { parseJson } from "../shared/json";
+import { withPrivateTempTextFile } from "../shared/private-temp";
 import type { FinalTaskVisibility } from "../shared/final-visibility";
 import type { OrchestrationDecision } from "../shared/orchestration-guidance";
 import type { TaskWeight } from "../shared/prompt-guidance";
@@ -15,11 +16,13 @@ import {
 	SUPPORTED_TASK_API_VERSION,
 	emptyActivity,
 	supportsTaskArtifacts,
+	supportsTaskClose,
 	supportsTaskLifecycle,
 	type ArtifactAddResult,
 	type ArtifactListResult,
 	type BindResult,
 	type OrchestrationTrackingState,
+	type TaskCloseResult,
 	type TaskLayerState,
 	type TaskLifecycleResult,
 } from "./task-layer-types";
@@ -287,6 +290,48 @@ export function createAgentsTaskLayer() {
 			return ["- lifecycle API: unavailable (exception)"];
 		}
 	}
+	function closeErrorSummary(result: { stderr?: string; stdout?: string; code?: number }): string {
+		const text = `${result.stderr || ""} ${result.stdout || ""}`.toLowerCase();
+		if (text.includes("credential")) return "closure text was rejected by policy";
+		if (text.includes("terminal task")) return "task is already terminal";
+		if (text.includes("lease")) return "close blocked by the active task lease";
+		return `task-close failed (exit ${result.code ?? "unknown"})`;
+	}
+	async function closeTask(pi: ExtensionAPI, ctx: ExtensionContext, status: "completed" | "blocked", reason = ""): Promise<{ ok: boolean; lines: string[] }> {
+		if (!(await ensureTaskApi(pi, state, ctx.cwd))) return { ok: false, lines: ["## Task close", "- result: unavailable", "- reason: task API unavailable"] };
+		if (!supportsTaskClose(state)) return { ok: false, lines: ["## Task close", "- result: unavailable", "- reason: task-close capability not advertised"] };
+		if (!state.active?.task_id) await refreshDiscoveredTaskScope(pi, ctx);
+		const taskId = state.active?.task_id || state.discovered?.task_id;
+		if (!taskId) return { ok: false, lines: ["## Task close", "- result: no active task", "- action: run a nontrivial task turn first or inspect /status"] };
+		const args = [taskId, status, "--runtime", "pi", "--owner", process.env.USER || "unknown", "--session", state.sessionId, "--release"];
+		const runClose = async (reasonFile?: string) => {
+			if (reasonFile) args.push("--reason-file", reasonFile);
+			return await runScript(pi, "task-close.sh", args, ctx.cwd, 8_000);
+		};
+		const result = reason.trim() ? await withPrivateTempTextFile("pi-task-close-reason-", reason.trim(), runClose) : await runClose();
+		if (result.code !== 0) return { ok: false, lines: ["## Task close", "- result: blocked", `- reason: ${closeErrorSummary(result)}`] };
+		const payload = parseJson<TaskCloseResult>(result.stdout);
+		if (!payload?.status) return { ok: false, lines: ["## Task close", "- result: unavailable", "- reason: task-close returned invalid JSON"] };
+		state.active = undefined;
+		state.discovered = undefined;
+		state.context = undefined;
+		state.lastAction = "skipped";
+		state.lastReason = `task ${payload.status}`;
+		state.lastError = undefined;
+		state.artifactCount = 0;
+		state.artifactRecordedThisTurn = 0;
+		state.artifactSkipped = 0;
+		return {
+			ok: true,
+			lines: [
+				"## Task close",
+				`- result: ${payload.status}`,
+				"- lease: release requested for the current Pi session",
+				`- closure reason: ${payload.has_closure_reason || reason.trim() ? "recorded" : "none"}`,
+				"- artifact cleanup: shared manifest-and-marker HTML cleanup may run for terminal task state",
+			],
+		};
+	}
 	function statusLines(): string[] {
 		if (state.active?.task_id) {
 			const skipped = state.artifactSkipped ? `, ${state.artifactSkipped} skipped` : "";
@@ -365,6 +410,9 @@ export function createAgentsTaskLayer() {
 				gateIds: decision.gates.ids,
 			});
 			return await recordTaskEvent(pi, ctx, "orchestration_recommended", orchestrationEventArgs(decision));
+		},
+		async closeTask(pi: ExtensionAPI, ctx: ExtensionContext, status: "completed" | "blocked", reason = ""): Promise<{ ok: boolean; lines: string[] }> {
+			return closeTask(pi, ctx, status, reason);
 		},
 		async recordOrchestrationChosen(pi: ExtensionAPI, ctx: ExtensionContext, topology: string, _reason = "explicit /choose-topology command"): Promise<boolean> {
 			const chosen = topology.trim().replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 80);

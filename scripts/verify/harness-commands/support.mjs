@@ -325,7 +325,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				const overridden = scriptResult(scriptName, { cmd, args, options });
 				if (overridden !== undefined) return overridden;
 			}
-			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_retention_diagnostics", "task_archive", "html_artifact_cleanup"] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_close", "task_retention_diagnostics", "task_archive", "html_artifact_cleanup"] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-classify.sh")) {
 				if (classifyResult) return classifyResult;
 				const promptFileIndex = args.indexOf("--prompt-file");
@@ -365,6 +365,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("memory-promote.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, promoted: true, record: { id: args[1], state: "approved", title: "Promoted memory", scope: { type: "task" } } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-forget.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, forgotten: true, record: { id: args[1], state: "deprecated", title: "Forgotten memory", scope: { type: "task" } } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-lifecycle.sh")) return { code: 0, stdout: JSON.stringify(taskLifecyclePayload({ task_id: args[1], ...(lifecyclePayload ?? {}) })), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-close.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, status: args[2] || "completed", closed_at: "2026-05-08T00:00:00Z", has_next_action: true, has_closure_reason: args.includes("--reason-file") }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-retention.sh")) return { code: 0, stdout: JSON.stringify(taskRetentionPayload(retentionPayload ?? {})), stderr: "" };
 			if (cmd === "bash" && script.endsWith("pi-package-doctor.sh")) return { code: 0, stdout: JSON.stringify(piPackagePolicyPayload(packagePolicyPayload ?? {})), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-heartbeat.sh")) return { code: 0, stdout: "", stderr: "" };

@@ -59,6 +59,8 @@ The shared `.agents` scripts own project-root, bootstrap-path, sensitive-path, e
 
 For long reports or briefs that would be hard to scan in chat, `.agents` may steer the agent to create a local HTML artifact and keep the chat response concise. The harness surfaces that guidance and may open the completed local file only when the shared HTML auto-open decision enables it; it does not decide report structure or create artifacts on its own.
 
+Task closure is explicit. Use `/close-task completed [reason]` or `/close-task blocked [reason]` when the active task should enter a terminal state. The command passes the reason through a private temporary file, calls `.agents/scripts/task-close.sh`, requests current-session lease release, and does not print raw closure text back into chat.
+
 ## UI polish
 
 The UI polish extension keeps the compact `π` terminal title while idle and animates a small braille spinner in the titlebar during active agent turns. Kitty shows this in tabs when tab titles are enabled. It also displays live elapsed wall-clock time in the working indicator and appends the elapsed time to each final assistant response.
@@ -73,6 +75,7 @@ After loading this package in pi, these commands provide explicit overrides and 
 /doctor            # heavier diagnostics/audit; /doct alias also works
 /memory
 /checkpoint [note]
+/close-task completed|blocked [reason]  # explicit terminal task close via .agents task-close.sh
 /skills-audit [skills-root]
 /simplify [scope]
 /review [scope]
@@ -111,6 +114,8 @@ npm ci
 npm run typecheck
 npm run smoke:pi
 npm run verify
+npm run verify:cross-repo   # local .agents API compatibility check
+npm run safe-pi:check       # local package-admission pre-launch check
 npm run harness:audit
 npm run skills:audit
 npm run hooks:install
@@ -118,7 +123,7 @@ npm run hooks:install
 
 `npm run smoke:pi` performs a local, no-agent-turn Pi package lifecycle smoke check: it loads this package through Pi's `DefaultResourceLoader`, verifies extension registration, and confirms prompt/theme discovery without requiring API keys.
 
-The tracked pre-push hook runs `npm run verify` and `npm run harness:audit`.
+The tracked pre-push hook runs `npm run verify` and `npm run harness:audit`. `npm run verify:full-local` also checks the live local `.agents` API compatibility path; keep it local-only because it depends on this machine's shared control-plane checkout.
 
 Cross-runtime task-script changes live in your `.agents` checkout; validate them with:
 
@@ -145,9 +150,20 @@ pi install git:https://github.com/benjamin-shih/pi-harness.git
 
 or referenced as a local checkout from `settings.json`.
 
+## Safe Pi launch
+
+Use the `.agents` wrapper as the default local launch path so package admission runs before Pi loads extensions:
+
+```bash
+~/.agents/bin/pi --version
+npm run safe-pi:check
+```
+
+The harness only surfaces read-only package approval status after extensions have loaded; pre-launch gating belongs to `.agents/scripts/safe-pi.sh`.
+
 ## Compatibility checkpoint
 
-Current release target: `v0.4.1`.
+Current release target: `v0.5.0`.
 
 Validated with:
 
@@ -159,7 +175,7 @@ Validated with:
 ## Release notes
 
 ```bash
-npm run changelog -- v0.4.1
+npm run changelog -- v0.5.0
 ```
 
 See `RELEASING.md` for the release checklist.

@@ -14,7 +14,7 @@ import {
 	gitChangeSnapshot,
 	looksFileMutatingCommand,
 	type GitChangeSnapshot,
-} from "./harness-commands/cleanup-guard";
+} from "./shared/cleanup-guard";
 import { queueFollowUpAfterCurrentAgent } from "./shared/deferred-user-message";
 import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
 import { htmlArtifactPathFromTool, openHtmlArtifact } from "./shared/html-artifact-open";
@@ -22,6 +22,7 @@ import { applyMode, modeDescription, modeNames } from "./harness-commands/modes"
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
+import { registerTaskCloseCommand } from "./harness-commands/task-close-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
 import { registerControlCenterCommand } from "./shared/control-center-command";
 import { registerMemoryAdminCommands } from "./shared/memory-admin-command";
@@ -98,6 +99,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	registerChooseTopologyCommand(pi, taskLayer);
 	registerMemoryAdminCommands(pi, taskLayer);
 	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
+	registerTaskCloseCommand(pi, taskLayer);
 	registerSkillsAuditCommand(pi, PACKAGE_ROOT);
 	pi.on("session_start", async (_event, ctx) => {
 		await taskLayer.sessionStart(pi, ctx);

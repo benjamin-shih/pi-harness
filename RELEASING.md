@@ -8,6 +8,8 @@ This is a private pi harness package. Release tags are mainly for rollback and c
 npm ci
 npm run verify
 npm run harness:audit
+AGENTS_SHARED_ROOT=/Users/benjaminshih/.agents npm run verify:cross-repo
+npm run safe-pi:check
 ```
 
 Install the tracked pre-push hook once per checkout:
@@ -21,7 +23,7 @@ npm run hooks:install
 Generate a commit-based draft:
 
 ```bash
-npm run changelog -- v0.4.1
+npm run changelog -- <version>
 ```
 
 Then manually edit `CHANGELOG.md`. Keep these sections for every release:
@@ -41,7 +43,8 @@ Only tag from a clean worktree after local validation passes and CI is expected 
 git status --short --branch
 npm run verify
 npm run harness:audit
-git tag -a v0.4.1 -m "v0.4.1"
+AGENTS_SHARED_ROOT=/Users/benjaminshih/.agents npm run verify:cross-repo
+git tag -a <version> -m "<version>"
 git push origin main --tags
 ```
 

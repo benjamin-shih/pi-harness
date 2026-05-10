@@ -37,6 +37,13 @@ export type ArtifactListResult = {
 	count: number;
 };
 
+export type TaskCloseResult = {
+	status?: string;
+	closed_at?: string;
+	has_next_action?: boolean;
+	has_closure_reason?: boolean;
+};
+
 export type TaskLifecycleResult = {
 	task_api_version?: number;
 	status: string;
@@ -121,6 +128,10 @@ export function supportsTaskArtifacts(state: TaskLayerState): boolean {
 
 export function supportsTaskLifecycle(state: TaskLayerState): boolean {
 	return Boolean(state.apiInfo?.capabilities?.includes("task_lifecycle"));
+}
+
+export function supportsTaskClose(state: TaskLayerState): boolean {
+	return Boolean(state.apiInfo?.capabilities?.includes("task_close"));
 }
 
 export function supportsTaskRetentionDiagnostics(state: TaskLayerState): boolean {

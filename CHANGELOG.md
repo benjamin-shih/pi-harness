@@ -5,6 +5,23 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## 0.5.0 - 2026-05-10
+
+### Added
+- `/close-task` and `/task-close` explicitly close the active AGENTS task as completed or blocked through the shared `.agents` task-close API.
+- Local `verify:cross-repo` validates harness compatibility with the live shared `.agents` task, orchestration, HTML artifact, memory, and package-policy APIs.
+- `safe-pi:check` documents and runs the shared pre-launch Pi package admission gate.
 - `/run-card`, Control Center, and ambient orchestration now surface shared long-response HTML guidance, flexible template-structure policy, and compact HTML title guidance.
 - Ambient orchestration guidance now calls the shared `.agents` control-plane route API for standard/complex turns without auto-launching subagents.
 - `/run-card` shows the latest or explicitly requested orchestration route, including project-registry metadata, as read-only debug visibility.
