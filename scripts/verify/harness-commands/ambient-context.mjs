@@ -174,6 +174,8 @@ export async function runAmbientContextTests() {
 	await explicitControlCenterTask.commands.get("control-center").handler("--project STATS300C Finish HW3", explicitControlCenterTask.ctx);
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("task: coursework; complexity complex; risk medium"), "/control-center with prompt text should show route summary");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("topology: parallel_recon"), "/control-center with prompt text should show orchestration topology");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("topology rationale: coursework needs recon"), "/control-center should show why the topology was recommended");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("project defaults: checks make check-homework; write assist_explain_verify; coursework assist_explain_verify"), "/control-center should show project defaults beside the decision");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html artifact modes: html_report"), "/control-center should summarize HTML artifact modes from decision payloads");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/control-center should summarize HTML artifact auto-open policy");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("delegation launch: manual_main_agent_only; auto-launch no"), "/control-center should summarize manual-only delegation policy");

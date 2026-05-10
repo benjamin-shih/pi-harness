@@ -20,7 +20,7 @@ export type ControlCenterRouteSummary = {
 export type ControlCenterDecisionSummary = {
 	task?: { shape?: string; complexity?: string; risk?: string };
 	route?: { run?: { shape?: string; summary?: string } };
-	topology?: { recommended?: string; reason?: string; advisory_only?: boolean; subagents?: Array<{ role?: string; mode?: string; when?: string }> };
+	topology?: { recommended?: string; reason?: string; description?: string; advisory_only?: boolean; subagents?: Array<{ role?: string; mode?: string; when?: string }> };
 	gates?: { ids?: string[]; preflight?: Array<{ id?: string }>; execution?: Array<{ id?: string }>; verification?: Array<{ id?: string }>; final?: Array<{ id?: string }> };
 	memory?: { ambient_reads?: string; durable_writes?: string };
 	delegation_workflow?: DelegationWorkflow;
@@ -28,6 +28,7 @@ export type ControlCenterDecisionSummary = {
 	checks?: string[];
 	evidence_required?: string[];
 	stop_conditions?: string[];
+	reasons?: string[];
 };
 
 export type ControlCenterOrchestrationTracking = {
@@ -235,9 +236,9 @@ async function load(){
   status.textContent = 'Health: ' + state.health + ' · ' + (p.generated_at || 'unknown') + ' · ' + state.summary;
   status.className = state.health === 'ok' ? 'muted' : 'warn';
   cards.innerHTML = [
-    section('Project', '<p><b>' + esc(project.name) + '</b> (' + esc(project.type) + ')</p><p><code>' + esc(project.root) + '</code></p><p>Registry: ' + esc(project.registry_id || 'unregistered') + ' via ' + esc(project.match_type || 'unknown') + '</p><p>Policy: write ' + esc(project.write_policy) + '; coursework ' + esc(project.coursework_policy || 'none') + '</p>'),
+    section('Project', '<p><b>' + esc(project.name) + '</b> (' + esc(project.type) + ')</p><p><code>' + esc(project.root) + '</code></p><p>Registry: ' + esc(project.registry_id || 'unregistered') + ' via ' + esc(project.match_type || 'unknown') + '</p><p>Policy: write ' + esc(project.write_policy) + '; coursework ' + esc(project.coursework_policy || 'none') + '</p><p>Default checks: ' + esc((project.default_checks || []).join(', ') || 'none') + '</p>'),
     section('Route', route.task ? '<p>Task: ' + esc(route.task.shape) + ' · ' + esc(route.task.complexity) + ' · risk ' + esc(route.task.risk) + '</p><p>Run: ' + esc((route.run || {}).shape || 'none') + '</p>' : '<p class="muted">No prompt route requested.</p>'),
-    section('Orchestration', topology.recommended ? '<p>Topology: <b>' + esc(topology.recommended) + '</b></p><p>' + esc(topology.reason || '') + '</p><p>Preflight: ' + esc((gates.preflight || []).map(g => g.id).join(', ') || 'none') + '</p><p>Execution: ' + esc((gates.execution || []).map(g => g.id).join(', ') || 'none') + '</p><p>Verification: ' + esc((gates.verification || []).map(g => g.id).join(', ') || 'none') + '</p><p>Final: ' + esc((gates.final || []).map(g => g.id).join(', ') || 'none') + '</p><p>Memory: ' + esc(((decision.memory || {}).ambient_reads) || 'unknown') + ' reads; writes ' + esc(((decision.memory || {}).durable_writes) || 'explicit_only') + '</p>' : '<p class="muted">No orchestration decision requested.</p>'),
+    section('Orchestration', topology.recommended ? '<p>Topology: <b>' + esc(topology.recommended) + '</b></p><p>Rationale: ' + esc(topology.reason || '') + '</p><p>Description: ' + esc(topology.description || 'none') + '</p><p>Decision basis: ' + esc((decision.reasons || []).join(', ') || 'none') + '</p><p>Project defaults: checks ' + esc((project.default_checks || []).join(', ') || 'none') + '; write ' + esc(project.write_policy || 'unknown') + '</p><p>Preflight: ' + esc((gates.preflight || []).map(g => g.id).join(', ') || 'none') + '</p><p>Execution: ' + esc((gates.execution || []).map(g => g.id).join(', ') || 'none') + '</p><p>Verification: ' + esc((gates.verification || []).map(g => g.id).join(', ') || 'none') + '</p><p>Final: ' + esc((gates.final || []).map(g => g.id).join(', ') || 'none') + '</p><p>Memory: ' + esc(((decision.memory || {}).ambient_reads) || 'unknown') + ' reads; writes ' + esc(((decision.memory || {}).durable_writes) || 'explicit_only') + '</p>' : '<p class="muted">No orchestration decision requested.</p>'),
     section('Delegation workflow', delegation.launch_policy ? '<p>Launch: ' + esc(delegation.launch_policy) + ' · auto-launch ' + esc(Boolean(delegation.auto_launch)) + '</p><p>Pattern: ' + esc(delegation.recommended_pattern || 'none') + '</p><p>Next: ' + esc(delegation.next_action || 'none') + '</p><p>Subagents: ' + esc((delegation.subagent_contracts || []).map(s => s.role + ' (' + s.mode + ')').join(', ') || 'none') + '</p><p>Progress: ' + esc(((delegation.coordination || {}).progress_updates) || 'unknown') + '</p>' : '<p class="muted">No delegation workflow decision.</p>'),
     section('HTML artifacts', (html.modes || []).length ? '<p>Modes: ' + esc((html.modes || []).map(m => m.id).join(', ')) + '</p><p>Publish: ' + esc(html.publish_policy || 'explicit_only') + ' · source: ' + esc(html.source_of_truth || 'json_or_markdown') + '</p><p>Auto-open: ' + esc(((html.auto_open || {}).enabled) ? 'enabled' : 'disabled') + '</p><p>Safety: ' + esc((html.safety || []).slice(0,6).join(', ')) + '</p>' : '<p class="muted">No HTML artifact recommendation.</p>'),
     section('Chosen vs recommended', tracking.available ? '<p>Recommended: ' + esc(((tracking.recommended || {}).topology) || 'none') + '</p><p>Chosen: ' + esc(((tracking.chosen || {}).topology) || 'none') + '</p><p>Status: ' + esc(tracking.status || 'unknown') + ' · mismatch ' + esc(Boolean(tracking.mismatch)) + '</p><p>Explanation: ' + esc(tracking.explanation || '') + '</p><p>Action: ' + esc(tracking.recommended_action || '') + '</p>' : '<p class="muted">No orchestration tracking events.</p>'),
@@ -353,7 +354,11 @@ export function formatControlCenter(state: ControlCenterState): string {
 		route?.run?.shape ? `- run shape: ${route.run.shape}` : "- run shape: none",
 		"",
 		"## Orchestration",
-		decision?.topology?.recommended ? `- topology: ${decision.topology.recommended}; ${decision.topology.reason ?? ""}` : "- topology: no orchestration decision requested",
+		decision?.topology?.recommended ? `- topology: ${decision.topology.recommended}` : "- topology: no orchestration decision requested",
+		decision?.topology?.recommended ? `- topology rationale: ${decision.topology.reason || "none"}` : "- topology rationale: none",
+		decision?.topology?.recommended ? `- topology description: ${decision.topology.description || "none"}` : "- topology description: none",
+		listLine("decision basis", decision?.reasons),
+		`- project defaults: checks ${project.default_checks?.length ? project.default_checks.join("; ") : "none"}; write ${project.write_policy || "unknown"}; coursework ${project.coursework_policy || "none"}`,
 		decision?.route?.run?.shape ? `- run shape: ${decision.route.run.shape}` : "- run shape: none",
 		listLine("gate ids", decision?.gates?.ids),
 		listLine("preflight gates", decision?.gates?.preflight?.map((gate) => gate.id || "")),
