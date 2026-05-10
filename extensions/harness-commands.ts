@@ -22,6 +22,7 @@ import { applyMode, modeDescription, modeNames } from "./harness-commands/modes"
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
+import { registerInboxCommand } from "./harness-commands/inbox-command";
 import { registerTaskCloseCommand } from "./harness-commands/task-close-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
 import { registerControlCenterCommand } from "./shared/control-center-command";
@@ -98,6 +99,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	registerControlCenterCommand(pi, taskLayer);
 	registerChooseTopologyCommand(pi, taskLayer);
 	registerMemoryAdminCommands(pi, taskLayer);
+	registerInboxCommand(pi);
 	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
 	registerTaskCloseCommand(pi, taskLayer);
 	registerSkillsAuditCommand(pi, PACKAGE_ROOT);

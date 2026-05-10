@@ -61,6 +61,8 @@ For long reports or briefs that would be hard to scan in chat, `.agents` may ste
 
 Task closure is explicit. Use `/close-task completed [reason]` or `/close-task blocked [reason]` when the active task should enter a terminal state. The command passes the reason through a private temporary file, calls `.agents/scripts/task-close.sh`, requests current-session lease release, and does not print raw closure text back into chat.
 
+Async inbox support is an MVP queue/status surface. `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh` and returns a bounded receipt; worker launch and same-repo scheduling remain future `.agents` control-plane slices, not hidden harness automation.
+
 ## UI polish
 
 The UI polish extension keeps the compact `π` terminal title while idle and animates a small braille spinner in the titlebar during active agent turns. Kitty shows this in tabs when tab titles are enabled. It also displays live elapsed wall-clock time in the working indicator and appends the elapsed time to each final assistant response.
@@ -74,6 +76,8 @@ After loading this package in pi, these commands provide explicit overrides and 
 /status            # visual bounded snapshot with task/ambient init hints; avoids heavy audit/untracked filename scans
 /doctor            # heavier diagnostics/audit; /doct alias also works
 /memory
+/inbox                         # show async front-door inbox status
+/inbox submit <request>        # queue a request through .agents inbox API; does not launch workers yet
 /checkpoint [note]
 /close-task completed|blocked [reason]  # explicit terminal task close via .agents task-close.sh
 /skills-audit [skills-root]

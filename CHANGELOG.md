@@ -5,7 +5,7 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
-- None.
+- `/inbox` and `/inbox submit <request>` expose the shared `.agents` async inbox MVP as a queue/status surface without launching workers.
 
 ### Changed
 - CI now also runs on version tag pushes.
