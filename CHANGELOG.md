@@ -20,6 +20,7 @@ All notable changes to this personal pi harness package are tracked here.
 - `/run-card`, Control Center, and Control Center web now surface manual-only delegation workflow policy, subagent contracts, and chosen-vs-recommended mismatch explanations.
 - Control Center text/web views now show the shared sanitized recent task-event timeline.
 - Control Center text/web views now make topology rationale and project defaults/checks visible next to the decision.
+- `/run-card`, Control Center, and Control Center web now surface the reusable `.agents` HTML artifact template and component capabilities.
 - `/run-card` chosen-vs-recommended tracking now includes a session-local explanation/action and points stale-choice checks to Control Center.
 - Control Center cards include the orchestration decision summary when prompt text is supplied.
 - `/remember`, `/promote-memory`, and `/forget-memory` provide explicit durable-memory admin commands; `/remember` creates candidate records by default.

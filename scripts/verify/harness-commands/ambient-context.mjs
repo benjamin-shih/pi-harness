@@ -128,6 +128,8 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("default checks: make verify"), "/run-card should include project registry default checks");
 	assert(boundTask.sentMessages.at(-1).content.includes("gate ids: repo_clean_preflight"), "/run-card should include decision gate ids");
 	assert(boundTask.sentMessages.at(-1).content.includes("html artifacts: html_report"), "/run-card should include HTML artifact recommendations");
+	assert(boundTask.sentMessages.at(-1).content.includes("benjamin-local-template.html"), "/run-card should show the reusable HTML artifact template");
+	assert(boundTask.sentMessages.at(-1).content.includes("range_sliders"), "/run-card should show template component capabilities");
 	assert(boundTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/run-card should show HTML artifact auto-open policy");
 	assert(boundTask.sentMessages.at(-1).content.includes("delegation launch: manual_main_agent_only; auto-launch no"), "/run-card should show manual-only delegation launch policy");
 	assert(boundTask.sentMessages.at(-1).content.includes("delegation pattern: single_writer_optional_review"), "/run-card should show delegation workflow pattern");
@@ -177,6 +179,8 @@ export async function runAmbientContextTests() {
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("topology rationale: coursework needs recon"), "/control-center should show why the topology was recommended");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("project defaults: checks make check-homework; write assist_explain_verify; coursework assist_explain_verify"), "/control-center should show project defaults beside the decision");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html artifact modes: html_report"), "/control-center should summarize HTML artifact modes from decision payloads");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html template: "), "/control-center should summarize the reusable HTML artifact template");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html components: cards; tabs; range_sliders; sortable_tables"), "/control-center should summarize reusable HTML component capabilities");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/control-center should summarize HTML artifact auto-open policy");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("delegation launch: manual_main_agent_only; auto-launch no"), "/control-center should summarize manual-only delegation policy");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("registry: STATS300C via explicit_project"), "/control-center should pass explicit project selectors to the shared dashboard API");

@@ -34,6 +34,7 @@ export type HtmlArtifactDecision = {
 	recommended?: Array<{ mode?: string; reason?: string }>;
 	modes?: Array<{ id?: string; name?: string; description?: string }>;
 	auto_open?: { enabled?: boolean; when?: string; modes?: string[]; safety?: string[] };
+	template?: { id?: string; path?: string; usage?: string; theme_source?: string; theme_notes?: string[]; allowed_components?: string[] };
 	safety?: string[];
 	constraints?: string[];
 };
@@ -178,9 +179,12 @@ function htmlArtifactLines(decision: OrchestrationDecision): string[] {
 	if (!html) return ["- html artifacts: none"];
 	const modes = html.modes?.map((mode) => mode.id || "").filter(Boolean) ?? [];
 	const safety = html.safety ?? [];
+	const components = html.template?.allowed_components ?? [];
 	const autoOpen = html.auto_open?.enabled ? "enabled for local files after creation" : "disabled";
 	return [
 		`- html artifacts: ${modes.length ? modes.slice(0, 4).join(", ") : "none"}`,
+		`- html template: ${html.template?.path || html.template?.id || "none"}`,
+		listLine("html components", components),
 		`- html publish: ${html.publish_policy || "explicit_only"}; source of truth ${html.source_of_truth || "json_or_markdown"}`,
 		`- html auto-open: ${autoOpen}`,
 		listLine("html safety", safety),
