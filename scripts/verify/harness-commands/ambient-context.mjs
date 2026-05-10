@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { loadExtensionModule } from "../harness.mjs";
-import { assert, controlPlaneDashboardPayload, controlPlaneDecisionPayload, createTaskHarness, harnessCommands, homeRoot, join, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
+import { agentsRoot, assert, controlPlaneDashboardPayload, controlPlaneDecisionPayload, createTaskHarness, harnessCommands, homeRoot, join, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
 
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
@@ -132,6 +132,9 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("html templates: benjamin_local_v1; benjamin_report_v1; benjamin_dashboard_v1"), "/run-card should show the reusable HTML template catalog");
 	assert(boundTask.sentMessages.at(-1).content.includes("range_sliders"), "/run-card should show template component capabilities");
 	assert(boundTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/run-card should show HTML artifact auto-open policy");
+	assert(boundTask.sentMessages.at(-1).content.includes("html long responses: concise_summary_plus_local_artifact_path_and_next_action"), "/run-card should show long-response HTML policy");
+	assert(boundTask.sentMessages.at(-1).content.includes("html structure: content_first_flexible"), "/run-card should show flexible HTML structure policy");
+	assert(boundTask.sentMessages.at(-1).content.includes("html title style: compact_first_screen_readable"), "/run-card should show compact title policy");
 	assert(boundTask.sentMessages.at(-1).content.includes("html retention: manifest_and_marker"), "/run-card should show HTML artifact retention policy");
 	assert(boundTask.sentMessages.at(-1).content.includes("delegation launch: manual_main_agent_only; auto-launch no"), "/run-card should show manual-only delegation launch policy");
 	assert(boundTask.sentMessages.at(-1).content.includes("delegation pattern: single_writer_optional_review"), "/run-card should show delegation workflow pattern");
@@ -145,6 +148,24 @@ export async function runAmbientContextTests() {
 		assert(boundTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPlan), "harness should auto-open newly written local HTML plan artifacts");
 	} finally {
 		rmSync(htmlOpenTemp, { recursive: true, force: true });
+	}
+	const htmlOpenDisabled = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		controlPlaneDecisionPayload: controlPlaneDecisionPayload({
+			artifacts: { html: { publish_policy: "explicit_only", source_of_truth: "json_or_markdown", modes: [{ id: "html_report" }], auto_open: { enabled: false, when: "after_local_html_artifact_created", modes: [], safety: ["local_file_only"] }, long_response: { enabled: true, chat_response: "concise_summary_plus_local_artifact_path_and_next_action" }, authoring: { structure_policy: "content_first_flexible", title_style: "compact_first_screen_readable" }, template: { id: "benjamin_local_v1", path: `${agentsRoot}/shared/templates/html-artifacts/benjamin-local-template.html`, allowed_components: [] }, templates: [{ id: "benjamin_local_v1" }], retention: { cleanup_strategy: "manifest_and_marker", delete_on_task_status: ["completed", "stale"], marker: "agents-html-artifact" }, safety: [] } },
+		}),
+	});
+	await htmlOpenDisabled.handlers.get("session_start")({ reason: "startup" }, htmlOpenDisabled.ctx);
+	await htmlOpenDisabled.handlers.get("before_agent_start")({ prompt: "Write a long report", systemPrompt: "base" }, htmlOpenDisabled.ctx);
+	const htmlOpenDisabledTemp = mkdtempSync(join(tmpdir(), "pi-html-open-disabled-"));
+	try {
+		const htmlReport = join(htmlOpenDisabledTemp, "very-long-report.html");
+		writeFileSync(htmlReport, "<!doctype html><title>Report</title>");
+		await htmlOpenDisabled.handlers.get("tool_result")({ toolName: "write", input: { path: htmlReport }, isError: false }, htmlOpenDisabled.ctx);
+		await htmlOpenDisabled.handlers.get("agent_end")({}, htmlOpenDisabled.ctx);
+		assert(!htmlOpenDisabled.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlReport), "harness should not auto-open name-hinted HTML when shared policy disables auto-open");
+	} finally {
+		rmSync(htmlOpenDisabledTemp, { recursive: true, force: true });
 	}
 	await boundTask.commands.get("choose-topology").handler("single_agent_standard simple surgical task", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Orchestration choice"), "/choose-topology should render explicit choice tracking output");
@@ -187,6 +208,9 @@ export async function runAmbientContextTests() {
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html templates: benjamin_local_v1; benjamin_report_v1; benjamin_dashboard_v1"), "/control-center should summarize the reusable HTML template catalog");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html components: cards; tabs; range_sliders; sortable_tables"), "/control-center should summarize reusable HTML component capabilities");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/control-center should summarize HTML artifact auto-open policy");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html long responses: concise_summary_plus_local_artifact_path_and_next_action"), "/control-center should summarize long-response HTML policy");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html structure: content_first_flexible"), "/control-center should summarize flexible HTML structure policy");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html title style: compact_first_screen_readable"), "/control-center should summarize compact title policy");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html retention: manifest_and_marker"), "/control-center should summarize HTML artifact retention policy");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("delegation launch: manual_main_agent_only; auto-launch no"), "/control-center should summarize manual-only delegation policy");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("registry: STATS300C via explicit_project"), "/control-center should pass explicit project selectors to the shared dashboard API");

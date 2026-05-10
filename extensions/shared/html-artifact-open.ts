@@ -4,8 +4,6 @@ import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { OrchestrationDecisionState } from "./orchestration-guidance";
 
-const HTML_ARTIFACT_NAME_HINT = /(?:plan|report|dashboard|brief|review|run-card|control-center|artifact)/i;
-
 function shellUnquote(value: string): string {
 	return value.replace(/^["']|["']$/g, "");
 }
@@ -37,17 +35,13 @@ function htmlAutoOpenEnabled(decision?: OrchestrationDecisionState): boolean {
 	return Boolean(html?.modes?.some((mode) => mode.id && allowedModes.has(mode.id)));
 }
 
-function looksLikeHtmlPlanArtifact(filePath: string): boolean {
-	return HTML_ARTIFACT_NAME_HINT.test(path.basename(filePath));
-}
-
 export function htmlArtifactPathFromTool(event: ToolResultEvent, cwd: string, decision?: OrchestrationDecisionState): string | undefined {
 	if (event.isError || (event.toolName !== "write" && event.toolName !== "edit")) return undefined;
 	const rawPath = event.input?.path;
 	if (typeof rawPath !== "string" || !rawPath.trim()) return undefined;
 	const filePath = expandLocalPath(rawPath, cwd);
 	if (!filePath || !isHtmlPath(filePath)) return undefined;
-	if (!htmlAutoOpenEnabled(decision) && !looksLikeHtmlPlanArtifact(filePath)) return undefined;
+	if (!htmlAutoOpenEnabled(decision)) return undefined;
 	return filePath;
 }
 

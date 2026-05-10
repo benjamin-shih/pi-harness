@@ -32,8 +32,10 @@ export type HtmlArtifactDecision = {
 	publish_policy?: string;
 	source_of_truth?: string;
 	recommended?: Array<{ mode?: string; reason?: string }>;
-	modes?: Array<{ id?: string; name?: string; description?: string }>;
+	modes?: Array<{ id?: string; name?: string; description?: string; section_policy?: string }>;
 	auto_open?: { enabled?: boolean; when?: string; modes?: string[]; safety?: string[] };
+	long_response?: { enabled?: boolean; trigger?: string; preferred_modes?: string[]; preferred_templates?: string[]; chat_response?: string; guidance?: string[] };
+	authoring?: { default_voice?: string; structure_policy?: string; template_role?: string; title_style?: string; style_rules?: string[]; avoid_phrasing?: string[] };
 	template?: { id?: string; path?: string; usage?: string; theme_source?: string; theme_notes?: string[]; allowed_components?: string[] };
 	templates?: Array<{ id?: string; path?: string; usage?: string; allowed_components?: string[] }>;
 	retention?: { default_scope?: string; cleanup_strategy?: string; delete_on_task_status?: string[]; keep_on_task_status?: string[]; marker?: string; persistent_requires_explicit_user_request?: boolean };
@@ -184,6 +186,9 @@ function htmlArtifactLines(decision: OrchestrationDecision): string[] {
 	const components = html.template?.allowed_components ?? [];
 	const templates = html.templates?.map((item) => item.id || "").filter(Boolean) ?? [];
 	const autoOpen = html.auto_open?.enabled ? "enabled for local files after creation" : "disabled";
+	const longResponse = html.long_response?.enabled === false ? "disabled" : (html.long_response?.chat_response || "concise_summary_plus_local_artifact_path_and_next_action");
+	const structure = html.authoring?.structure_policy || "content_first_flexible";
+	const titleStyle = html.authoring?.title_style || "compact_first_screen_readable";
 	return [
 		`- html artifacts: ${modes.length ? modes.slice(0, 4).join(", ") : "none"}`,
 		`- html template: ${html.template?.path || html.template?.id || "none"}`,
@@ -191,6 +196,9 @@ function htmlArtifactLines(decision: OrchestrationDecision): string[] {
 		listLine("html components", components),
 		`- html publish: ${html.publish_policy || "explicit_only"}; source of truth ${html.source_of_truth || "json_or_markdown"}`,
 		`- html auto-open: ${autoOpen}`,
+		`- html long responses: ${longResponse}`,
+		`- html structure: ${structure}; templates guide presentation, not a fixed outline`,
+		`- html title style: ${titleStyle}`,
 		`- html retention: ${html.retention?.cleanup_strategy || "manifest_and_marker"}; delete marked task-scoped artifacts on ${(html.retention?.delete_on_task_status ?? ["completed", "stale"]).join("/")}`,
 		listLine("html safety", safety),
 	];
