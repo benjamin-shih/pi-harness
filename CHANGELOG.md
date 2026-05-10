@@ -33,6 +33,7 @@ All notable changes to this personal pi harness package are tracked here.
 - `/memory` now includes scoped-memory API health and explicit durable-write semantics in addition to memory-spine diagnostics.
 
 ### Fixed
+- Deferred harness/safety-gate self-follow-up prompts until after `agent_end` unwinds, avoiding transient Pi runtime `Agent is already processing a prompt` errors.
 - Scoped-memory status now uses the effective scope reported by `.agents`, so home-root project warnings can still show task-scoped memory API health instead of an unavailable state.
 - `/memory`, `/status`, and `/doctor` can now discover the active AGENTS task scope before any post-reload agent turn has rebound the in-memory task layer.
 

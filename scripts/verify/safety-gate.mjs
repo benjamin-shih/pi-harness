@@ -5,6 +5,8 @@ function textFromCodes(...codes) {
 	return String.fromCharCode(...codes);
 }
 
+const flushDeferredFollowUps = () => new Promise((resolve) => setTimeout(resolve, 5));
+
 export async function runSafetyGateBehaviorTests() {
 	const safetyGate = loadExtension("extensions/safety-gate.ts");
 	const handlers = new Map();
@@ -205,6 +207,34 @@ export async function runSafetyGateBehaviorTests() {
 		ctx,
 	);
 	assert(longFindWithSensitiveTail?.content?.[0]?.text === hiddenSensitiveResult, "safety-gate should hide path-heavy results when a protected path appears after many safe paths");
+	const sentFinalizationFollowUps = [];
+	let finalizationStatusCalls = 0;
+	const finalizationHandlers = new Map();
+	safetyGate({
+		on(event, handler) {
+			finalizationHandlers.set(event, handler);
+		},
+		sendUserMessage(message, options) {
+			sentFinalizationFollowUps.push({ message, options });
+		},
+		exec: async (cmd, args) => {
+			const key = args.join(" ");
+			if (cmd === "bash" && args[0]?.endsWith("path-safety.sh")) return { code: 0, stdout: JSON.stringify({ policy_api_version: 1, action: "allow", allowed: true }), stderr: "" };
+			if (key === "rev-parse --show-toplevel") return { code: 0, stdout: `${root}\n`, stderr: "" };
+			if (key === "rev-parse HEAD") return { code: 0, stdout: "HEAD1\n", stderr: "" };
+			if (key === "rev-list --left-right --count @{u}...HEAD") return { code: 0, stdout: "0 0\n", stderr: "" };
+			if (key === "status --porcelain=v1 --branch") return { code: 0, stdout: finalizationStatusCalls++ === 0 ? "## main...origin/main\n" : "## main...origin/main\n M src/app.ts\n", stderr: "" };
+			return { code: 1, stdout: "", stderr: "" };
+		},
+	});
+	await finalizationHandlers.get("before_agent_start")({ prompt: "Fix code" }, ctx);
+	await finalizationHandlers.get("agent_end")({}, ctx);
+	assert(sentFinalizationFollowUps.length === 0, "safety-gate should not send finalization follow-up synchronously from agent_end");
+	await flushDeferredFollowUps();
+	assert(sentFinalizationFollowUps.length === 1, "safety-gate should defer finalization follow-up until after agent_end unwinds");
+	assert(sentFinalizationFollowUps[0].message.includes("PI_GIT_FINALIZATION_GUARD"), "safety-gate finalization follow-up should keep its loop marker");
+	assert(sentFinalizationFollowUps[0].options?.deliverAs === "followUp", "safety-gate finalization follow-up should use followUp delivery");
+
 	for (const [label, policyResult] of [
 		["unavailable", { code: 1, stdout: "", stderr: "policy down" }],
 		["incompatible", { code: 0, stdout: JSON.stringify({ policy_api_version: 2, action: "allow" }), stderr: "" }],

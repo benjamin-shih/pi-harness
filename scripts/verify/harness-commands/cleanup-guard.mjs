@@ -1,5 +1,7 @@
 import { assert, createHarness, root } from "./support.mjs";
 
+const flushDeferredFollowUps = () => new Promise((resolve) => setTimeout(resolve, 5));
+
 export async function runCleanupGuardTests() {
 	const major = createHarness([
 		{ diff: "", untracked: "" },
@@ -10,6 +12,7 @@ export async function runCleanupGuardTests() {
 	assert(codingResult.systemPrompt.includes("remove code made obsolete"), "cleanup guidance should require obsolete-code removal");
 	await major.toolCall({ toolName: "edit", input: { path: "src/foo.ts" } }, {});
 	await major.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(major.sentUserMessages.length === 1, "harness should send a one-shot cleanup guard after major mutating diffs");
 	assert(major.sentUserMessages[0].message.includes("PI_CLEANUP_GUARD"), "cleanup guard should be marked to prevent loops");
 	assert(major.sentUserMessages[0].message.includes("gpt-5.2"), "cleanup guard should call out stale model/version identifiers");
@@ -22,6 +25,7 @@ export async function runCleanupGuardTests() {
 	await committedMajor.beforeAgentStart({ prompt: "Fix bug in src/foo.ts", systemPrompt: "base" }, { cwd: root });
 	await committedMajor.toolCall({ toolName: "bash", input: { command: "git add src/committed.ts && git commit -m test" } }, {});
 	await committedMajor.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(committedMajor.sentUserMessages.length === 1, "cleanup guard should fire for major changes committed before agent_end");
 
 	const continuation = createHarness([{ diff: "", untracked: "" }]);
@@ -35,6 +39,7 @@ export async function runCleanupGuardTests() {
 	await unchanged.beforeAgentStart({ prompt: "Fix bug in src/foo.ts", systemPrompt: "base" }, { cwd: root });
 	await unchanged.toolCall({ toolName: "bash", input: { command: "npm run verify" } }, {});
 	await unchanged.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(unchanged.sentUserMessages.length === 0, "cleanup guard should not fire when a broad command leaves the git diff unchanged");
 
 	const preExistingTiny = createHarness([
@@ -44,6 +49,7 @@ export async function runCleanupGuardTests() {
 	await preExistingTiny.beforeAgentStart({ prompt: "Fix bug in src/foo.ts", systemPrompt: "base" }, { cwd: root });
 	await preExistingTiny.toolCall({ toolName: "edit", input: { path: "src/tiny.ts" } }, {});
 	await preExistingTiny.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(preExistingTiny.sentUserMessages.length === 0, "cleanup guard should score only this-turn diff growth, not pre-existing large diffs");
 
 	const fourTinyFiles = createHarness([
@@ -53,6 +59,7 @@ export async function runCleanupGuardTests() {
 	await fourTinyFiles.beforeAgentStart({ prompt: "Update docs and config files", systemPrompt: "base" }, { cwd: root });
 	await fourTinyFiles.toolCall({ toolName: "edit", input: { path: "docs/a.md" } }, {});
 	await fourTinyFiles.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(fourTinyFiles.sentUserMessages.length === 0, "cleanup guard should not treat four tiny file edits as major");
 
 	const untracked = createHarness([
@@ -62,6 +69,7 @@ export async function runCleanupGuardTests() {
 	await untracked.beforeAgentStart({ prompt: "Fix bug in src/foo.ts", systemPrompt: "base" }, { cwd: root });
 	await untracked.toolCall({ toolName: "write", input: { path: "src/new.ts" } }, {});
 	await untracked.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(untracked.sentUserMessages.length === 1, "cleanup guard should account for large untracked source files");
 	assert(untracked.sentUserMessages[0].message.includes("untracked"), "cleanup guard diff summary should mention untracked files");
 
@@ -72,6 +80,7 @@ export async function runCleanupGuardTests() {
 	await smallUntracked.beforeAgentStart({ prompt: "Fix bug in src/foo.ts", systemPrompt: "base" }, { cwd: root });
 	await smallUntracked.toolCall({ toolName: "write", input: { path: "src/small.ts" } }, {});
 	await smallUntracked.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(smallUntracked.sentUserMessages.length === 0, "cleanup guard should not treat a tiny untracked source file as major");
 
 	const replaceSmall = createHarness([
@@ -81,6 +90,7 @@ export async function runCleanupGuardTests() {
 	await replaceSmall.beforeAgentStart({ prompt: "Replace the old helper in src/foo.ts", systemPrompt: "base" }, { cwd: root });
 	await replaceSmall.toolCall({ toolName: "edit", input: { path: "src/foo.ts" } }, {});
 	await replaceSmall.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(replaceSmall.sentUserMessages.length === 0, "cleanup guard should not treat every small replace/cleanup prompt as major");
 
 	const complexSmall = createHarness([
@@ -91,6 +101,7 @@ export async function runCleanupGuardTests() {
 	await complexSmall.beforeAgentStart({ prompt: longScopedPrompt, systemPrompt: "base" }, { cwd: root });
 	await complexSmall.toolCall({ toolName: "edit", input: { path: "src/foo.ts" } }, {});
 	await complexSmall.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(complexSmall.sentUserMessages.length === 0, "cleanup guard should not treat every complex prompt with a tiny diff as major");
 
 	const loop = createHarness([
@@ -100,5 +111,6 @@ export async function runCleanupGuardTests() {
 	await loop.beforeAgentStart({ prompt: "PI_CLEANUP_GUARD: run cleanup for this code change", systemPrompt: "base" }, { cwd: root });
 	await loop.toolCall({ toolName: "edit", input: { path: "src/foo.ts" } }, {});
 	await loop.agentEnd({}, { cwd: root });
+	await flushDeferredFollowUps();
 	assert(loop.sentUserMessages.length === 0, "cleanup guard should not recursively trigger itself");
 }

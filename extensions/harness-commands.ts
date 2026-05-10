@@ -15,6 +15,7 @@ import {
 	looksFileMutatingCommand,
 	type GitChangeSnapshot,
 } from "./harness-commands/cleanup-guard";
+import { queueFollowUpAfterCurrentAgent } from "./shared/deferred-user-message";
 import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
 import { htmlArtifactPathFromTool, openHtmlArtifact } from "./shared/html-artifact-open";
 import { applyMode, modeDescription, modeNames } from "./harness-commands/modes";
@@ -157,7 +158,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		const committedStats = await committedDiffStats(pi, ctx.cwd, initialChangeSnapshot?.head, currentSnapshot.head);
 		const changedStats = combineDiffStats(uncommittedStats, committedStats);
 		if (!currentPromptWasMajor && !diffLooksMajor(changedStats)) return;
-		pi.sendUserMessage(cleanupGuardMessage(changedStats, currentPromptWasMajor), { deliverAs: "followUp" });
+		queueFollowUpAfterCurrentAgent(pi, cleanupGuardMessage(changedStats, currentPromptWasMajor));
 	});
 	pi.on("session_shutdown", async (_event, ctx) => {
 		finalVisibility = undefined;

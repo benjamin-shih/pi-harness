@@ -5,6 +5,7 @@ import { GIT_FINALIZATION_MARKER, getGitFinalizationState, gitFinalizationStateC
 import { createPathSafetyChecker, type PathSafetyCheck, type PolicyOperation } from "./safety-gate-lib/policy";
 import { BLOCKED_OUTPUT, HIDDEN_SENSITIVE_RESULT, contentMentionsSensitivePath, redactToolContent } from "./safety-gate-lib/redaction";
 import { extractCopyMoveSourcePathTokens, extractInputPathTokens, extractOutputPathTokens, extractPathTokens, extractRecursiveEgressSourcePathTokens, extractWritePathTokens, looksMutatingBash, looksRecursiveTraversalCommand, parseGitCommands } from "./safety-gate-lib/shell";
+import { queueFollowUpAfterCurrentAgent } from "./shared/deferred-user-message";
 const BLOCKED_GIT =
 	"[safety-gate] Blocked git operation because it may stage, commit, or push credential-bearing private files.";
 const OUTPUT_COMMAND_RE = /\b(?:cat|bat|less|more|head|tail|sort|uniq|cut|wc|diff|comm|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl)\b/i;
@@ -306,6 +307,6 @@ export default function safetyGate(pi: ExtensionAPI) {
 			return;
 		}
 		const message = `${GIT_FINALIZATION_MARKER}: Git finalization is incomplete (${summarizeGitFinalizationState(currentState)}). Continue: run the relevant validation, commit, and push before giving the final summary. If finalization is blocked, report the exact blocker and leave the repo state explicit.`;
-		pi.sendUserMessage(message, { deliverAs: "followUp", triggerTurn: true } as any);
+		queueFollowUpAfterCurrentAgent(pi, message);
 	});
 }
