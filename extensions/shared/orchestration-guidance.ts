@@ -38,6 +38,22 @@ export type HtmlArtifactDecision = {
 	constraints?: string[];
 };
 
+export type DelegationWorkflow = {
+	authority?: string;
+	launch_policy?: string;
+	auto_launch?: boolean;
+	recommended_pattern?: string;
+	next_action?: string;
+	allowed_roles?: string[];
+	subagent_contracts?: Array<{ role?: string; mode?: string; when?: string; may_write?: boolean; requires_explicit_scope?: boolean }>;
+	deferred_contracts?: Array<{ role?: string; mode?: string; when?: string }>;
+	single_writer?: { default?: boolean; writer?: string; worker_allowed_after_explicit_scope?: boolean; parallel_writes_allowed?: boolean };
+	coordination?: { intercom?: string; progress_updates?: string; completion_handoffs?: string };
+	control?: { needs_attention?: string; interrupt?: string; resume?: string };
+	tracking?: { pairing_key?: string; mismatch_policy?: string; stale_choice_policy?: string };
+	guardrails?: string[];
+};
+
 export type OrchestrationDecision = {
 	decision_id?: string;
 	task: { shape: OrchestrationTaskShape; complexity: OrchestrationComplexity; risk: OrchestrationRisk };
@@ -46,6 +62,7 @@ export type OrchestrationDecision = {
 	topology: { recommended: string; name?: string; reason: string; description?: string; advisory_only: boolean; allowed_roles?: string[]; subagents: OrchestrationSubagent[] };
 	gates: { ids: string[]; preflight: Array<{ id: string; description?: string }>; execution: Array<{ id: string; description?: string }>; verification: Array<{ id: string; description?: string }>; final: Array<{ id: string; description?: string }> };
 	memory: { ambient_reads: "allowed" | "skipped" | "unavailable"; durable_writes: "explicit_only"; reason?: string };
+	delegation_workflow?: DelegationWorkflow;
 	artifacts?: { html?: HtmlArtifactDecision };
 	checks: string[];
 	stop_conditions: string[];
@@ -94,6 +111,7 @@ function stateFromPayload(payload: OrchestrationDecisionPayload | undefined): Or
 		topology: { ...payload.topology, subagents: payload.topology.subagents ?? [] },
 		gates: payload.gates,
 		memory: payload.memory ?? { ambient_reads: "unavailable", durable_writes: "explicit_only" },
+		delegation_workflow: payload.delegation_workflow,
 		artifacts: payload.artifacts,
 		checks: payload.checks ?? [],
 		stop_conditions: payload.stop_conditions ?? [],
@@ -141,6 +159,20 @@ function gateDescriptions(decision: OrchestrationDecision): string[] {
 	return all.map((gate) => `${gate.id}${gate.description ? `: ${gate.description}` : ""}`);
 }
 
+function delegationWorkflowLines(decision: OrchestrationDecision): string[] {
+	const workflow = decision.delegation_workflow;
+	if (!workflow) return ["- delegation launch: no decision"];
+	const contracts = workflow.subagent_contracts?.map((item) => `${item.role || "unknown"} (${item.mode || "unknown"})`).filter(Boolean) ?? [];
+	return [
+		`- delegation launch: ${workflow.launch_policy || "manual_main_agent_only"}; auto-launch ${workflow.auto_launch ? "yes" : "no"}`,
+		`- delegation pattern: ${workflow.recommended_pattern || "none"}`,
+		`- delegation next action: ${workflow.next_action || "none"}`,
+		listLine("delegation contracts", contracts),
+		`- delegation coordination: progress ${workflow.coordination?.progress_updates || "unknown"}; intercom ${workflow.coordination?.intercom || "unknown"}`,
+		`- delegation tracking: ${workflow.tracking?.mismatch_policy || "no mismatch policy"}`,
+	];
+}
+
 function htmlArtifactLines(decision: OrchestrationDecision): string[] {
 	const html = decision.artifacts?.html;
 	if (!html) return ["- html artifacts: none"];
@@ -169,6 +201,7 @@ export function formatRunCard(state: OrchestrationDecisionState): string {
 		`- run shape: ${decision.route.run.shape}`,
 		`- run summary: ${decision.route.run.summary}`,
 		`- memory: ambient reads ${decision.memory.ambient_reads}; durable writes ${decision.memory.durable_writes}`,
+		...delegationWorkflowLines(decision),
 		...htmlArtifactLines(decision),
 		listLine("subagents", subagents),
 		listLine("gate ids", decision.gates.ids),

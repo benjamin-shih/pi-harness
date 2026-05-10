@@ -16,12 +16,25 @@ export type ControlCenterRouteSummary = {
 	run?: { shape?: string; summary?: string };
 };
 
+type ControlCenterDelegationWorkflow = {
+	authority?: string;
+	launch_policy?: string;
+	auto_launch?: boolean;
+	recommended_pattern?: string;
+	next_action?: string;
+	subagent_contracts?: Array<{ role?: string; mode?: string; when?: string }>;
+	coordination?: { intercom?: string; progress_updates?: string; completion_handoffs?: string };
+	tracking?: { mismatch_policy?: string; stale_choice_policy?: string };
+	guardrails?: string[];
+};
+
 export type ControlCenterDecisionSummary = {
 	task?: { shape?: string; complexity?: string; risk?: string };
 	route?: { run?: { shape?: string; summary?: string } };
 	topology?: { recommended?: string; reason?: string; advisory_only?: boolean; subagents?: Array<{ role?: string; mode?: string; when?: string }> };
 	gates?: { ids?: string[]; preflight?: Array<{ id?: string }>; execution?: Array<{ id?: string }>; verification?: Array<{ id?: string }>; final?: Array<{ id?: string }> };
 	memory?: { ambient_reads?: string; durable_writes?: string };
+	delegation_workflow?: ControlCenterDelegationWorkflow;
 	artifacts?: { html?: { publish_policy?: string; source_of_truth?: string; modes?: Array<{ id?: string }>; auto_open?: { enabled?: boolean; modes?: string[]; safety?: string[] }; safety?: string[]; constraints?: string[] } };
 	checks?: string[];
 	evidence_required?: string[];
@@ -32,6 +45,8 @@ export type ControlCenterOrchestrationTracking = {
 	available?: boolean;
 	status?: string;
 	mismatch?: boolean;
+	explanation?: string;
+	recommended_action?: string;
 	events?: number;
 	recommended?: { topology?: string; timestamp?: string; gate_ids?: string[] } | null;
 	chosen?: { topology?: string; timestamp?: string; reason?: string } | null;
@@ -225,15 +240,16 @@ async function load(){
   const res = await fetch('${base}api/dashboard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: dashboardRequest(), cache: 'no-store' });
   const state = await res.json();
   const p = state.payload || {};
-  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, tracking = ((tasks.active_task || {}).orchestration || tasks.orchestration || {}), memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {}, html = ((decision.artifacts || {}).html || {});
+  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, tracking = ((tasks.active_task || {}).orchestration || tasks.orchestration || {}), memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {}, delegation = decision.delegation_workflow || {}, html = ((decision.artifacts || {}).html || {});
   status.textContent = 'Health: ' + state.health + ' · ' + (p.generated_at || 'unknown') + ' · ' + state.summary;
   status.className = state.health === 'ok' ? 'muted' : 'warn';
   cards.innerHTML = [
     section('Project', '<p><b>' + esc(project.name) + '</b> (' + esc(project.type) + ')</p><p><code>' + esc(project.root) + '</code></p><p>Registry: ' + esc(project.registry_id || 'unregistered') + ' via ' + esc(project.match_type || 'unknown') + '</p><p>Policy: write ' + esc(project.write_policy) + '; coursework ' + esc(project.coursework_policy || 'none') + '</p>'),
     section('Route', route.task ? '<p>Task: ' + esc(route.task.shape) + ' · ' + esc(route.task.complexity) + ' · risk ' + esc(route.task.risk) + '</p><p>Run: ' + esc((route.run || {}).shape || 'none') + '</p>' : '<p class="muted">No prompt route requested.</p>'),
     section('Orchestration', topology.recommended ? '<p>Topology: <b>' + esc(topology.recommended) + '</b></p><p>' + esc(topology.reason || '') + '</p><p>Preflight: ' + esc((gates.preflight || []).map(g => g.id).join(', ') || 'none') + '</p><p>Execution: ' + esc((gates.execution || []).map(g => g.id).join(', ') || 'none') + '</p><p>Verification: ' + esc((gates.verification || []).map(g => g.id).join(', ') || 'none') + '</p><p>Final: ' + esc((gates.final || []).map(g => g.id).join(', ') || 'none') + '</p><p>Memory: ' + esc(((decision.memory || {}).ambient_reads) || 'unknown') + ' reads; writes ' + esc(((decision.memory || {}).durable_writes) || 'explicit_only') + '</p>' : '<p class="muted">No orchestration decision requested.</p>'),
+    section('Delegation workflow', delegation.launch_policy ? '<p>Launch: ' + esc(delegation.launch_policy) + ' · auto-launch ' + esc(Boolean(delegation.auto_launch)) + '</p><p>Pattern: ' + esc(delegation.recommended_pattern || 'none') + '</p><p>Next: ' + esc(delegation.next_action || 'none') + '</p><p>Subagents: ' + esc((delegation.subagent_contracts || []).map(s => s.role + ' (' + s.mode + ')').join(', ') || 'none') + '</p><p>Progress: ' + esc(((delegation.coordination || {}).progress_updates) || 'unknown') + '</p>' : '<p class="muted">No delegation workflow decision.</p>'),
     section('HTML artifacts', (html.modes || []).length ? '<p>Modes: ' + esc((html.modes || []).map(m => m.id).join(', ')) + '</p><p>Publish: ' + esc(html.publish_policy || 'explicit_only') + ' · source: ' + esc(html.source_of_truth || 'json_or_markdown') + '</p><p>Auto-open: ' + esc(((html.auto_open || {}).enabled) ? 'enabled' : 'disabled') + '</p><p>Safety: ' + esc((html.safety || []).slice(0,6).join(', ')) + '</p>' : '<p class="muted">No HTML artifact recommendation.</p>'),
-    section('Chosen vs recommended', tracking.available ? '<p>Recommended: ' + esc(((tracking.recommended || {}).topology) || 'none') + '</p><p>Chosen: ' + esc(((tracking.chosen || {}).topology) || 'none') + '</p><p>Status: ' + esc(tracking.status || 'unknown') + ' · mismatch ' + esc(Boolean(tracking.mismatch)) + '</p>' : '<p class="muted">No orchestration tracking events.</p>'),
+    section('Chosen vs recommended', tracking.available ? '<p>Recommended: ' + esc(((tracking.recommended || {}).topology) || 'none') + '</p><p>Chosen: ' + esc(((tracking.chosen || {}).topology) || 'none') + '</p><p>Status: ' + esc(tracking.status || 'unknown') + ' · mismatch ' + esc(Boolean(tracking.mismatch)) + '</p><p>Explanation: ' + esc(tracking.explanation || '') + '</p><p>Action: ' + esc(tracking.recommended_action || '') + '</p>' : '<p class="muted">No orchestration tracking events.</p>'),
     section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p>'),
     section('Memory', '<p>Available: ' + esc(memory.available !== false) + '</p><p>Approved: ' + count(mem,'approved') + ' · Candidates: ' + count(mem,'candidate') + ' · Deprecated: ' + count(mem,'deprecated') + '</p>'),
     section('Pi package policy', '<p>Health: ' + esc(pkg.health || 'unknown') + '</p><p>Configured: ' + count(pkgSummary,'configured_packages') + ' · Approved: ' + count(pkgSummary,'approved_packages') + ' · Unapproved: ' + count(pkgSummary,'unapproved_packages') + ' · Unpinned: ' + count(pkgSummary,'unpinned_packages') + '</p>'),
@@ -350,6 +366,11 @@ export function formatControlCenter(state: ControlCenterState): string {
 		listLine("final gates", decision?.gates?.final?.map((gate) => gate.id || "")),
 		listLine("checks", decision?.checks),
 		decision?.memory ? `- memory: ambient reads ${decision.memory.ambient_reads ?? "unknown"}; durable writes ${decision.memory.durable_writes ?? "explicit_only"}` : "- memory: no decision",
+		decision?.delegation_workflow ? `- delegation launch: ${decision.delegation_workflow.launch_policy || "manual_main_agent_only"}; auto-launch ${decision.delegation_workflow.auto_launch ? "yes" : "no"}` : "- delegation launch: no decision",
+		decision?.delegation_workflow ? `- delegation pattern: ${decision.delegation_workflow.recommended_pattern || "none"}` : "- delegation pattern: no decision",
+		decision?.delegation_workflow ? `- delegation next action: ${decision.delegation_workflow.next_action || "none"}` : "- delegation next action: no decision",
+		listLine("delegation subagents", decision?.delegation_workflow?.subagent_contracts?.map((item) => `${item.role || "unknown"} (${item.mode || "unknown"})`)),
+		decision?.delegation_workflow ? `- delegation progress: ${decision.delegation_workflow.coordination?.progress_updates || "unknown"}` : "- delegation progress: no decision",
 		listLine("html artifact modes", decision?.artifacts?.html?.modes?.map((mode) => mode.id || "")),
 		decision?.artifacts?.html ? `- html publish: ${decision.artifacts.html.publish_policy || "explicit_only"}; source ${decision.artifacts.html.source_of_truth || "json_or_markdown"}` : "- html publish: no decision",
 		decision?.artifacts?.html ? `- html auto-open: ${decision.artifacts.html.auto_open?.enabled ? "enabled" : "disabled"}` : "- html auto-open: no decision",
@@ -365,6 +386,8 @@ export function formatControlCenter(state: ControlCenterState): string {
 		countLine("stale candidates", taskSummary.stale_candidates),
 		activeTask ? `- active task: status ${activeTask.status ?? "unknown"}; lease ${activeTask.lease_state ?? "unknown"}; scope match ${Boolean(activeTask.scope_match)}; events ${activeTask.events_count ?? 0}` : "- active task: none supplied",
 		tracking?.available ? `- orchestration tracking: recommended ${tracking.recommended?.topology || "none"}; chosen ${tracking.chosen?.topology || "none"}; status ${tracking.status || "unknown"}; mismatch ${Boolean(tracking.mismatch)}` : "- orchestration tracking: none",
+		tracking?.available ? `- orchestration tracking explanation: ${tracking.explanation || "none"}` : "- orchestration tracking explanation: none",
+		tracking?.available ? `- orchestration tracking action: ${tracking.recommended_action || "none"}` : "- orchestration tracking action: none",
 		"",
 		"## Memory",
 		`- scoped memory: ${memory.available === false ? "unavailable" : "available"}`,
