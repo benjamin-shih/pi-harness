@@ -18,6 +18,7 @@ All notable changes to this personal pi harness package are tracked here.
 - `/run-card` and Control Center now surface `.agents` HTML artifact recommendations for local reports and dashboards.
 - Newly written local HTML plan/report/dashboard artifacts auto-open after the agent turn when `.agents` enables HTML artifact auto-open.
 - `/run-card`, Control Center, and Control Center web now surface manual-only delegation workflow policy, subagent contracts, and chosen-vs-recommended mismatch explanations.
+- `/run-card` chosen-vs-recommended tracking now includes a session-local explanation/action and points stale-choice checks to Control Center.
 - Control Center cards include the orchestration decision summary when prompt text is supplied.
 - `/remember`, `/promote-memory`, and `/forget-memory` provide explicit durable-memory admin commands; `/remember` creates candidate records by default.
 - `/memory review` now runs the shared read-only candidate review API and shows bounded previews for explicit promote/forget follow-up.

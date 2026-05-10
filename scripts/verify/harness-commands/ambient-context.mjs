@@ -151,6 +151,8 @@ export async function runAmbientContextTests() {
 	await boundTask.commands.get("run-card").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Chosen vs recommended"), "/run-card should include chosen-vs-recommended tracking");
 	assert(boundTask.sentMessages.at(-1).content.includes("chosen single_agent_standard"), "/run-card should show explicitly chosen topology");
+	assert(boundTask.sentMessages.at(-1).content.includes("orchestration explanation: explicit choice matches"), "/run-card should explain session-local chosen-vs-recommended status");
+	assert(boundTask.sentMessages.at(-1).content.includes("use /control-center for decision-id stale-choice checks"), "/run-card should point stale-choice diagnostics to control-center");
 	await boundTask.commands.get("control-center").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).customType === "harness-control-center", "/control-center should send a control-center message");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Agent Control Center v0"), "/control-center should render the local dashboard card");

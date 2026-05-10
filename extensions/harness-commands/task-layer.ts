@@ -210,8 +210,15 @@ export function createAgentsTaskLayer() {
 		return `- orchestration: recommended ${recommended}; chosen ${chosen}; mismatch ${mismatch}`;
 	}
 	function orchestrationSummaryLines(): string[] {
-		const line = orchestrationStatusLine();
-		return line ? [line] : ["- orchestration: no session-local choice recorded"];
+		const line = orchestrationStatusLine(), tracking = state.orchestration;
+		if (!line || !tracking) return ["- orchestration: no session-local choice recorded"];
+		const both = Boolean(tracking.recommendedTopology && tracking.chosenTopology);
+		const [explanation, action] = both && tracking.mismatch
+			? ["explicit choice differs from the latest session-local recommendation", "reconfirm topology or record a new choice"]
+			: both ? ["explicit choice matches the latest session-local recommendation", "proceed under the chosen topology"]
+				: tracking.chosenTopology ? ["chosen topology exists without a current session-local recommendation", "refresh run-card before relying on the choice"]
+					: ["latest recommendation has no explicit chosen topology", "follow the advisory recommendation or record an explicit choice"];
+		return [line, `- orchestration explanation: ${explanation}`, `- orchestration action: ${action}`, "- orchestration pairing: session-local view; use /control-center for decision-id stale-choice checks"];
 	}
 	function orchestrationEventArgs(decision: OrchestrationDecision): string[] {
 		return [
