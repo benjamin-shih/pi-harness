@@ -132,6 +132,7 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("html templates: benjamin_local_v1; benjamin_report_v1; benjamin_dashboard_v1"), "/run-card should show the reusable HTML template catalog");
 	assert(boundTask.sentMessages.at(-1).content.includes("range_sliders"), "/run-card should show template component capabilities");
 	assert(boundTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/run-card should show HTML artifact auto-open policy");
+	assert(boundTask.sentMessages.at(-1).content.includes("html retention: manifest_and_marker"), "/run-card should show HTML artifact retention policy");
 	assert(boundTask.sentMessages.at(-1).content.includes("delegation launch: manual_main_agent_only; auto-launch no"), "/run-card should show manual-only delegation launch policy");
 	assert(boundTask.sentMessages.at(-1).content.includes("delegation pattern: single_writer_optional_review"), "/run-card should show delegation workflow pattern");
 	const htmlOpenTemp = mkdtempSync(join(tmpdir(), "pi-html-open-"));
@@ -165,6 +166,8 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("recent events: 2026-05-08T00:00:00Z checkpoint"), "/control-center should show a sanitized recent event timeline");
 	assert(boundTask.sentMessages.at(-1).content.includes("orchestration tracking: recommended parallel_recon; chosen single_agent_standard; status mismatch; mismatch true"), "/control-center should summarize chosen-vs-recommended tracking from the dashboard API");
 	assert(boundTask.sentMessages.at(-1).content.includes("orchestration tracking explanation: explicit choice differs"), "/control-center should explain chosen-vs-recommended mismatches");
+	assert(boundTask.sentMessages.at(-1).content.includes("## HTML artifact retention"), "/control-center should include HTML retention diagnostics");
+	assert(boundTask.sentMessages.at(-1).content.includes("cleanup candidates"), "/control-center should summarize HTML cleanup candidates");
 	assert(boundTask.sentMessages.at(-1).content.includes("candidates: 1"), "/control-center should include scoped memory candidate counts");
 	assert(!boundTask.sentMessages.at(-1).content.includes("pi-task"), "/control-center should not display private task ids");
 	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard")), "/control-center should call the shared dashboard API");
@@ -184,6 +187,7 @@ export async function runAmbientContextTests() {
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html templates: benjamin_local_v1; benjamin_report_v1; benjamin_dashboard_v1"), "/control-center should summarize the reusable HTML template catalog");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html components: cards; tabs; range_sliders; sortable_tables"), "/control-center should summarize reusable HTML component capabilities");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/control-center should summarize HTML artifact auto-open policy");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html retention: manifest_and_marker"), "/control-center should summarize HTML artifact retention policy");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("delegation launch: manual_main_agent_only; auto-launch no"), "/control-center should summarize manual-only delegation policy");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("registry: STATS300C via explicit_project"), "/control-center should pass explicit project selectors to the shared dashboard API");
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/control-center should expose coursework policy read-only");

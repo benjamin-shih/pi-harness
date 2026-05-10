@@ -339,9 +339,9 @@ export function createAgentsTaskLayer() {
 			const pathArtifact = pathArtifactFromTool(event);
 			if (pathArtifact) {
 				await recordArtifact(pi, ctx, [
-					"--kind", "file_path",
+					"--kind", pathArtifact.kind,
 					"--title", pathArtifact.title,
-					"--summary", `${pathArtifact.title} during pi turn.`,
+					"--summary", pathArtifact.summary,
 					"--path", pathArtifact.path,
 					"--cwd", ctx.cwd,
 				]);

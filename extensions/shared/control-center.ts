@@ -75,6 +75,7 @@ export type ControlCenterPayload = {
 		orchestration?: ControlCenterOrchestrationTracking;
 		warnings?: string[];
 	};
+	html_artifacts?: { available?: boolean; scope?: string; project_scoped?: boolean; summary?: Record<string, number>; policy?: { cleanup_strategy?: string; marker?: string; delete_on_task_status?: string[]; destructive_actions?: boolean }; warnings?: string[] };
 	memory?: {
 		available?: boolean;
 		count?: number;
@@ -117,9 +118,9 @@ function state(health: ControlCenterHealth, status: ControlCenterStatus, summary
 }
 
 function payloadHealth(payload: ControlCenterPayload): ControlCenterHealth {
-	if (payload.warnings?.length || payload.attention?.length) return "warning";
+	if (payload.warnings?.length || payload.attention?.length || payload.html_artifacts?.warnings?.length) return "warning";
 	if (payload.package_policy?.health === "warning" || payload.project_instructions?.health === "warning") return "warning";
-	if (payload.tasks?.available === false || payload.package_policy?.available === false) return "warning";
+	if (payload.tasks?.available === false || payload.html_artifacts?.available === false || payload.package_policy?.available === false) return "warning";
 	return "ok";
 }
 
@@ -135,7 +136,7 @@ function stateFromPayload(payload: ControlCenterPayload | undefined): ControlCen
 	if (!payload) return state("degraded", "invalid_json", "degraded · invalid_json");
 	const apiVersion = payload.control_plane_api_version;
 	if (apiVersion !== SUPPORTED_CONTROL_PLANE_API_VERSION) return state("degraded", "unsupported_api", "degraded · unsupported_api", apiVersion);
-	if (payload.kind !== "dashboard" || payload.read_only !== true || !payload.project || !payload.tasks || !payload.memory || !payload.package_policy) return state("degraded", "invalid_payload", "degraded · invalid_payload", apiVersion);
+	if (payload.kind !== "dashboard" || payload.read_only !== true || !payload.project || !payload.tasks || !payload.html_artifacts || !payload.memory || !payload.package_policy) return state("degraded", "invalid_payload", "degraded · invalid_payload", apiVersion);
 	return state(payloadHealth(payload), "ready", summaryFromPayload(payload), apiVersion, payload);
 }
 
@@ -232,7 +233,7 @@ async function load(){
   const res = await fetch('${base}api/dashboard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: dashboardRequest(), cache: 'no-store' });
   const state = await res.json();
   const p = state.payload || {};
-  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, activeTask = tasks.active_task || {}, tracking = (activeTask.orchestration || tasks.orchestration || {}), memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {}, delegation = decision.delegation_workflow || {}, html = ((decision.artifacts || {}).html || {});
+  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, activeTask = tasks.active_task || {}, tracking = (activeTask.orchestration || tasks.orchestration || {}), htmlRetention = p.html_artifacts || {}, htmlRetentionSummary = htmlRetention.summary || {}, htmlRetentionPolicy = htmlRetention.policy || {}, memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {}, delegation = decision.delegation_workflow || {}, html = ((decision.artifacts || {}).html || {});
   status.textContent = 'Health: ' + state.health + ' · ' + (p.generated_at || 'unknown') + ' · ' + state.summary;
   status.className = state.health === 'ok' ? 'muted' : 'warn';
   cards.innerHTML = [
@@ -240,7 +241,8 @@ async function load(){
     section('Route', route.task ? '<p>Task: ' + esc(route.task.shape) + ' · ' + esc(route.task.complexity) + ' · risk ' + esc(route.task.risk) + '</p><p>Run: ' + esc((route.run || {}).shape || 'none') + '</p>' : '<p class="muted">No prompt route requested.</p>'),
     section('Orchestration', topology.recommended ? '<p>Topology: <b>' + esc(topology.recommended) + '</b></p><p>Rationale: ' + esc(topology.reason || '') + '</p><p>Description: ' + esc(topology.description || 'none') + '</p><p>Decision basis: ' + esc((decision.reasons || []).join(', ') || 'none') + '</p><p>Project defaults: checks ' + esc((project.default_checks || []).join(', ') || 'none') + '; write ' + esc(project.write_policy || 'unknown') + '</p><p>Preflight: ' + esc((gates.preflight || []).map(g => g.id).join(', ') || 'none') + '</p><p>Execution: ' + esc((gates.execution || []).map(g => g.id).join(', ') || 'none') + '</p><p>Verification: ' + esc((gates.verification || []).map(g => g.id).join(', ') || 'none') + '</p><p>Final: ' + esc((gates.final || []).map(g => g.id).join(', ') || 'none') + '</p><p>Memory: ' + esc(((decision.memory || {}).ambient_reads) || 'unknown') + ' reads; writes ' + esc(((decision.memory || {}).durable_writes) || 'explicit_only') + '</p>' : '<p class="muted">No orchestration decision requested.</p>'),
     section('Delegation workflow', delegation.launch_policy ? '<p>Launch: ' + esc(delegation.launch_policy) + ' · auto-launch ' + esc(Boolean(delegation.auto_launch)) + '</p><p>Pattern: ' + esc(delegation.recommended_pattern || 'none') + '</p><p>Next: ' + esc(delegation.next_action || 'none') + '</p><p>Subagents: ' + esc((delegation.subagent_contracts || []).map(s => s.role + ' (' + s.mode + ')').join(', ') || 'none') + '</p><p>Progress: ' + esc(((delegation.coordination || {}).progress_updates) || 'unknown') + '</p>' : '<p class="muted">No delegation workflow decision.</p>'),
-    section('HTML artifacts', (html.modes || []).length ? '<p>Modes: ' + esc((html.modes || []).map(m => m.id).join(', ')) + '</p><p>Template: ' + esc(((html.template || {}).path) || ((html.template || {}).id) || 'none') + '</p><p>Templates: ' + esc((html.templates || []).map(t => t.id).join(', ') || 'none') + '</p><p>Components: ' + esc((((html.template || {}).allowed_components) || []).slice(0,8).join(', ') || 'none') + '</p><p>Publish: ' + esc(html.publish_policy || 'explicit_only') + ' · source: ' + esc(html.source_of_truth || 'json_or_markdown') + '</p><p>Auto-open: ' + esc(((html.auto_open || {}).enabled) ? 'enabled' : 'disabled') + '</p><p>Safety: ' + esc((html.safety || []).slice(0,6).join(', ')) + '</p>' : '<p class="muted">No HTML artifact recommendation.</p>'),
+    section('HTML artifacts', (html.modes || []).length ? '<p>Modes: ' + esc((html.modes || []).map(m => m.id).join(', ')) + '</p><p>Template: ' + esc(((html.template || {}).path) || ((html.template || {}).id) || 'none') + '</p><p>Templates: ' + esc((html.templates || []).map(t => t.id).join(', ') || 'none') + '</p><p>Components: ' + esc((((html.template || {}).allowed_components) || []).slice(0,8).join(', ') || 'none') + '</p><p>Publish: ' + esc(html.publish_policy || 'explicit_only') + ' · source: ' + esc(html.source_of_truth || 'json_or_markdown') + '</p><p>Auto-open: ' + esc(((html.auto_open || {}).enabled) ? 'enabled' : 'disabled') + '</p><p>Retention: ' + esc(((html.retention || {}).cleanup_strategy) || 'manifest_and_marker') + '</p><p>Safety: ' + esc((html.safety || []).slice(0,6).join(', ')) + '</p>' : '<p class="muted">No HTML artifact recommendation.</p>'),
+    section('HTML retention', '<p>Scope: ' + esc(htmlRetention.scope || 'project') + ' · strategy ' + esc(htmlRetentionPolicy.cleanup_strategy || 'manifest_and_marker') + '</p><p>Tracked: ' + count(htmlRetentionSummary,'tracked_html_artifacts') + ' · Managed: ' + count(htmlRetentionSummary,'managed_html_artifacts') + ' · Cleanup candidates: ' + count(htmlRetentionSummary,'cleanup_candidates') + '</p><p>Kept active/blocked: ' + count(htmlRetentionSummary,'kept_active_or_blocked') + ' · Unmarked kept: ' + count(htmlRetentionSummary,'skipped_unmarked') + ' · Unsafe skipped: ' + count(htmlRetentionSummary,'skipped_unsafe_path') + '</p>'),
     section('Chosen vs recommended', tracking.available ? '<p>Recommended: ' + esc(((tracking.recommended || {}).topology) || 'none') + '</p><p>Chosen: ' + esc(((tracking.chosen || {}).topology) || 'none') + '</p><p>Status: ' + esc(tracking.status || 'unknown') + ' · mismatch ' + esc(Boolean(tracking.mismatch)) + '</p><p>Explanation: ' + esc(tracking.explanation || '') + '</p><p>Action: ' + esc(tracking.recommended_action || '') + '</p>' : '<p class="muted">No orchestration tracking events.</p>'),
     section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p><h3>Recent events</h3>' + list((activeTask.recent_events || []).map(e => (e.timestamp ? e.timestamp + ' ' : '') + (e.type || 'event') + (e.summary ? ' (' + e.summary + ')' : '')))),
     section('Memory', '<p>Available: ' + esc(memory.available !== false) + '</p><p>Approved: ' + count(mem,'approved') + ' · Candidates: ' + count(mem,'candidate') + ' · Deprecated: ' + count(mem,'deprecated') + '</p>'),
@@ -326,13 +328,14 @@ export function formatControlCenter(state: ControlCenterState): string {
 	const taskSummary = tasks.summary ?? {};
 	const activeTask = tasks.active_task;
 	const tracking = activeTask?.orchestration ?? tasks.orchestration;
+	const htmlRetention = payload.html_artifacts ?? {}, htmlRetentionSummary = htmlRetention.summary ?? {}, htmlRetentionPolicy = htmlRetention.policy ?? {};
 	const memory = payload.memory ?? {};
 	const memoryCounts = memory.counts_by_state ?? {};
 	const packagePolicy = payload.package_policy ?? {};
 	const packageSummary = packagePolicy.summary ?? {};
 	const instructions = payload.project_instructions ?? {};
 	const instructionSummary = instructions.summary ?? {};
-	const warnings = [...(payload.warnings ?? []), ...(tasks.warnings ?? []), ...(memory.warnings ?? []), ...(packagePolicy.warnings ?? []), ...(instructions.warnings ?? [])];
+	const warnings = [...(payload.warnings ?? []), ...(tasks.warnings ?? []), ...(htmlRetention.warnings ?? []), ...(memory.warnings ?? []), ...(packagePolicy.warnings ?? []), ...(instructions.warnings ?? [])];
 	const lines = [
 		"## Agent Control Center v0",
 		`- health: ${state.health} (${state.status}; v${state.apiVersion ?? "?"})`,
@@ -378,6 +381,7 @@ export function formatControlCenter(state: ControlCenterState): string {
 		listLine("html components", decision?.artifacts?.html?.template?.allowed_components),
 		decision?.artifacts?.html ? `- html publish: ${decision.artifacts.html.publish_policy || "explicit_only"}; source ${decision.artifacts.html.source_of_truth || "json_or_markdown"}` : "- html publish: no decision",
 		decision?.artifacts?.html ? `- html auto-open: ${decision.artifacts.html.auto_open?.enabled ? "enabled" : "disabled"}` : "- html auto-open: no decision",
+		decision?.artifacts?.html ? `- html retention: ${decision.artifacts.html.retention?.cleanup_strategy || "manifest_and_marker"}; marker ${decision.artifacts.html.retention?.marker || "agents-html-artifact"}` : "- html retention: no decision",
 		listLine("evidence", decision?.evidence_required),
 		listLine("stop conditions", decision?.stop_conditions),
 		"",
@@ -393,6 +397,11 @@ export function formatControlCenter(state: ControlCenterState): string {
 		tracking?.available ? `- orchestration tracking: recommended ${tracking.recommended?.topology || "none"}; chosen ${tracking.chosen?.topology || "none"}; status ${tracking.status || "unknown"}; mismatch ${Boolean(tracking.mismatch)}` : "- orchestration tracking: none",
 		tracking?.available ? `- orchestration tracking explanation: ${tracking.explanation || "none"}` : "- orchestration tracking explanation: none",
 		tracking?.available ? `- orchestration tracking action: ${tracking.recommended_action || "none"}` : "- orchestration tracking action: none",
+		"",
+		"## HTML artifact retention",
+		`- retention diagnostics: ${htmlRetention.available === false ? "unavailable" : "available"} (${htmlRetention.scope ?? "project"}; strategy ${htmlRetentionPolicy.cleanup_strategy || "manifest_and_marker"})`,
+		`- html artifacts: tracked ${htmlRetentionSummary.tracked_html_artifacts ?? 0}; managed ${htmlRetentionSummary.managed_html_artifacts ?? 0}; cleanup candidates ${htmlRetentionSummary.cleanup_candidates ?? 0}`,
+		`- html kept/skipped: active-blocked ${htmlRetentionSummary.kept_active_or_blocked ?? 0}; unmarked ${htmlRetentionSummary.skipped_unmarked ?? 0}; unsafe ${htmlRetentionSummary.skipped_unsafe_path ?? 0}`,
 		"",
 		"## Memory",
 		`- scoped memory: ${memory.available === false ? "unavailable" : "available"}`,

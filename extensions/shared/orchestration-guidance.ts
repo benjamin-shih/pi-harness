@@ -36,6 +36,7 @@ export type HtmlArtifactDecision = {
 	auto_open?: { enabled?: boolean; when?: string; modes?: string[]; safety?: string[] };
 	template?: { id?: string; path?: string; usage?: string; theme_source?: string; theme_notes?: string[]; allowed_components?: string[] };
 	templates?: Array<{ id?: string; path?: string; usage?: string; allowed_components?: string[] }>;
+	retention?: { default_scope?: string; cleanup_strategy?: string; delete_on_task_status?: string[]; keep_on_task_status?: string[]; marker?: string; persistent_requires_explicit_user_request?: boolean };
 	safety?: string[];
 	constraints?: string[];
 };
@@ -190,6 +191,7 @@ function htmlArtifactLines(decision: OrchestrationDecision): string[] {
 		listLine("html components", components),
 		`- html publish: ${html.publish_policy || "explicit_only"}; source of truth ${html.source_of_truth || "json_or_markdown"}`,
 		`- html auto-open: ${autoOpen}`,
+		`- html retention: ${html.retention?.cleanup_strategy || "manifest_and_marker"}; delete marked task-scoped artifacts on ${(html.retention?.delete_on_task_status ?? ["completed", "stale"]).join("/")}`,
 		listLine("html safety", safety),
 	];
 }
