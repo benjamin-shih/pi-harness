@@ -159,6 +159,7 @@ export async function runAmbientContextTests() {
 	assert(boundTask.sentMessages.at(-1).content.includes("mode: read-only diagnostics"), "/control-center should state it is read-only");
 	assert(boundTask.sentMessages.at(-1).content.includes("topology: no orchestration decision requested"), "/control-center without prompt should show that no orchestration decision was requested");
 	assert(boundTask.sentMessages.at(-1).content.includes("active task: status in_progress; lease live"), "/control-center should summarize active task lifecycle without exposing task ids");
+	assert(boundTask.sentMessages.at(-1).content.includes("recent events: 2026-05-08T00:00:00Z checkpoint"), "/control-center should show a sanitized recent event timeline");
 	assert(boundTask.sentMessages.at(-1).content.includes("orchestration tracking: recommended parallel_recon; chosen single_agent_standard; status mismatch; mismatch true"), "/control-center should summarize chosen-vs-recommended tracking from the dashboard API");
 	assert(boundTask.sentMessages.at(-1).content.includes("orchestration tracking explanation: explicit choice differs"), "/control-center should explain chosen-vs-recommended mismatches");
 	assert(boundTask.sentMessages.at(-1).content.includes("candidates: 1"), "/control-center should include scoped memory candidate counts");

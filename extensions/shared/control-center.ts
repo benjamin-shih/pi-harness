@@ -41,6 +41,8 @@ export type ControlCenterOrchestrationTracking = {
 	chosen?: { topology?: string; timestamp?: string; reason?: string } | null;
 };
 
+export type ControlCenterTaskEvent = { timestamp?: string; type?: string; summary?: string };
+
 export type ControlCenterOptions = { prompt?: string; taskId?: string; project?: string; projectRoot?: string };
 
 export type ControlCenterPayload = {
@@ -68,7 +70,7 @@ export type ControlCenterPayload = {
 		available?: boolean;
 		scope?: string;
 		summary?: Record<string, number>;
-		active_task?: { status?: string; active?: boolean; terminal?: boolean; scope_match?: boolean; lease_state?: string; events_count?: number; blockers_count?: number; orchestration?: ControlCenterOrchestrationTracking } | null;
+		active_task?: { status?: string; active?: boolean; terminal?: boolean; scope_match?: boolean; lease_state?: string; events_count?: number; blockers_count?: number; recent_events?: ControlCenterTaskEvent[]; orchestration?: ControlCenterOrchestrationTracking } | null;
 		orchestration?: ControlCenterOrchestrationTracking;
 		warnings?: string[];
 	};
@@ -229,7 +231,7 @@ async function load(){
   const res = await fetch('${base}api/dashboard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: dashboardRequest(), cache: 'no-store' });
   const state = await res.json();
   const p = state.payload || {};
-  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, tracking = ((tasks.active_task || {}).orchestration || tasks.orchestration || {}), memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {}, delegation = decision.delegation_workflow || {}, html = ((decision.artifacts || {}).html || {});
+  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, activeTask = tasks.active_task || {}, tracking = (activeTask.orchestration || tasks.orchestration || {}), memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {}, delegation = decision.delegation_workflow || {}, html = ((decision.artifacts || {}).html || {});
   status.textContent = 'Health: ' + state.health + ' · ' + (p.generated_at || 'unknown') + ' · ' + state.summary;
   status.className = state.health === 'ok' ? 'muted' : 'warn';
   cards.innerHTML = [
@@ -239,7 +241,7 @@ async function load(){
     section('Delegation workflow', delegation.launch_policy ? '<p>Launch: ' + esc(delegation.launch_policy) + ' · auto-launch ' + esc(Boolean(delegation.auto_launch)) + '</p><p>Pattern: ' + esc(delegation.recommended_pattern || 'none') + '</p><p>Next: ' + esc(delegation.next_action || 'none') + '</p><p>Subagents: ' + esc((delegation.subagent_contracts || []).map(s => s.role + ' (' + s.mode + ')').join(', ') || 'none') + '</p><p>Progress: ' + esc(((delegation.coordination || {}).progress_updates) || 'unknown') + '</p>' : '<p class="muted">No delegation workflow decision.</p>'),
     section('HTML artifacts', (html.modes || []).length ? '<p>Modes: ' + esc((html.modes || []).map(m => m.id).join(', ')) + '</p><p>Publish: ' + esc(html.publish_policy || 'explicit_only') + ' · source: ' + esc(html.source_of_truth || 'json_or_markdown') + '</p><p>Auto-open: ' + esc(((html.auto_open || {}).enabled) ? 'enabled' : 'disabled') + '</p><p>Safety: ' + esc((html.safety || []).slice(0,6).join(', ')) + '</p>' : '<p class="muted">No HTML artifact recommendation.</p>'),
     section('Chosen vs recommended', tracking.available ? '<p>Recommended: ' + esc(((tracking.recommended || {}).topology) || 'none') + '</p><p>Chosen: ' + esc(((tracking.chosen || {}).topology) || 'none') + '</p><p>Status: ' + esc(tracking.status || 'unknown') + ' · mismatch ' + esc(Boolean(tracking.mismatch)) + '</p><p>Explanation: ' + esc(tracking.explanation || '') + '</p><p>Action: ' + esc(tracking.recommended_action || '') + '</p>' : '<p class="muted">No orchestration tracking events.</p>'),
-    section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p>'),
+    section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p><h3>Recent events</h3>' + list((activeTask.recent_events || []).map(e => (e.timestamp ? e.timestamp + ' ' : '') + (e.type || 'event') + (e.summary ? ' (' + e.summary + ')' : '')))),
     section('Memory', '<p>Available: ' + esc(memory.available !== false) + '</p><p>Approved: ' + count(mem,'approved') + ' · Candidates: ' + count(mem,'candidate') + ' · Deprecated: ' + count(mem,'deprecated') + '</p>'),
     section('Pi package policy', '<p>Health: ' + esc(pkg.health || 'unknown') + '</p><p>Configured: ' + count(pkgSummary,'configured_packages') + ' · Approved: ' + count(pkgSummary,'approved_packages') + ' · Unapproved: ' + count(pkgSummary,'unapproved_packages') + ' · Unpinned: ' + count(pkgSummary,'unpinned_packages') + '</p>'),
     section('Project instructions', '<p>Health: ' + esc(instr.health || 'unknown') + '</p><p>Files: ' + count(instrSummary,'instruction_files_found') + ' · Thin style: ' + count(instrSummary,'thin_style_files') + '</p>'),
@@ -308,6 +310,11 @@ function countLine(label: string, value: unknown): string {
 	return `- ${label}: ${typeof value === "number" ? value : 0}`;
 }
 
+function taskEventLine(event: ControlCenterTaskEvent): string {
+	const prefix = event.timestamp ? `${event.timestamp} ` : "";
+	return `${prefix}${event.type || "event"}${event.summary ? ` (${event.summary})` : ""}`;
+}
+
 export function formatControlCenter(state: ControlCenterState): string {
 	if (!state.payload) return ["## Agent Control Center v0", `- health: ${state.health} (${state.status})`, `- summary: ${state.summary}`].join("\n");
 	const payload = state.payload;
@@ -374,6 +381,7 @@ export function formatControlCenter(state: ControlCenterState): string {
 		countLine("live leases", taskSummary.live_leases),
 		countLine("stale candidates", taskSummary.stale_candidates),
 		activeTask ? `- active task: status ${activeTask.status ?? "unknown"}; lease ${activeTask.lease_state ?? "unknown"}; scope match ${Boolean(activeTask.scope_match)}; events ${activeTask.events_count ?? 0}` : "- active task: none supplied",
+		listLine("recent events", activeTask?.recent_events?.map(taskEventLine)),
 		tracking?.available ? `- orchestration tracking: recommended ${tracking.recommended?.topology || "none"}; chosen ${tracking.chosen?.topology || "none"}; status ${tracking.status || "unknown"}; mismatch ${Boolean(tracking.mismatch)}` : "- orchestration tracking: none",
 		tracking?.available ? `- orchestration tracking explanation: ${tracking.explanation || "none"}` : "- orchestration tracking explanation: none",
 		tracking?.available ? `- orchestration tracking action: ${tracking.recommended_action || "none"}` : "- orchestration tracking action: none",
