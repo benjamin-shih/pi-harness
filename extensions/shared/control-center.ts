@@ -4,6 +4,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { DelegationWorkflow, HtmlArtifactDecision } from "./orchestration-guidance";
 import { agentsScriptPath } from "./config";
 import { parseJson } from "./json";
 import { withPrivateTempTextFile } from "./private-temp";
@@ -16,26 +17,14 @@ export type ControlCenterRouteSummary = {
 	run?: { shape?: string; summary?: string };
 };
 
-type ControlCenterDelegationWorkflow = {
-	authority?: string;
-	launch_policy?: string;
-	auto_launch?: boolean;
-	recommended_pattern?: string;
-	next_action?: string;
-	subagent_contracts?: Array<{ role?: string; mode?: string; when?: string }>;
-	coordination?: { intercom?: string; progress_updates?: string; completion_handoffs?: string };
-	tracking?: { mismatch_policy?: string; stale_choice_policy?: string };
-	guardrails?: string[];
-};
-
 export type ControlCenterDecisionSummary = {
 	task?: { shape?: string; complexity?: string; risk?: string };
 	route?: { run?: { shape?: string; summary?: string } };
 	topology?: { recommended?: string; reason?: string; advisory_only?: boolean; subagents?: Array<{ role?: string; mode?: string; when?: string }> };
 	gates?: { ids?: string[]; preflight?: Array<{ id?: string }>; execution?: Array<{ id?: string }>; verification?: Array<{ id?: string }>; final?: Array<{ id?: string }> };
 	memory?: { ambient_reads?: string; durable_writes?: string };
-	delegation_workflow?: ControlCenterDelegationWorkflow;
-	artifacts?: { html?: { publish_policy?: string; source_of_truth?: string; modes?: Array<{ id?: string }>; auto_open?: { enabled?: boolean; modes?: string[]; safety?: string[] }; safety?: string[]; constraints?: string[] } };
+	delegation_workflow?: DelegationWorkflow;
+	artifacts?: { html?: HtmlArtifactDecision };
 	checks?: string[];
 	evidence_required?: string[];
 	stop_conditions?: string[];
