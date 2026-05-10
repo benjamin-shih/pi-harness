@@ -8,10 +8,10 @@ All notable changes to this personal pi harness package are tracked here.
 - None.
 
 ### Changed
-- None.
+- CI now also runs on version tag pushes.
 
 ### Fixed
-- None.
+- Release verification and lifecycle smoke checks now clear inherited `PI_SUBAGENT_CHILD` so parent-mode tests remain deterministic when dogfooded from subagent contexts.
 
 ### Breaking
 - None.

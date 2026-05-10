@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 import Module from "node:module";
 import { extensionEntrypoints as scanExtensionEntrypoints } from "../lib/extension-entrypoints.mjs";
 
+// Release verification must exercise parent-mode harness behavior even when the
+// check is launched from a pi-subagents child session. Tests that assert child
+// behavior set PI_SUBAGENT_CHILD explicitly with withEnv().
+delete process.env.PI_SUBAGENT_CHILD;
+
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const requireFromVerify = createRequire(import.meta.url);
 

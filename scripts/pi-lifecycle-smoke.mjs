@@ -4,6 +4,9 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 process.env.PI_OFFLINE = "1";
+// This smoke test verifies the parent harness command surface. Keep it
+// deterministic when invoked from a pi-subagents child environment.
+delete process.env.PI_SUBAGENT_CHILD;
 
 const { DefaultResourceLoader, SettingsManager } = await import("@earendil-works/pi-coding-agent");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
