@@ -100,7 +100,8 @@ export async function runAmbientContextTests() {
 	});
 	await withEnv({ BEN_PI_COMPACT_TOOL_OUTPUT: "1" }, async () => {
 		const compactToolDisplay = createTaskHarness({});
-		assert(compactToolDisplay.tools.has("read") && compactToolDisplay.tools.has("bash") && compactToolDisplay.tools.has("edit") && compactToolDisplay.tools.has("write"), "compact tool output should be enabled by setting/env and override built-in renderers");
+		assert(compactToolDisplay.tools.has("read") && compactToolDisplay.tools.has("bash") && compactToolDisplay.tools.has("write"), "compact tool output should be enabled by setting/env and override compact-safe built-in renderers");
+		assert(!compactToolDisplay.tools.has("edit"), "compact tool output should leave edit on pi's built-in diff renderer so added/removed highlighting is preserved");
 		const theme = { fg: (_color, text) => text, bg: (color, text) => `[${color}]${text}`, bold: (text) => text };
 		const bashCall = compactToolDisplay.tools.get("bash").renderCall({ command: `python3 scripts/build-report.py --input ${homeRoot}/project/data.json\necho done` }, theme, {});
 		assert(bashCall.text.includes("python3 scripts/build-report.py") && bashCall.text.includes("~/project/data.json") && bashCall.text.includes("+1 lines"), "compact bash call should show the command summary and shorten home paths");
@@ -111,8 +112,6 @@ export async function runAmbientContextTests() {
 		assertFullBackground(readBox, "toolSuccessBg", 46, "compact read shell should paint call and result lines");
 		const writeCall = compactToolDisplay.tools.get("write").renderCall({ path: "notes.md", content: "one\ntwo" }, theme, {});
 		assert(writeCall.text.includes("write notes.md") && writeCall.text.includes("2 lines"), "compact write call should show path and content size");
-		const editCall = compactToolDisplay.tools.get("edit").renderCall({ path: "src/app.ts", edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d" }] }, theme, {});
-		assert(editCall.text.includes("edit src/app.ts") && editCall.text.includes("2 replacements"), "compact edit call should show path and replacement count");
 		const bashResult = compactToolDisplay.tools.get("bash").renderResult({ content: [{ type: "text", text: "hidden output\nsecond line" }], details: {}, isError: false }, { expanded: true, isPartial: false }, theme, { isError: false });
 		assert(!bashResult.text.includes("hidden output") && bashResult.text.includes("✓ exit 0") && bashResult.text.includes("2 lines"), "compact bash renderer should summarize output without dumping it");
 		const bashBox = renderToolBox(theme, false, 52, compactToolDisplay.tools.get("bash").renderCall({ command: "npm test" }, theme, {}), bashResult);
@@ -122,13 +121,6 @@ export async function runAmbientContextTests() {
 		assert(!bashErrorResult.text.includes("hidden output") && bashErrorResult.text.includes("✗ exit 2"), "compact bash renderer should show failure exit code without dumping output");
 		const bashErrorBox = renderToolBox(theme, true, 48, compactToolDisplay.tools.get("bash").renderCall({ command: "npm test" }, theme, {}), bashErrorResult);
 		assertFullBackground(bashErrorBox, "toolErrorBg", 48, "compact bash error shell should paint every responsive column");
-		const editResult = compactToolDisplay.tools.get("edit").renderResult({ content: [{ type: "text", text: "ok" }], details: { diff: "diff --git" } }, { expanded: true, isPartial: false }, theme, { isError: false });
-		const editBox = renderToolBox(theme, false, 54, editCall, editResult);
-		assertFullBackground(editBox, "toolSuccessBg", 54, "compact edit shell should paint call and result lines");
-		assert(editBox.join("\n").includes("edit src/app.ts · 2 replacements") && editBox.join("\n").includes("✓ edited diff recorded"), "compact edit box should render requested two-line summary");
-		const longEditCall = compactToolDisplay.tools.get("edit").renderCall({ path: `${homeRoot}/project/src/really/long/path/to/app.ts`, edits: [{ oldText: "a", newText: "b" }] }, theme, {});
-		const narrowEditBox = renderToolBox(theme, false, 34, longEditCall, editResult);
-		assertFullBackground(narrowEditBox, "toolSuccessBg", 34, "compact edit shell should stay fully highlighted when wrapping on narrow terminals");
 	});
 
 	const assembled = ambient.assembleAmbientContext("base", "standard", [

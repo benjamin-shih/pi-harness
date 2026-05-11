@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, parse } from "node:path";
-import type { AgentToolResult, BashToolDetails, BashToolInput, EditToolDetails, EditToolInput, ExtensionAPI, ReadToolDetails, ReadToolInput, Theme, WriteToolInput } from "@earendil-works/pi-coding-agent";
-import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, BashToolDetails, BashToolInput, ExtensionAPI, ReadToolDetails, ReadToolInput, Theme, WriteToolInput } from "@earendil-works/pi-coding-agent";
+import { createBashTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
 type JsonObject = Record<string, unknown>;
@@ -14,7 +14,6 @@ function createBuiltInTools(cwd: string) {
 	return {
 		read: createReadTool(cwd),
 		bash: createBashTool(cwd),
-		edit: createEditTool(cwd),
 		write: createWriteTool(cwd),
 	};
 }
@@ -115,11 +114,6 @@ function writeSummary(args: WriteToolInput): string {
 	return `${shortenPath(args.path)} · ${textSizeSummary(args.content)}`;
 }
 
-function editSummary(args: EditToolInput): string {
-	const edits = args.edits?.length ?? 0;
-	return `${shortenPath(args.path)} · ${edits} replacement${edits === 1 ? "" : "s"}`;
-}
-
 function bashSummary(args: BashToolInput): string {
 	const raw = args.command || "";
 	const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -178,20 +172,6 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		renderResult(_result, { isPartial }, theme, context) {
 			if (isPartial) return new Text(theme.fg("warning", "… writing"), 0, 0);
 			return new Text(statusText(theme, context.isError, "written"), 0, 0);
-		},
-	});
-
-	pi.registerTool({
-		...getBuiltInTools(process.cwd()).edit,
-		execute: (toolCallId, params, signal, onUpdate, ctx) => getBuiltInTools(ctx.cwd).edit.execute(toolCallId, params, signal, onUpdate),
-		renderCall(args, theme) {
-			return new Text(`${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", editSummary(args))}`, 0, 0);
-		},
-		renderResult(result, { isPartial }, theme, context) {
-			if (isPartial) return new Text(theme.fg("warning", "… editing"), 0, 0);
-			const details = result.details as EditToolDetails | undefined;
-			const diff = details?.diff ? theme.fg("dim", " diff recorded") : "";
-			return new Text(`${statusText(theme, context.isError, "edited", "edited")}${diff}`, 0, 0);
 		},
 	});
 
