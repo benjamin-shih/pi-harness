@@ -127,14 +127,30 @@ function bashSummary(args: BashToolInput): string {
 	return lines.length > 1 ? `${first} · +${lines.length - 1} lines` : first;
 }
 
-function statusText(result: AgentToolResult<unknown>, theme: Theme, okLabel = "ok"): string {
-	return (result as { isError?: boolean }).isError ? theme.fg("error", "✗ failed") : theme.fg("success", `✓ ${okLabel}`);
+function firstTextContent(result: AgentToolResult<unknown>): string {
+	const text = result.content.find((item) => item.type === "text");
+	return text?.type === "text" ? text.text : "";
+}
+
+function statusText(theme: Theme, isError: boolean, okLabel = "ok", errorLabel = "failed"): string {
+	const text = isError ? theme.fg("error", `✗ ${errorLabel}`) : theme.fg("success", `✓ ${okLabel}`);
+	return theme.bg(isError ? "toolErrorBg" : "toolSuccessBg", text);
+}
+
+function bashStatusLabel(result: AgentToolResult<unknown>, isError: boolean): string {
+	if (!isError) return "exit 0";
+	const text = firstTextContent(result);
+	const exitCode = text.match(/Command exited with code (\d+)/)?.[1];
+	if (exitCode) return `exit ${exitCode}`;
+	if (/Command timed out/i.test(text)) return "timed out";
+	if (/Command aborted/i.test(text)) return "aborted";
+	return "failed";
 }
 
 function outputLineCount(result: AgentToolResult<unknown>): number {
-	const text = result.content.find((item) => item.type === "text");
-	if (!text || text.type !== "text" || !text.text.trim()) return 0;
-	return text.text.split("\n").filter((line) => line.trim()).length;
+	const text = firstTextContent(result);
+	if (!text.trim()) return 0;
+	return text.split("\n").filter((line) => line.trim()).length;
 }
 
 export function registerCompactToolOutput(pi: ExtensionAPI): void {
@@ -146,11 +162,11 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		renderCall(args, theme) {
 			return new Text(`${theme.fg("toolTitle", theme.bold("read"))} ${theme.fg("accent", readSummary(args))}`, 0, 0);
 		},
-		renderResult(result, { isPartial }, theme) {
+		renderResult(result, { isPartial }, theme, context) {
 			if (isPartial) return new Text(theme.fg("warning", "… reading"), 0, 0);
 			const details = result.details as ReadToolDetails | undefined;
 			const suffix = details?.truncation?.truncated ? theme.fg("warning", " truncated") : "";
-			return new Text(`${statusText(result, theme, "read")}${suffix}`, 0, 0);
+			return new Text(`${statusText(theme, context.isError, "read")}${suffix}`, 0, 0);
 		},
 	});
 
@@ -160,9 +176,9 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		renderCall(args, theme) {
 			return new Text(`${theme.fg("toolTitle", theme.bold("write"))} ${theme.fg("accent", writeSummary(args))}`, 0, 0);
 		},
-		renderResult(result, { isPartial }, theme) {
+		renderResult(_result, { isPartial }, theme, context) {
 			if (isPartial) return new Text(theme.fg("warning", "… writing"), 0, 0);
-			return new Text(statusText(result, theme, "written"), 0, 0);
+			return new Text(statusText(theme, context.isError, "written"), 0, 0);
 		},
 	});
 
@@ -172,11 +188,11 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		renderCall(args, theme) {
 			return new Text(`${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", editSummary(args))}`, 0, 0);
 		},
-		renderResult(result, { isPartial }, theme) {
+		renderResult(result, { isPartial }, theme, context) {
 			if (isPartial) return new Text(theme.fg("warning", "… editing"), 0, 0);
 			const details = result.details as EditToolDetails | undefined;
 			const diff = details?.diff ? theme.fg("dim", " diff recorded") : "";
-			return new Text(`${statusText(result, theme, "edited")}${diff}`, 0, 0);
+			return new Text(`${statusText(theme, context.isError, "edited")}${diff}`, 0, 0);
 		},
 	});
 
@@ -186,12 +202,12 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		renderCall(args, theme) {
 			return new Text(`${theme.fg("toolTitle", theme.bold("bash"))} ${theme.fg("accent", bashSummary(args))}`, 0, 0);
 		},
-		renderResult(result, { isPartial }, theme) {
+		renderResult(result, { isPartial }, theme, context) {
 			if (isPartial) return new Text(theme.fg("warning", "… running"), 0, 0);
 			const details = result.details as BashToolDetails | undefined;
 			const lines = outputLineCount(result);
 			const suffix = `${theme.fg("dim", lines ? ` ${lines} line${lines === 1 ? "" : "s"}` : " no output")}${details?.truncation?.truncated ? theme.fg("warning", " truncated") : ""}`;
-			return new Text(`${statusText(result, theme, "done")}${suffix}`, 0, 0);
+			return new Text(`${statusText(theme, context.isError, "exit 0", bashStatusLabel(result, context.isError))}${suffix}`, 0, 0);
 		},
 	});
 }
