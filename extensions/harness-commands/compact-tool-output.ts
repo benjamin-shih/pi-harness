@@ -136,11 +136,6 @@ function statusText(theme: Theme, isError: boolean, okLabel = "ok", errorLabel =
 	return isError ? theme.fg("error", `✗ ${errorLabel}`) : theme.fg("success", `✓ ${okLabel}`);
 }
 
-function resultLine(theme: Theme, isError: boolean, text: string): Text {
-	const bg = isError ? "toolErrorBg" : "toolSuccessBg";
-	return new Text(text, 0, 0, (line) => theme.bg(bg, line));
-}
-
 function bashStatusLabel(result: AgentToolResult<unknown>, isError: boolean): string {
 	if (!isError) return "exit 0";
 	const text = firstTextContent(result);
@@ -170,7 +165,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 			if (isPartial) return new Text(theme.fg("warning", "… reading"), 0, 0);
 			const details = result.details as ReadToolDetails | undefined;
 			const suffix = details?.truncation?.truncated ? theme.fg("warning", " truncated") : "";
-			return resultLine(theme, context.isError, `${statusText(theme, context.isError, "read")}${suffix}`);
+			return new Text(`${statusText(theme, context.isError, "read")}${suffix}`, 0, 0);
 		},
 	});
 
@@ -182,7 +177,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		},
 		renderResult(_result, { isPartial }, theme, context) {
 			if (isPartial) return new Text(theme.fg("warning", "… writing"), 0, 0);
-			return resultLine(theme, context.isError, statusText(theme, context.isError, "written"));
+			return new Text(statusText(theme, context.isError, "written"), 0, 0);
 		},
 	});
 
@@ -196,7 +191,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 			if (isPartial) return new Text(theme.fg("warning", "… editing"), 0, 0);
 			const details = result.details as EditToolDetails | undefined;
 			const diff = details?.diff ? theme.fg("dim", " diff recorded") : "";
-			return resultLine(theme, context.isError, `${statusText(theme, context.isError, "edited")}${diff}`);
+			return new Text(`${statusText(theme, context.isError, "edited", "edited")}${diff}`, 0, 0);
 		},
 	});
 
@@ -211,7 +206,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 			const details = result.details as BashToolDetails | undefined;
 			const lines = outputLineCount(result);
 			const suffix = `${theme.fg("dim", lines ? ` ${lines} line${lines === 1 ? "" : "s"}` : " no output")}${details?.truncation?.truncated ? theme.fg("warning", " truncated") : ""}`;
-			return resultLine(theme, context.isError, `${statusText(theme, context.isError, "exit 0", bashStatusLabel(result, context.isError))}${suffix}`);
+			return new Text(`${statusText(theme, context.isError, "exit 0", bashStatusLabel(result, context.isError))}${suffix}`, 0, 0);
 		},
 	});
 }
