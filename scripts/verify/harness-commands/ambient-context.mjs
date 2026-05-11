@@ -94,9 +94,13 @@ export async function runAmbientContextTests() {
 		const editCall = compactToolDisplay.tools.get("edit").renderCall({ path: "src/app.ts", edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d" }] }, theme, {});
 		assert(editCall.text.includes("edit src/app.ts") && editCall.text.includes("2 replacements"), "compact edit call should show path and replacement count");
 		const bashResult = compactToolDisplay.tools.get("bash").renderResult({ content: [{ type: "text", text: "hidden output\nsecond line" }], details: {}, isError: false }, { expanded: true, isPartial: false }, theme, { isError: false });
-		assert(!bashResult.text.includes("hidden output") && bashResult.text.includes("2 lines") && bashResult.text.includes("[toolSuccessBg]✓ exit 0"), "compact bash renderer should summarize output with success background without dumping it");
+		const bashRendered = bashResult.render(80).join("\n");
+		assert(!bashResult.text.includes("hidden output") && bashResult.text.includes("2 lines") && bashRendered.includes("[toolSuccessBg]✓ exit 0 2 lines"), "compact bash renderer should summarize output with full-line success background without dumping it");
 		const bashErrorResult = compactToolDisplay.tools.get("bash").renderResult({ content: [{ type: "text", text: "hidden output\n\nCommand exited with code 2" }], details: {} }, { expanded: false, isPartial: false }, theme, { isError: true });
-		assert(!bashErrorResult.text.includes("hidden output") && bashErrorResult.text.includes("[toolErrorBg]✗ exit 2"), "compact bash renderer should show failure background and exit code without dumping output");
+		const bashErrorRendered = bashErrorResult.render(80).join("\n");
+		assert(!bashErrorResult.text.includes("hidden output") && bashErrorRendered.includes("[toolErrorBg]✗ exit 2 2 lines"), "compact bash renderer should show full-line failure background and exit code without dumping output");
+		const editResult = compactToolDisplay.tools.get("edit").renderResult({ content: [{ type: "text", text: "ok" }], details: { diff: "diff --git" } }, { expanded: true, isPartial: false }, theme, { isError: false });
+		assert(editResult.render(80).join("\n").includes("[toolSuccessBg]✓ edited diff recorded"), "compact edit renderer should keep diff metadata on the success background");
 	});
 
 	const assembled = ambient.assembleAmbientContext("base", "standard", [

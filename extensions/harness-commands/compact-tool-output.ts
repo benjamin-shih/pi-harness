@@ -133,8 +133,12 @@ function firstTextContent(result: AgentToolResult<unknown>): string {
 }
 
 function statusText(theme: Theme, isError: boolean, okLabel = "ok", errorLabel = "failed"): string {
-	const text = isError ? theme.fg("error", `✗ ${errorLabel}`) : theme.fg("success", `✓ ${okLabel}`);
-	return theme.bg(isError ? "toolErrorBg" : "toolSuccessBg", text);
+	return isError ? theme.fg("error", `✗ ${errorLabel}`) : theme.fg("success", `✓ ${okLabel}`);
+}
+
+function resultLine(theme: Theme, isError: boolean, text: string): Text {
+	const bg = isError ? "toolErrorBg" : "toolSuccessBg";
+	return new Text(text, 0, 0, (line) => theme.bg(bg, line));
 }
 
 function bashStatusLabel(result: AgentToolResult<unknown>, isError: boolean): string {
@@ -166,7 +170,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 			if (isPartial) return new Text(theme.fg("warning", "… reading"), 0, 0);
 			const details = result.details as ReadToolDetails | undefined;
 			const suffix = details?.truncation?.truncated ? theme.fg("warning", " truncated") : "";
-			return new Text(`${statusText(theme, context.isError, "read")}${suffix}`, 0, 0);
+			return resultLine(theme, context.isError, `${statusText(theme, context.isError, "read")}${suffix}`);
 		},
 	});
 
@@ -178,7 +182,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		},
 		renderResult(_result, { isPartial }, theme, context) {
 			if (isPartial) return new Text(theme.fg("warning", "… writing"), 0, 0);
-			return new Text(statusText(theme, context.isError, "written"), 0, 0);
+			return resultLine(theme, context.isError, statusText(theme, context.isError, "written"));
 		},
 	});
 
@@ -192,7 +196,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 			if (isPartial) return new Text(theme.fg("warning", "… editing"), 0, 0);
 			const details = result.details as EditToolDetails | undefined;
 			const diff = details?.diff ? theme.fg("dim", " diff recorded") : "";
-			return new Text(`${statusText(theme, context.isError, "edited")}${diff}`, 0, 0);
+			return resultLine(theme, context.isError, `${statusText(theme, context.isError, "edited")}${diff}`);
 		},
 	});
 
@@ -207,7 +211,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 			const details = result.details as BashToolDetails | undefined;
 			const lines = outputLineCount(result);
 			const suffix = `${theme.fg("dim", lines ? ` ${lines} line${lines === 1 ? "" : "s"}` : " no output")}${details?.truncation?.truncated ? theme.fg("warning", " truncated") : ""}`;
-			return new Text(`${statusText(theme, context.isError, "exit 0", bashStatusLabel(result, context.isError))}${suffix}`, 0, 0);
+			return resultLine(theme, context.isError, `${statusText(theme, context.isError, "exit 0", bashStatusLabel(result, context.isError))}${suffix}`);
 		},
 	});
 }
