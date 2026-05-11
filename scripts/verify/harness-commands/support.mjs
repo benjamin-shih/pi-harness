@@ -139,7 +139,7 @@ export const piPackagePolicyPayload = (overrides = {}) => ({
 	},
 	packages: [
 		{ index: 0, source: "./packages/ben-pi-harness", display_source: "./packages/ben-pi-harness", source_type: "local", pinned: true, approved: true, approval: "trusted_local", reason: "approved" },
-		{ index: 1, source: "npm:pi-subagents@0.24.0", display_source: "npm:pi-subagents@0.24.0", source_type: "npm", package: "pi-subagents", version: "0.24.0", pinned: true, approved: true, approval: "quarantine_reviewed", reason: "approved" },
+		{ index: 1, source: "npm:pi-subagents@0.24.2", display_source: "npm:pi-subagents@0.24.2", source_type: "npm", package: "pi-subagents", version: "0.24.2", pinned: true, approved: true, approval: "quarantine_reviewed", reason: "approved" },
 	],
 	...overrides,
 });
@@ -298,6 +298,7 @@ export function createHarness(snapshots) {
 export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
+	const tools = new Map();
 	const sentMessages = [];
 	const execCalls = [];
 	const eventHandlers = new Map();
@@ -317,6 +318,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 	harnessCommands({
 		on: (event, handler) => handlers.set(event, handler),
 		registerCommand: (name, command) => commands.set(name, command),
+		registerTool: (tool) => tools.set(tool.name, tool),
 		getAllTools: () => [],
 		getActiveTools: () => ["read"],
 		events,
@@ -404,5 +406,5 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			getLeafId: () => undefined,
 		},
 	};
-	return { handlers, commands, sentMessages, execCalls, ctx, events };
+	return { handlers, commands, tools, sentMessages, execCalls, ctx, events };
 }

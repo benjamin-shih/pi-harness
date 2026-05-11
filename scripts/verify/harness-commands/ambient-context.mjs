@@ -77,6 +77,18 @@ export async function runAmbientContextTests() {
 	assert(!memoryContext.memoryAdminGuidance("Remember to update memory-context.ts tests"), "remember-to code prompts should not get memory admin guidance");
 	assert(!memoryContext.memoryAdminGuidance("Remember to inspect memory record serialization code"), "remember-to code inspection prompts should not get memory admin guidance");
 
+	await withEnv({ BEN_PI_COMPACT_TOOL_OUTPUT: "0" }, async () => {
+		const defaultToolDisplay = createTaskHarness({});
+		assert(defaultToolDisplay.tools.size === 0, "compact tool output should be disabled when the setting/env is off");
+	});
+	await withEnv({ BEN_PI_COMPACT_TOOL_OUTPUT: "1" }, async () => {
+		const compactToolDisplay = createTaskHarness({});
+		assert(compactToolDisplay.tools.has("read") && compactToolDisplay.tools.has("bash") && compactToolDisplay.tools.has("edit") && compactToolDisplay.tools.has("write"), "compact tool output should be enabled by setting/env and override built-in renderers");
+		const theme = { fg: (_color, text) => text, bold: (text) => text };
+		const bashResult = compactToolDisplay.tools.get("bash").renderResult({ content: [{ type: "text", text: "hidden output\nsecond line" }], details: {}, isError: false }, { expanded: true, isPartial: false }, theme, {});
+		assert(!bashResult.text.includes("hidden output") && bashResult.text.includes("2 lines"), "compact bash renderer should summarize output without dumping it");
+	});
+
 	const assembled = ambient.assembleAmbientContext("base", "standard", [
 		{ id: "late", title: "Late", priority: 20, content: "late content" },
 		{ id: "early", title: "Early", priority: 10, content: "early content", publicSummary: "safe summary" },

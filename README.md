@@ -61,11 +61,23 @@ For long reports or briefs that would be hard to scan in chat, `.agents` may ste
 
 Task closure is explicit. Use `/close-task completed [reason]` or `/close-task blocked [reason]` when the active task should enter a terminal state. The command passes the reason through a private temporary file, calls `.agents/scripts/task-close.sh`, requests current-session lease release, and does not print raw closure text back into chat.
 
-Async inbox support is an MVP queue/status surface. `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh` and returns a bounded receipt; worker launch and same-repo scheduling remain future `.agents` control-plane slices, not hidden harness automation.
+Async inbox support is a thin `.agents` adapter. `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh`, calls the shared `.agents` scheduler, and launches only explicit scheduler-provided worker specs. `/inbox schedule` asks `.agents` to drain the next eligible item. The harness does not invent scheduling policy or hidden worker launch rules.
 
 ## UI polish
 
 The UI polish extension keeps the compact `π` terminal title while idle and animates a small braille spinner in the titlebar during active agent turns. Kitty shows this in tabs when tab titles are enabled. It also displays live elapsed wall-clock time in the working indicator and appends the elapsed time to each final assistant response.
+
+Set `harness.compactToolOutput` in Pi settings to show compact tool rows instead of full read/write/edit/bash output during interactive turns:
+
+```json
+{
+  "harness": {
+    "compactToolOutput": true
+  }
+}
+```
+
+When enabled, tool rows stay terse, e.g. `edit path/to/file` plus a green success or red failure status, without dumping read/write/edit/bash output into the transcript.
 
 ## Commands
 
@@ -172,7 +184,7 @@ Current release target: `v0.5.0`.
 Validated with:
 
 - `@earendil-works/pi-coding-agent@0.74.0`
-- `pi-subagents@0.24.0`
+- `pi-subagents@0.24.2`
 - `pi-intercom@0.6.0`
 - shared `.agents` task, package-policy, memory, and project-instruction diagnostics APIs as of the release tag
 
