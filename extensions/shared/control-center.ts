@@ -75,6 +75,7 @@ export type ControlCenterPayload = {
 		orchestration?: ControlCenterOrchestrationTracking;
 		warnings?: string[];
 	};
+	async_inbox?: { available?: boolean; scope?: string; count?: number; active_items?: number; summary?: { by_status?: Record<string, number>; by_project?: Record<string, number>; active_by_project?: Record<string, number>; queued_by_project?: Record<string, number> }; warnings?: string[] };
 	html_artifacts?: { available?: boolean; scope?: string; project_scoped?: boolean; summary?: Record<string, number>; policy?: { cleanup_strategy?: string; marker?: string; delete_on_task_status?: string[]; destructive_actions?: boolean }; warnings?: string[] };
 	memory?: {
 		available?: boolean;
@@ -120,7 +121,7 @@ function state(health: ControlCenterHealth, status: ControlCenterStatus, summary
 function payloadHealth(payload: ControlCenterPayload): ControlCenterHealth {
 	if (payload.warnings?.length || payload.attention?.length || payload.html_artifacts?.warnings?.length) return "warning";
 	if (payload.package_policy?.health === "warning" || payload.project_instructions?.health === "warning") return "warning";
-	if (payload.tasks?.available === false || payload.html_artifacts?.available === false || payload.package_policy?.available === false) return "warning";
+	if (payload.tasks?.available === false || payload.async_inbox?.available === false || payload.html_artifacts?.available === false || payload.package_policy?.available === false) return "warning";
 	return "ok";
 }
 
@@ -233,7 +234,7 @@ async function load(){
   const res = await fetch('${base}api/dashboard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: dashboardRequest(), cache: 'no-store' });
   const state = await res.json();
   const p = state.payload || {};
-  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, activeTask = tasks.active_task || {}, tracking = (activeTask.orchestration || tasks.orchestration || {}), htmlRetention = p.html_artifacts || {}, htmlRetentionSummary = htmlRetention.summary || {}, htmlRetentionPolicy = htmlRetention.policy || {}, memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {}, delegation = decision.delegation_workflow || {}, html = ((decision.artifacts || {}).html || {});
+  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, activeTask = tasks.active_task || {}, tracking = (activeTask.orchestration || tasks.orchestration || {}), asyncInbox = p.async_inbox || {}, asyncInboxSummary = asyncInbox.summary || {}, htmlRetention = p.html_artifacts || {}, htmlRetentionSummary = htmlRetention.summary || {}, htmlRetentionPolicy = htmlRetention.policy || {}, memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {}, delegation = decision.delegation_workflow || {}, html = ((decision.artifacts || {}).html || {});
   status.textContent = 'Health: ' + state.health + ' · ' + (p.generated_at || 'unknown') + ' · ' + state.summary;
   status.className = state.health === 'ok' ? 'muted' : 'warn';
   cards.innerHTML = [
@@ -245,6 +246,7 @@ async function load(){
     section('HTML retention', '<p>Scope: ' + esc(htmlRetention.scope || 'project') + ' · strategy ' + esc(htmlRetentionPolicy.cleanup_strategy || 'manifest_and_marker') + '</p><p>Tracked: ' + count(htmlRetentionSummary,'tracked_html_artifacts') + ' · Managed: ' + count(htmlRetentionSummary,'managed_html_artifacts') + ' · Cleanup candidates: ' + count(htmlRetentionSummary,'cleanup_candidates') + '</p><p>Kept active/blocked: ' + count(htmlRetentionSummary,'kept_active_or_blocked') + ' · Unmarked kept: ' + count(htmlRetentionSummary,'skipped_unmarked') + ' · Unsafe skipped: ' + count(htmlRetentionSummary,'skipped_unsafe_path') + '</p>'),
     section('Chosen vs recommended', tracking.available ? '<p>Recommended: ' + esc(((tracking.recommended || {}).topology) || 'none') + '</p><p>Chosen: ' + esc(((tracking.chosen || {}).topology) || 'none') + '</p><p>Status: ' + esc(tracking.status || 'unknown') + ' · mismatch ' + esc(Boolean(tracking.mismatch)) + '</p><p>Explanation: ' + esc(tracking.explanation || '') + '</p><p>Action: ' + esc(tracking.recommended_action || '') + '</p>' : '<p class="muted">No orchestration tracking events.</p>'),
     section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p><h3>Recent events</h3>' + list((activeTask.recent_events || []).map(e => (e.timestamp ? e.timestamp + ' ' : '') + (e.type || 'event') + (e.summary ? ' (' + e.summary + ')' : '')))),
+    section('Async inbox', '<p>Available: ' + esc(asyncInbox.available !== false) + ' · Scope: ' + esc(asyncInbox.scope || 'project') + '</p><p>Items: ' + count(asyncInbox,'count') + ' · Active: ' + count(asyncInbox,'active_items') + '</p><p>Statuses: ' + esc(Object.entries(asyncInboxSummary.by_status || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + '</p><p>Active lanes: ' + esc(Object.entries(asyncInboxSummary.active_by_project || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + '</p><p>Queued lanes: ' + esc(Object.entries(asyncInboxSummary.queued_by_project || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + '</p>'),
     section('Memory', '<p>Available: ' + esc(memory.available !== false) + '</p><p>Approved: ' + count(mem,'approved') + ' · Candidates: ' + count(mem,'candidate') + ' · Deprecated: ' + count(mem,'deprecated') + '</p>'),
     section('Pi package policy', '<p>Health: ' + esc(pkg.health || 'unknown') + '</p><p>Configured: ' + count(pkgSummary,'configured_packages') + ' · Approved: ' + count(pkgSummary,'approved_packages') + ' · Unapproved: ' + count(pkgSummary,'unapproved_packages') + ' · Unpinned: ' + count(pkgSummary,'unpinned_packages') + '</p>'),
     section('Project instructions', '<p>Health: ' + esc(instr.health || 'unknown') + '</p><p>Files: ' + count(instrSummary,'instruction_files_found') + ' · Thin style: ' + count(instrSummary,'thin_style_files') + '</p>'),
@@ -328,6 +330,7 @@ export function formatControlCenter(state: ControlCenterState): string {
 	const taskSummary = tasks.summary ?? {};
 	const activeTask = tasks.active_task;
 	const tracking = activeTask?.orchestration ?? tasks.orchestration;
+	const asyncInbox = payload.async_inbox ?? {}, asyncInboxSummary = asyncInbox.summary ?? {};
 	const htmlRetention = payload.html_artifacts ?? {}, htmlRetentionSummary = htmlRetention.summary ?? {}, htmlRetentionPolicy = htmlRetention.policy ?? {};
 	const memory = payload.memory ?? {};
 	const memoryCounts = memory.counts_by_state ?? {};
@@ -400,6 +403,14 @@ export function formatControlCenter(state: ControlCenterState): string {
 		tracking?.available ? `- orchestration tracking: recommended ${tracking.recommended?.topology || "none"}; chosen ${tracking.chosen?.topology || "none"}; status ${tracking.status || "unknown"}; mismatch ${Boolean(tracking.mismatch)}` : "- orchestration tracking: none",
 		tracking?.available ? `- orchestration tracking explanation: ${tracking.explanation || "none"}` : "- orchestration tracking explanation: none",
 		tracking?.available ? `- orchestration tracking action: ${tracking.recommended_action || "none"}` : "- orchestration tracking action: none",
+		"",
+		"## Async inbox",
+		`- inbox diagnostics: ${asyncInbox.available === false ? "unavailable" : "available"} (${asyncInbox.scope ?? "project"})`,
+		countLine("items", asyncInbox.count),
+		countLine("active items", asyncInbox.active_items),
+		`- statuses: ${asyncInboxSummary.by_status ? Object.entries(asyncInboxSummary.by_status).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
+		`- active lanes: ${asyncInboxSummary.active_by_project ? Object.entries(asyncInboxSummary.active_by_project).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
+		`- queued lanes: ${asyncInboxSummary.queued_by_project ? Object.entries(asyncInboxSummary.queued_by_project).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
 		"",
 		"## HTML artifact retention",
 		`- retention diagnostics: ${htmlRetention.available === false ? "unavailable" : "available"} (${htmlRetention.scope ?? "project"}; strategy ${htmlRetentionPolicy.cleanup_strategy || "manifest_and_marker"})`,

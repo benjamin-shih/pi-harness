@@ -69,6 +69,7 @@ export const controlPlaneDashboardPayload = (overrides = {}) => ({
 	route: null,
 	orchestration_decision: null,
 	tasks: { available: true, scope: "project", project_scoped: true, summary: { task_packages_scoped: 3, active_tasks: 1, terminal_tasks: 2, stale_tasks: 0, blocked_tasks: 0, live_leases: 1, expired_leases: 0, stale_candidates: 0, artifact_records: 7, event_records: 12 }, active_task: { status: "in_progress", active: true, terminal: false, scope_match: true, lease_state: "live", events_count: 3, blockers_count: 0, recent_events: [{ timestamp: "2026-05-08T00:00:00Z", type: "checkpoint", summary: "checkpoint" }, { timestamp: "2026-05-08T00:01:00Z", type: "orchestration_chosen", summary: "chosen single_agent_standard" }], orchestration: { available: true, status: "mismatch", mismatch: true, explanation: "explicit choice differs from the paired recommendation; explain why before relying on it", recommended_action: "reconfirm topology or record a new choice", events: 2, recommended: { topology: "parallel_recon", gate_ids: ["repo_clean_preflight"] }, chosen: { topology: "single_agent_standard" } } }, orchestration: { available: true, status: "mismatch", mismatch: true, explanation: "explicit choice differs from the paired recommendation; explain why before relying on it", recommended_action: "reconfirm topology or record a new choice", events: 2, recommended: { topology: "parallel_recon", gate_ids: ["repo_clean_preflight"] }, chosen: { topology: "single_agent_standard" } }, warnings: [] },
+	async_inbox: { available: true, scope: "project", count: 2, active_items: 1, summary: { by_status: { running: 1, queued: 1 }, by_project: { project: 2 }, active_by_project: { project: 1 }, queued_by_project: { project: 1 } }, warnings: [] },
 	html_artifacts: { available: true, scope: "project", project_scoped: true, policy: { cleanup_strategy: "manifest_and_marker", marker: "agents-html-artifact", delete_on_task_status: ["completed", "stale"], destructive_actions: false }, summary: { task_packages_scanned: 3, tracked_html_artifacts: 2, managed_html_artifacts: 2, unmanaged_html_artifacts: 0, cleanup_candidates: 1, kept_active_or_blocked: 1, skipped_missing: 0, skipped_unmarked: 0, skipped_unsafe_path: 0, errors: 0 }, warnings: [] },
 	memory: { available: true, count: 2, counts_by_state: { approved: 1, candidate: 1, deprecated: 0 }, skipped: 0, scope: { project: true, task: true, global: false, all: false }, warnings: [] },
 	package_policy: { available: true, health: "ok", summary: { configured_packages: 4, approved_packages: 4, unapproved_packages: 0, unpinned_packages: 0, unknown_package_entries: 0, approved_manifest_entries: 4 }, policy: { default_action: "deny", requires_exact_pins: true, runtime_network_checks: false }, warnings: [] },
@@ -294,11 +295,17 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root }) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
 	const sentMessages = [];
 	const execCalls = [];
+	const eventHandlers = new Map();
+	const events = eventBus ?? {
+		on: (event, handler) => { eventHandlers.set(event, handler); return () => eventHandlers.delete(event); },
+		emit: (event, data) => eventHandlers.get(event)?.(data),
+		handlers: eventHandlers,
+	};
 	const queuedBindPayloads = [...(bindPayloads ?? [])];
 	const queuedScriptResults = new Map(Object.entries(scriptResults).map(([scriptName, value]) => [scriptName, Array.isArray(value) ? [...value] : value]));
 	const scriptResult = (scriptName, call) => {
@@ -312,6 +319,8 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 		registerCommand: (name, command) => commands.set(name, command),
 		getAllTools: () => [],
 		getActiveTools: () => ["read"],
+		events,
+		getSessionName: () => "parent-session",
 		getThinkingLevel: () => "xhigh",
 		exec: async (cmd, args, options) => {
 			execCalls.push({ cmd, args, cwd: options?.cwd });
@@ -362,8 +371,11 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload ?? { memory_api_version: 1, counts_by_state: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0 }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-review.sh")) return { code: 0, stdout: JSON.stringify(reviewPayload ?? memoryReviewPayload()), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-add.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, recorded: true, record: { id: "mem_candidate_1", state: "candidate", title: "Memory candidate", scope: { type: args.includes("--scope") ? args[args.indexOf("--scope") + 1] : "project" } } }), stderr: "" };
-			if (cmd === "bash" && script.endsWith("inbox-list.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_list", count: 1, returned: 1, summary: { by_status: { queued: 1 }, by_project: { kalshi: 1 } }, items: [{ id: "inq_test", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" }, relation: { kind: "new_task" } }] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("inbox-list.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_list", count: 1, returned: 1, summary: { by_status: { queued: 1 }, by_project: { kalshi: 1 }, active_by_project: {}, queued_by_project: { kalshi: 1 } }, items: [{ id: "inq_test", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" }, relation: { kind: "new_task" } }] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("inbox-enqueue.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_enqueue", enqueued: true, item: { id: "inq_submit", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" }, relation: { kind: "new_parallel_candidate", target_item_id: "inq_existing" } }, warnings: [] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("inbox-schedule.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_schedule", action: "launch", items: [{ action: "launch", reason: "project lane is available", item: { id: "inq_submit", status: "scheduled", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" } } }], launch_specs: [{ backend: "pi_subagents_async", worker_run_id: "iw_submit", params: { agent: "worker", task: "Private request file: /tmp/request", cwd: root, async: true, context: "fresh" } }], warnings: [] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("inbox-worker-start.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_worker_update", updated: true, item: { id: "inq_submit", status: "running", safe_title: "Build Kalshi tool" }, warnings: [] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("inbox-worker-complete.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_worker_update", updated: true, item: { id: "inq_submit", status: "completed", safe_title: "Build Kalshi tool" }, warnings: [] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-promote.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, promoted: true, record: { id: args[1], state: "approved", title: "Promoted memory", scope: { type: "task" } } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-forget.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, forgotten: true, record: { id: args[1], state: "deprecated", title: "Forgotten memory", scope: { type: "task" } } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-lifecycle.sh")) return { code: 0, stdout: JSON.stringify(taskLifecyclePayload({ task_id: args[1], ...(lifecyclePayload ?? {}) })), stderr: "" };
@@ -392,5 +404,5 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			getLeafId: () => undefined,
 		},
 	};
-	return { handlers, commands, sentMessages, execCalls, ctx };
+	return { handlers, commands, sentMessages, execCalls, ctx, events };
 }
