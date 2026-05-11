@@ -85,6 +85,14 @@ export async function runAmbientContextTests() {
 		const compactToolDisplay = createTaskHarness({});
 		assert(compactToolDisplay.tools.has("read") && compactToolDisplay.tools.has("bash") && compactToolDisplay.tools.has("edit") && compactToolDisplay.tools.has("write"), "compact tool output should be enabled by setting/env and override built-in renderers");
 		const theme = { fg: (_color, text) => text, bold: (text) => text };
+		const bashCall = compactToolDisplay.tools.get("bash").renderCall({ command: `python3 scripts/build-report.py --input ${homeRoot}/project/data.json\necho done` }, theme, {});
+		assert(bashCall.text.includes("python3 scripts/build-report.py") && bashCall.text.includes("~/project/data.json") && bashCall.text.includes("+1 lines"), "compact bash call should show the command summary and shorten home paths");
+		const readCall = compactToolDisplay.tools.get("read").renderCall({ path: `${homeRoot}/project/file.ts`, offset: 10, limit: 20 }, theme, {});
+		assert(readCall.text.includes("read ~/project/file.ts") && readCall.text.includes("offset 10") && readCall.text.includes("limit 20"), "compact read call should show path and range");
+		const writeCall = compactToolDisplay.tools.get("write").renderCall({ path: "notes.md", content: "one\ntwo" }, theme, {});
+		assert(writeCall.text.includes("write notes.md") && writeCall.text.includes("2 lines"), "compact write call should show path and content size");
+		const editCall = compactToolDisplay.tools.get("edit").renderCall({ path: "src/app.ts", edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d" }] }, theme, {});
+		assert(editCall.text.includes("edit src/app.ts") && editCall.text.includes("2 replacements"), "compact edit call should show path and replacement count");
 		const bashResult = compactToolDisplay.tools.get("bash").renderResult({ content: [{ type: "text", text: "hidden output\nsecond line" }], details: {}, isError: false }, { expanded: true, isPartial: false }, theme, {});
 		assert(!bashResult.text.includes("hidden output") && bashResult.text.includes("2 lines"), "compact bash renderer should summarize output without dumping it");
 	});

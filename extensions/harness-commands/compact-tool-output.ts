@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, parse } from "node:path";
-import type { AgentToolResult, BashToolDetails, EditToolDetails, ExtensionAPI, ReadToolDetails, Theme } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, BashToolDetails, BashToolInput, EditToolDetails, EditToolInput, ExtensionAPI, ReadToolDetails, ReadToolInput, Theme, WriteToolInput } from "@earendil-works/pi-coding-agent";
 import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
@@ -77,10 +77,54 @@ export function compactToolOutputEnabled(cwd = process.cwd()): boolean {
 	return value === true || value === "on" || value === "compact" || value === "summary" || value === "minimal";
 }
 
+const MAX_SUMMARY_CHARS = 140;
+
+function shortenHome(text: string): string {
+	const home = homedir();
+	return home ? text.split(home).join("~") : text;
+}
+
+function compactText(value: string, maxChars = MAX_SUMMARY_CHARS): string {
+	const collapsed = shortenHome(value).replace(/\s+/g, " ").trim();
+	if (collapsed.length <= maxChars) return collapsed || "…";
+	return `${collapsed.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+}
+
 function shortenPath(path: string | undefined): string {
 	if (!path) return "…";
-	const home = homedir();
-	return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+	return compactText(path, MAX_SUMMARY_CHARS);
+}
+
+function lineCount(text: string): number {
+	return text.length === 0 ? 0 : text.split("\n").length;
+}
+
+function textSizeSummary(text: string): string {
+	const lines = lineCount(text);
+	return `${lines} line${lines === 1 ? "" : "s"}`;
+}
+
+function readSummary(args: ReadToolInput): string {
+	const parts = [shortenPath(args.path)];
+	if (typeof args.offset === "number") parts.push(`offset ${args.offset}`);
+	if (typeof args.limit === "number") parts.push(`limit ${args.limit}`);
+	return parts.join(" · ");
+}
+
+function writeSummary(args: WriteToolInput): string {
+	return `${shortenPath(args.path)} · ${textSizeSummary(args.content)}`;
+}
+
+function editSummary(args: EditToolInput): string {
+	const edits = args.edits?.length ?? 0;
+	return `${shortenPath(args.path)} · ${edits} replacement${edits === 1 ? "" : "s"}`;
+}
+
+function bashSummary(args: BashToolInput): string {
+	const raw = args.command || "";
+	const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+	const first = compactText(lines[0] || "…", MAX_SUMMARY_CHARS);
+	return lines.length > 1 ? `${first} · +${lines.length - 1} lines` : first;
 }
 
 function statusText(result: AgentToolResult<unknown>, theme: Theme, okLabel = "ok"): string {
@@ -100,7 +144,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		...getBuiltInTools(process.cwd()).read,
 		execute: (toolCallId, params, signal, onUpdate, ctx) => getBuiltInTools(ctx.cwd).read.execute(toolCallId, params, signal, onUpdate),
 		renderCall(args, theme) {
-			return new Text(`${theme.fg("toolTitle", theme.bold("read"))} ${theme.fg("accent", shortenPath(args.path))}`, 0, 0);
+			return new Text(`${theme.fg("toolTitle", theme.bold("read"))} ${theme.fg("accent", readSummary(args))}`, 0, 0);
 		},
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return new Text(theme.fg("warning", "… reading"), 0, 0);
@@ -114,7 +158,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		...getBuiltInTools(process.cwd()).write,
 		execute: (toolCallId, params, signal, onUpdate, ctx) => getBuiltInTools(ctx.cwd).write.execute(toolCallId, params, signal, onUpdate),
 		renderCall(args, theme) {
-			return new Text(`${theme.fg("toolTitle", theme.bold("write"))} ${theme.fg("accent", shortenPath(args.path))}`, 0, 0);
+			return new Text(`${theme.fg("toolTitle", theme.bold("write"))} ${theme.fg("accent", writeSummary(args))}`, 0, 0);
 		},
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return new Text(theme.fg("warning", "… writing"), 0, 0);
@@ -126,7 +170,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		...getBuiltInTools(process.cwd()).edit,
 		execute: (toolCallId, params, signal, onUpdate, ctx) => getBuiltInTools(ctx.cwd).edit.execute(toolCallId, params, signal, onUpdate),
 		renderCall(args, theme) {
-			return new Text(`${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", shortenPath(args.path))}`, 0, 0);
+			return new Text(`${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", editSummary(args))}`, 0, 0);
 		},
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return new Text(theme.fg("warning", "… editing"), 0, 0);
@@ -140,8 +184,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 		...getBuiltInTools(process.cwd()).bash,
 		execute: (toolCallId, params, signal, onUpdate, ctx) => getBuiltInTools(ctx.cwd).bash.execute(toolCallId, params, signal, onUpdate),
 		renderCall(args, theme) {
-			const label = args.command ? "bash" : "bash …";
-			return new Text(theme.fg("toolTitle", theme.bold(label)), 0, 0);
+			return new Text(`${theme.fg("toolTitle", theme.bold("bash"))} ${theme.fg("accent", bashSummary(args))}`, 0, 0);
 		},
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return new Text(theme.fg("warning", "… running"), 0, 0);

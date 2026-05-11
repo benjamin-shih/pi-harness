@@ -13,6 +13,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Local package compatibility now targets `pi-subagents@0.24.2`, which includes the `jiti` async loader dependency and `@earendil-works/*` Pi peer namespace.
 
 ### Fixed
+- Compact tool rows now include useful call summaries such as bash commands, read ranges, write line counts, and edit replacement counts.
 - Release verification and lifecycle smoke checks now clear inherited `PI_SUBAGENT_CHILD` so parent-mode tests remain deterministic when dogfooded from subagent contexts.
 
 ### Breaking

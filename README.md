@@ -77,7 +77,7 @@ Set `harness.compactToolOutput` in Pi settings to show compact tool rows instead
 }
 ```
 
-When enabled, tool rows stay terse, e.g. `edit path/to/file` plus a green success or red failure status, without dumping read/write/edit/bash output into the transcript.
+When enabled, tool rows stay terse but informative: bash calls include the command summary, reads include file/range, writes include file/line count, and edits include file/replacement count, without dumping read/write/edit/bash output into the transcript.
 
 ## Commands
 
