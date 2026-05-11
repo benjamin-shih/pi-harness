@@ -1,5 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { buildControlCenterState, formatControlCenter, openControlCenterHtml, startControlCenterWeb, stopControlCenterWeb, type ControlCenterOptions } from "./control-center";
+import type { ControlCenterOptions } from "./control-center";
+
+async function controlCenter() {
+	return import("./control-center");
+}
 
 type TaskScopeProvider = { ambientScope?: () => { taskId?: string; projectRoot?: string } };
 
@@ -32,22 +36,23 @@ export function registerControlCenterCommand(pi: ExtensionAPI, taskLayer: TaskSc
 		description: "Show the read-only local Agent Control Center; use `html`, `web`, or `--project harness`",
 		handler: async (args, ctx) => {
 			const { mode, options } = controlCenterOptions(args, taskLayer);
+			const center = await controlCenter();
 			if (mode === "web-stop") {
-				const stopped = await stopControlCenterWeb();
+				const stopped = await center.stopControlCenterWeb();
 				pi.sendMessage({ customType: "harness-control-center", content: ["## Agent Control Center web", `- stopped: ${stopped ? "yes" : "no active server"}`].join("\n"), display: true });
 				return;
 			}
 			if (mode === "web") {
-				const result = await startControlCenterWeb(pi, ctx.cwd, options);
+				const result = await center.startControlCenterWeb(pi, ctx.cwd, options);
 				pi.sendMessage({ customType: "harness-control-center", content: ["## Agent Control Center web", `- url: ${result.url}`, `- opened: ${result.opened ? "yes" : "no"}`, ...(result.error ? [`- warning: ${result.error}`] : []), "- mode: read-only local web dashboard with refresh"].join("\n"), display: true });
 				return;
 			}
 			if (mode === "html") {
-				const result = await openControlCenterHtml(pi, ctx.cwd, options);
+				const result = await center.openControlCenterHtml(pi, ctx.cwd, options);
 				pi.sendMessage({ customType: "harness-control-center", content: ["## Agent Control Center v0", `- html: ${result.path ? result.path : "not generated"}`, `- opened: ${result.opened ? "yes" : "no"}`, ...(result.error ? [`- warning: ${result.error}`] : []), "- mode: read-only static dashboard"].join("\n"), display: true });
 				return;
 			}
-			pi.sendMessage({ customType: "harness-control-center", content: formatControlCenter(await buildControlCenterState(pi, ctx.cwd, options)), display: true });
+			pi.sendMessage({ customType: "harness-control-center", content: center.formatControlCenter(await center.buildControlCenterState(pi, ctx.cwd, options)), display: true });
 		},
 	});
 }

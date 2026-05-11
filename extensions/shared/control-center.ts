@@ -315,6 +315,11 @@ function countLine(label: string, value: unknown): string {
 	return `- ${label}: ${typeof value === "number" ? value : 0}`;
 }
 
+function countMapLine(label: string, counts: Record<string, number> | undefined): string {
+	const text = counts ? Object.entries(counts).map(([key, value]) => `${key}=${value}`).join(", ") : "";
+	return `- ${label}: ${text || "none"}`;
+}
+
 function taskEventLine(event: ControlCenterTaskEvent): string {
 	const prefix = event.timestamp ? `${event.timestamp} ` : "";
 	return `${prefix}${event.type || "event"}${event.summary ? ` (${event.summary})` : ""}`;
@@ -408,14 +413,14 @@ export function formatControlCenter(state: ControlCenterState): string {
 		`- inbox diagnostics: ${asyncInbox.available === false ? "unavailable" : "available"} (${asyncInbox.scope ?? "project"})`,
 		countLine("items", asyncInbox.count),
 		countLine("active items", asyncInbox.active_items),
-		`- statuses: ${asyncInboxSummary.by_status ? Object.entries(asyncInboxSummary.by_status).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
-		`- control states: ${asyncInboxSummary.by_control_state ? Object.entries(asyncInboxSummary.by_control_state).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
-		`- cleanup states: ${asyncInboxSummary.by_cleanup_state ? Object.entries(asyncInboxSummary.by_cleanup_state).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
-		`- active lanes: ${asyncInboxSummary.active_by_project ? Object.entries(asyncInboxSummary.active_by_project).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
-		`- queued lanes: ${asyncInboxSummary.queued_by_project ? Object.entries(asyncInboxSummary.queued_by_project).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
-		`- review lanes: ${asyncInboxSummary.review_by_project ? Object.entries(asyncInboxSummary.review_by_project).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
-		`- apply lanes: ${asyncInboxSummary.apply_by_project ? Object.entries(asyncInboxSummary.apply_by_project).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
-		`- cleanup diagnostics: ${asyncInboxSummary.cleanup_by_project ? Object.entries(asyncInboxSummary.cleanup_by_project).map(([key, value]) => `${key}=${value}`).join(", ") || "none" : "none"}`,
+		countMapLine("statuses", asyncInboxSummary.by_status),
+		countMapLine("control states", asyncInboxSummary.by_control_state),
+		countMapLine("cleanup states", asyncInboxSummary.by_cleanup_state),
+		countMapLine("active lanes", asyncInboxSummary.active_by_project),
+		countMapLine("queued lanes", asyncInboxSummary.queued_by_project),
+		countMapLine("review lanes", asyncInboxSummary.review_by_project),
+		countMapLine("apply lanes", asyncInboxSummary.apply_by_project),
+		countMapLine("cleanup diagnostics", asyncInboxSummary.cleanup_by_project),
 		"",
 		"## HTML artifact retention",
 		`- retention diagnostics: ${htmlRetention.available === false ? "unavailable" : "available"} (${htmlRetention.scope ?? "project"}; strategy ${htmlRetentionPolicy.cleanup_strategy || "manifest_and_marker"})`,

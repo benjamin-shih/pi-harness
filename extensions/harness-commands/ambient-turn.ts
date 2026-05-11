@@ -84,11 +84,13 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 
 export async function buildAmbientTurn(pi: ExtensionAPI, ctx: ExtensionContext, input: AmbientTurnInput): Promise<AmbientTurnResult> {
 	const policy = decideAmbientPolicy(input.weight);
-	const repoSummary = shouldIncludeRepoContext(policy) ? await buildRepoContextSummary(pi, ctx.cwd) : undefined;
+	const repoSummaryPromise = shouldIncludeRepoContext(policy) ? buildRepoContextSummary(pi, ctx.cwd) : Promise.resolve(undefined);
+	const orchestrationPromise = input.weight === "trivial" ? Promise.resolve(undefined) : buildOrchestrationDecisionState(pi, ctx.cwd, input.prompt);
+	const executionPromise = buildExecutionRouteState(pi, ctx.cwd, input.prompt);
+	const repoSummary = await repoSummaryPromise;
 	const memoryProjectRoot = input.taskScope.projectRoot || repoSummary?.root;
-	const memoryContext = shouldIncludeMemoryContext(policy) ? await buildMemoryContext(pi, ctx.cwd, { projectRoot: memoryProjectRoot, taskId: input.taskScope.taskId }) : undefined;
-	const orchestrationDecision = input.weight === "trivial" ? undefined : await buildOrchestrationDecisionState(pi, ctx.cwd, input.prompt);
-	const executionRoute = await buildExecutionRouteState(pi, ctx.cwd, input.prompt);
+	const memoryPromise = shouldIncludeMemoryContext(policy) ? buildMemoryContext(pi, ctx.cwd, { projectRoot: memoryProjectRoot, taskId: input.taskScope.taskId }) : Promise.resolve(undefined);
+	const [memoryContext, orchestrationDecision, executionRoute] = await Promise.all([memoryPromise, orchestrationPromise, executionPromise]);
 	const assembly = assembleAmbientContext(input.baseSystemPrompt, input.weight, buildAmbientLanes({
 		...input,
 		memoryContext,

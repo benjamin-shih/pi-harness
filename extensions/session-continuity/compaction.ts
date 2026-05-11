@@ -101,12 +101,13 @@ export function appendCompactionDiagnostic(
 	reason: CompactionDiagnosticReason,
 	options: { promptSizing?: PromptSizing; error?: string; fallbackReturned?: boolean; compactionEntry?: SessionCompactEvent["compactionEntry"]; fromExtension?: boolean } = {},
 ): void {
+	const model = modelSummary(ctx);
 	const diagnostic: ContinuityCompactionDiagnostic = {
 		version: CONTINUITY_VERSION,
 		timestamp: new Date().toISOString(),
 		reason,
 		cwd: ctx.cwd,
-		...(modelSummary(ctx) ? { model: modelSummary(ctx) } : {}),
+		...(model ? { model } : {}),
 		thinking: pi.getThinkingLevel(),
 		fallbackReturned: options.fallbackReturned ?? false,
 		...(options.promptSizing ? { promptSizing: options.promptSizing } : {}),
