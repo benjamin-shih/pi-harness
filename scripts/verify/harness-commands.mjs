@@ -6,6 +6,7 @@ import { runGitSummaryTests } from "./harness-commands/git-summary.mjs";
 import { runInboxCommandTests } from "./harness-commands/inbox-command.mjs";
 import { runModeBehaviorTests } from "./harness-commands/modes.mjs";
 import { runPromptGuidanceTests } from "./harness-commands/prompt-guidance.mjs";
+import { runRemoteCiGuardTests } from "./harness-commands/remote-ci-guard.mjs";
 import { runStatusCommandTests } from "./harness-commands/status-commands.mjs";
 import { runSubagentTopologyTests } from "./harness-commands/subagent-topology.mjs";
 import { runTaskLayerTests } from "./harness-commands/task-layer.mjs";
@@ -19,6 +20,7 @@ export async function runHarnessCommandBehaviorTests() {
 	await runInboxCommandTests();
 	await runModeBehaviorTests();
 	await runPromptGuidanceTests();
+	await runRemoteCiGuardTests();
 	await runStatusCommandTests();
 	await runSubagentTopologyTests();
 	await runTaskLayerTests();

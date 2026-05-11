@@ -295,7 +295,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus } = {}) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
 	const tools = new Map();
@@ -326,6 +326,8 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 		getThinkingLevel: () => "xhigh",
 		exec: async (cmd, args, options) => {
 			execCalls.push({ cmd, args, cwd: options?.cwd });
+			const hooked = await execHook?.(cmd, args, options, execCalls);
+			if (hooked !== undefined) return hooked;
 			if (cmd === "git" && args.join(" ") === "rev-parse --show-toplevel") return gitRoot ? { code: 0, stdout: `${gitRoot}\n`, stderr: "" } : { code: 1, stdout: "", stderr: "not a git repo" };
 			if (cmd === "git" && args.join(" ") === "branch --show-current") return { code: 0, stdout: "main\n", stderr: "" };
 			if (cmd === "git" && args.join(" ") === "status --porcelain=v1 --untracked-files=no") return { code: 0, stdout: "", stderr: "" };

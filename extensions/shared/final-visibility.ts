@@ -1,5 +1,7 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AmbientContextSnapshot } from "./ambient-context";
+import type { RemoteCiGuardResult } from "./remote-ci-guard";
+import { remoteCiVisibilitySummary } from "./remote-ci-guard";
 import { formatVisibilityBox, type VisibilityBoxOptions, visibilityBoxSentinel } from "./visibility-box";
 
 const FOOTER_TITLE = "Harness visibility";
@@ -17,6 +19,7 @@ export type FinalVisibilityState = {
 	ambient?: AmbientContextSnapshot;
 	mode?: string;
 	task?: FinalTaskVisibility;
+	remoteCi?: RemoteCiGuardResult;
 };
 
 function laneIncluded(snapshot: AmbientContextSnapshot | undefined, id: string): boolean {
@@ -63,6 +66,8 @@ export function formatFinalVisibility(state: FinalVisibilityState | undefined, o
 	];
 	if (execution) rows.push(["exec", displayExecution(execution)]);
 	if (activity || artifacts) rows.push(["turn", [activity ? `activity ${activity}` : undefined, artifacts ? `artifacts ${artifacts}` : undefined].filter(Boolean).join(" · ")]);
+	const remoteCi = remoteCiVisibilitySummary(state.remoteCi);
+	if (remoteCi) rows.push(["ci", remoteCi]);
 	rows.push(["memory", [laneIncluded(state.ambient, "memory") ? "approved yes" : "approved no", "durable writes no", "vector off"].join(" · ")]);
 	return formatVisibilityBox(FOOTER_TITLE, rows, options);
 }

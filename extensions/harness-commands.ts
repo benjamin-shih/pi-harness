@@ -17,6 +17,7 @@ import {
 } from "./shared/cleanup-guard";
 import { queueFollowUpAfterCurrentAgent } from "./shared/deferred-user-message";
 import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
+import { checkRemoteCiAfterPush, isGitPushCommand, remoteCiGuardBlock, type RemoteCiGuardResult } from "./shared/remote-ci-guard";
 import { htmlArtifactPathFromTool, openHtmlArtifact } from "./shared/html-artifact-open";
 import { applyMode, modeDescription, modeNames } from "./harness-commands/modes";
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
@@ -48,8 +49,10 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	let lastAmbientContext: AmbientContextSnapshot | undefined;
 	let lastOrchestrationDecision: OrchestrationDecisionState | undefined;
 	let finalVisibility: FinalVisibilityState | undefined;
+	let sawGitPush = false;
+	let remoteCiStatus: RemoteCiGuardResult | undefined;
 	const refreshFinalVisibility = () => {
-		finalVisibility = lastAmbientContext ? { ambient: lastAmbientContext, mode: activeMode, task: taskLayer.finalVisibility() } : undefined;
+		finalVisibility = lastAmbientContext ? { ambient: lastAmbientContext, mode: activeMode, task: taskLayer.finalVisibility(), remoteCi: remoteCiStatus } : undefined;
 	};
 	pi.registerCommand("mode", {
 		description: "Switch harness mode: fast, default, deep, readonly, full",
@@ -112,6 +115,8 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		finalVisibility = undefined;
 		const fallbackWeight = classifyPrompt(event.prompt);
 		sawFileMutation = false;
+		sawGitPush = false;
+		remoteCiStatus = undefined;
 		currentPromptIsCleanupGuard = event.prompt.includes(CLEANUP_GUARD_MARKER);
 		currentPromptNeedsCleanup = isCodingOrFilePrompt(event.prompt);
 		pendingHtmlArtifacts = new Set<string>();
@@ -138,8 +143,10 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			sawFileMutation = true;
 			return;
 		}
-		if (event.toolName === "bash" && looksFileMutatingCommand(String((event.input as { command?: unknown }).command ?? ""))) {
-			sawFileMutation = true;
+		if (event.toolName === "bash") {
+			const command = String((event.input as { command?: unknown }).command ?? "");
+			if (looksFileMutatingCommand(command)) sawFileMutation = true;
+			if (isGitPushCommand(command)) sawGitPush = true;
 		}
 	});
 	pi.on("tool_result", async (event, ctx) => {
@@ -148,9 +155,15 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		if (htmlArtifact) pendingHtmlArtifacts.add(htmlArtifact);
 		refreshFinalVisibility();
 	});
-	pi.on("message_end", async (event) => {
+	pi.on("message_end", async (event, ctx) => {
 		if (event.message.role !== "assistant" || event.message.stopReason === "toolUse") return;
-		const message = appendFinalVisibilityToAssistantMessage(event.message, finalVisibility);
+		if (sawGitPush && !remoteCiStatus) {
+			remoteCiStatus = await checkRemoteCiAfterPush(pi, ctx.cwd);
+			refreshFinalVisibility();
+		}
+		const remoteCiBlock = remoteCiGuardBlock(remoteCiStatus);
+		const guardedMessage = remoteCiBlock ? { ...event.message, content: [...event.message.content, { type: "text" as const, text: `\n\n${remoteCiBlock}` }] } : event.message;
+		const message = appendFinalVisibilityToAssistantMessage(guardedMessage, finalVisibility);
 		return message === event.message ? undefined : { message };
 	});
 	pi.on("agent_end", async (_event, ctx) => {

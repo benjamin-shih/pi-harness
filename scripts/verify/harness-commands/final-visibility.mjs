@@ -51,6 +51,8 @@ export async function runFinalVisibilityTests() {
 	assert(footer.includes("│ exec     software · overlays none"), "final visibility should include safe execution routing metadata");
 	assert(footer.includes("│ turn     activity r1/w2/c3/e0 · artifacts 2 meta +1 skipped"), "final visibility should summarize activity and artifact metadata in one row");
 	assert(footer.includes("│ memory   approved yes · durable writes no · vector off"), "final visibility should summarize memory/write posture without memory content");
+	const ciFooter = visibility.formatFinalVisibility({ ambient, task: taskVisibility(), remoteCi: { state: "passed", summary: "remote CI passed for run 101", runId: "101", headSha: "HEAD1" } }, { columns: 90, color: false });
+	assert(ciFooter.includes("│ ci       remote passed · remote CI passed for run 101"), "final visibility should include remote CI guard status when available");
 	assert(!footer.includes("secret.txt"), "final visibility should not include skipped-lane reasons or filenames");
 	const narrowFooter = visibility.formatFinalVisibility({ ambient, task: taskVisibility({ reads: 10, writes: 20, commands: 30, errors: 1, recorded: 12, skipped: 3 }) }, { columns: 42, color: false });
 	assert(narrowFooter.split("\n").every((line) => line.length <= 40), "final visibility should fit within the available terminal width minus margin");
@@ -97,4 +99,21 @@ export async function runFinalVisibilityTests() {
 	assert(!finalText.includes("pi-task"), "harness final visibility should not include task ids");
 	const toolUse = await harness.handlers.get("message_end")({ message: assistantMessage("toolUse") }, harness.ctx);
 	assert(!toolUse, "harness should not append final visibility to intermediate tool-use assistant messages");
+
+	const ciHarness = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		executionPayload: executionRoutePayload(),
+		execHook: async (cmd, args) => {
+			if (cmd === "git" && args.join(" ") === "rev-parse HEAD") return { code: 0, stdout: "HEAD-CI\n", stderr: "" };
+			if (cmd === "git" && args.join(" ") === "remote -v") return { code: 0, stdout: "origin\thttps://github.com/example/repo.git (fetch)\norigin\thttps://github.com/example/repo.git (push)\n", stderr: "" };
+			if (cmd === "gh" && args[0] === "run" && args[1] === "list") return { code: 0, stdout: JSON.stringify([{ databaseId: 404, status: "completed", conclusion: "success", headSha: "HEAD-CI", name: "CI" }]), stderr: "" };
+			return undefined;
+		},
+	});
+	await ciHarness.handlers.get("session_start")({ reason: "startup" }, ciHarness.ctx);
+	await ciHarness.handlers.get("before_agent_start")({ prompt: "Implement and push the final visibility guard", systemPrompt: "base" }, ciHarness.ctx);
+	await ciHarness.handlers.get("tool_call")({ toolName: "bash", input: { command: "git push" } }, ciHarness.ctx);
+	const ciFinal = await ciHarness.handlers.get("message_end")({ message: assistantMessage() }, ciHarness.ctx);
+	const ciFinalText = ciFinal?.message?.content.map((block) => block.text ?? "").join("\n") ?? "";
+	assert(ciFinalText.includes("ci       remote passed · remote CI passed for run 404"), "harness final guard should wait for and report remote CI success after git push");
 }
