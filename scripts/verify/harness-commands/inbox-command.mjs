@@ -61,6 +61,7 @@ export async function runInboxCommandTests() {
 	await flushMicrotasks();
 	const completeCall = harness.execCalls.find((call) => call.args[0]?.endsWith("inbox-worker-complete.sh"));
 	assert(completeCall, "/inbox bridge should record bounded worker completion events");
+	assert(completeCall.args.includes("--backend-run-id") && completeCall.args.includes("async-1"), "/inbox completion should be durable by persisted backend run id");
 	assert(completeCall.args.includes("--summary-file"), "/inbox completion should pass worker summary through a private file");
 	assert(!completeCall.args.includes("Completed successfully"), "/inbox completion should not pass raw worker output through argv");
 	const summaryPath = completeCall.args[completeCall.args.indexOf("--summary-file") + 1];
@@ -69,10 +70,34 @@ export async function runInboxCommandTests() {
 	const noBridgeHarness = createTaskHarness({ eventBus: {} });
 	await noBridgeHarness.commands.get("inbox").handler("submit Build Kalshi tool", noBridgeHarness.ctx);
 	const noBridgeReceipt = noBridgeHarness.sentMessages.at(-1).content;
-	assert(noBridgeReceipt.includes("worker launch: degraded; pi-subagents event bridge is unavailable"), "/inbox submit should report unavailable worker bridge without pretending work launched");
+	assert(noBridgeReceipt.includes("worker launch: degraded; worker bridge unavailable"), "/inbox submit should report unavailable worker bridge without pretending work launched");
 	const failedLaunchCall = noBridgeHarness.execCalls.find((call) => call.args[0]?.endsWith("inbox-worker-complete.sh"));
 	assert(failedLaunchCall?.args.includes("--status") && failedLaunchCall.args.includes("failed"), "/inbox submit should record launch failure instead of leaving scheduled items stuck");
 	assert(failedLaunchCall?.args.includes("--summary-file"), "/inbox launch failure should use a private summary file");
+
+	const errorBus = createEventBus();
+	errorBus.on("subagent:slash:request", (data) => errorBus.emit("subagent:slash:response", { requestId: data.requestId, isError: true, errorText: "raw private bridge stderr" }));
+	const errorHarness = createTaskHarness({ eventBus: errorBus });
+	await errorHarness.commands.get("inbox").handler("submit Build Kalshi tool", errorHarness.ctx);
+	const errorReceipt = errorHarness.sentMessages.at(-1).content;
+	assert(errorReceipt.includes("worker launch: failed; subagent bridge returned an error"), "/inbox submit should surface generic bridge errors");
+	assert(!errorReceipt.includes("raw private bridge stderr"), "/inbox submit should not expose raw bridge errors");
+
+	const throwingBus = { on: () => {}, emit: () => { throw new Error("raw private thrown bridge error"); } };
+	const throwingHarness = createTaskHarness({ eventBus: throwingBus });
+	await throwingHarness.commands.get("inbox").handler("submit Build Kalshi tool", throwingHarness.ctx);
+	const throwingReceipt = throwingHarness.sentMessages.at(-1).content;
+	assert(throwingReceipt.includes("worker launch: failed; worker bridge launch failed"), "/inbox submit should catch bridge emit exceptions");
+	assert(!throwingReceipt.includes("raw private thrown bridge error"), "/inbox submit should not expose thrown bridge errors");
+
+	const startFailureBus = createEventBus();
+	startFailureBus.on("subagent:slash:request", (data) => startFailureBus.emit("subagent:slash:response", { requestId: data.requestId, isError: false, result: { details: { asyncId: "async-start-fail" } } }));
+	const startFailureHarness = createTaskHarness({ eventBus: startFailureBus, scriptResults: { "inbox-worker-start.sh": { code: 1, stdout: "", stderr: "raw private lifecycle stderr" } } });
+	await startFailureHarness.commands.get("inbox").handler("submit Build Kalshi tool", startFailureHarness.ctx);
+	const startFailureReceipt = startFailureHarness.sentMessages.at(-1).content;
+	assert(startFailureReceipt.includes("worker launch: degraded; worker lifecycle recording failed"), "/inbox submit should report lifecycle-record failures generically");
+	assert(!startFailureReceipt.includes("raw private lifecycle stderr"), "/inbox submit should not expose lifecycle stderr");
+	assert(startFailureHarness.execCalls.some((call) => call.args[0]?.endsWith("inbox-worker-complete.sh") && call.args.includes("blocked")), "/inbox submit should record lifecycle-record failure as blocked");
 
 	const queuedHarness = createTaskHarness({
 		scriptResults: {
