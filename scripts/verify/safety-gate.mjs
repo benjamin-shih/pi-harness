@@ -233,6 +233,8 @@ export async function runSafetyGateBehaviorTests() {
 	await flushDeferredFollowUps();
 	assert(sentFinalizationFollowUps.length === 1, "safety-gate should defer finalization follow-up until after agent_end unwinds");
 	assert(sentFinalizationFollowUps[0].message.includes("PI_GIT_FINALIZATION_GUARD"), "safety-gate finalization follow-up should keep its loop marker");
+	assert(sentFinalizationFollowUps[0].message.includes("push with `git push`"), "safety-gate finalization follow-up should prefer plain git push");
+	assert(sentFinalizationFollowUps[0].message.includes("Do not use `git push origin main`"), "safety-gate finalization follow-up should discourage origin/main pushes by default");
 	assert(sentFinalizationFollowUps[0].options?.deliverAs === "followUp", "safety-gate finalization follow-up should use followUp delivery");
 
 	for (const [label, policyResult] of [

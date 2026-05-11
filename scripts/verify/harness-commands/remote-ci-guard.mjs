@@ -29,7 +29,7 @@ function listRun(run) {
 export async function runRemoteCiGuardTests() {
 	const guard = loadExtensionModule("extensions/shared/remote-ci-guard.ts");
 	assert(guard.isGitPushCommand("git push"), "remote CI guard should detect plain git push");
-	assert(guard.isGitPushCommand("git add . && git commit -m x && git push origin main"), "remote CI guard should detect chained git push");
+	assert(guard.isGitPushCommand("git add . && git commit -m x && git push"), "remote CI guard should detect chained plain git push");
 	assert(!guard.isGitPushCommand("git status && echo push"), "remote CI guard should not trigger on prose or non-push git commands");
 
 	const passed = fakePi((cmd, args) => {

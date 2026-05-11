@@ -6,7 +6,7 @@ export const mutatingGitFixtures = [
 	"git --work-tree=$HOME/repo --git-dir=$HOME/repo/.git add .",
 	"git -c user.name=test commit -m ok",
 	"git -C \"$HOME\"/repo add .",
-	"git push origin main",
+	"git push",
 	"git status && git add .",
 	"git log --grep commit; git push",
 	"command git add .",

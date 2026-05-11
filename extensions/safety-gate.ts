@@ -7,7 +7,7 @@ import { BLOCKED_OUTPUT, HIDDEN_SENSITIVE_RESULT, contentMentionsSensitivePath, 
 import { extractCopyMoveSourcePathTokens, extractInputPathTokens, extractOutputPathTokens, extractPathTokens, extractRecursiveEgressSourcePathTokens, extractWritePathTokens, looksMutatingBash, looksRecursiveTraversalCommand, parseGitCommands } from "./safety-gate-lib/shell";
 import { queueFollowUpAfterCurrentAgent } from "./shared/deferred-user-message";
 const BLOCKED_GIT =
-	"[safety-gate] Blocked git operation because it may stage, commit, or push credential-bearing private files.";
+	"[safety-gate] Blocked git operation because it may stage, commit, or push credential-bearing private files. For current-branch pushes, use `git push` with the configured upstream rather than `git push origin main`.";
 const OUTPUT_COMMAND_RE = /\b(?:cat|bat|less|more|head|tail|sort|uniq|cut|wc|diff|comm|sed|awk|grep|egrep|fgrep|rg|ripgrep|strings|xxd|hexdump|base64|openssl|jq|python3?|node|ruby|perl)\b/i;
 const UPLOAD_COMMAND_RE = /\b(?:curl|wget|scp|sftp|rsync|rclone|aws\s+s3\s+cp|aws\s+s3\s+sync|gh\s+release\s+upload)\b/i;
 async function commandMentionsSensitivePath(pathSafety: PathSafetyCheck, command: string, cwd: string, operation: PolicyOperation = "egress", recursive = false): Promise<boolean> {
@@ -306,7 +306,7 @@ export default function safetyGate(pi: ExtensionAPI) {
 			if (ctx.hasUI) ctx.ui.notify(`Git finalization still incomplete: ${summarizeGitFinalizationState(currentState)}`, "warning");
 			return;
 		}
-		const message = `${GIT_FINALIZATION_MARKER}: Git finalization is incomplete (${summarizeGitFinalizationState(currentState)}). Continue: run the relevant validation, commit, and push before giving the final summary. If finalization is blocked, report the exact blocker and leave the repo state explicit.`;
+		const message = `${GIT_FINALIZATION_MARKER}: Git finalization is incomplete (${summarizeGitFinalizationState(currentState)}). Continue: run the relevant validation, commit, and push with \`git push\` before giving the final summary. Do not use \`git push origin main\` unless the user explicitly requests that refspec or no upstream exists and you have confirmed the target. If finalization is blocked, report the exact blocker and leave the repo state explicit.`;
 		queueFollowUpAfterCurrentAgent(pi, message);
 	});
 }

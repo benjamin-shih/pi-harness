@@ -8,6 +8,7 @@ import { buildOrchestrationDecisionState, type OrchestrationDecisionState } from
 import {
 	cleanupReminder,
 	DISPLAY_MATH_RENDERING_INSTRUCTION,
+	gitPushReminder,
 	MARKDOWN_HEADING_RENDERING_INSTRUCTION,
 	skillRoutingReminder,
 	type TaskWeight,
@@ -60,6 +61,7 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 		{ id: "mode", title: "Active harness mode", priority: 30, content: modeInstructions(input.activeMode), reason: "no active mode override" },
 		{ id: "skill_routing", title: "Skill routing", priority: 40, content: skillRoutingReminder(input.weight), reason: "trivial prompt" },
 		{ id: "cleanup", title: "Post-change cleanup gate", priority: 50, content: cleanupReminder(input.prompt, input.weight), reason: "non-coding prompt" },
+		{ id: "git_push", title: "Git push default", priority: 52, content: gitPushReminder(input.prompt, input.weight), reason: "non-coding prompt" },
 		{ id: "subagent_topology", title: "Subagent topology", priority: 55, content: buildSubagentTopologyReminder(input.prompt, input.weight), reason: "not a detailed subagent-worthy prompt" },
 		{ id: "large_response_html", title: "Large response HTML medium", priority: 58, content: largeResponseHtmlGuidance(input.prompt, input.weight, input.taskContext), reason: "not a long/structured report-style deliverable" },
 		{ id: "agents_task", title: "Active AGENTS task context", priority: 60, content: input.taskContext, reason: "no scoped active task context" },

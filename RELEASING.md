@@ -45,7 +45,8 @@ npm run verify
 npm run harness:audit
 AGENTS_SHARED_ROOT=/Users/benjaminshih/.agents npm run verify:cross-repo
 git tag -a <version> -m "<version>"
-git push origin main --tags
+git push
+git push --tags
 ```
 
 If this package is installed elsewhere via a pinned git ref, update the pinned ref after the tag is pushed.

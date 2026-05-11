@@ -60,6 +60,15 @@ export function promptSuggestsMajorCleanup(prompt: string, _weight: TaskWeight):
 	const lower = prompt.toLowerCase();
 	return /\b(major|large|big|broad|codebase|repo-wide|repository-wide|general review|overhaul|migration|sweep|entire repo|all of them|full rewrite|old slop)\b/.test(lower);
 }
+export function gitPushReminder(prompt: string, weight: TaskWeight): string | undefined {
+	if (weight === "trivial" || !isCodingOrFilePrompt(prompt)) return undefined;
+	return [
+		"## Git Push Default",
+		"When pushing committed work for the current branch, use `git push` so Git uses the configured upstream/tracking branch.",
+		"Do not use `git push origin main` by default. Use an explicit remote/refspec only when the user asks for it or no upstream exists and you have confirmed the correct target.",
+	].join("\n");
+}
+
 export function cleanupReminder(prompt: string, weight: TaskWeight): string | undefined {
 	if (!isCodingOrFilePrompt(prompt)) return undefined;
 	const lines = [

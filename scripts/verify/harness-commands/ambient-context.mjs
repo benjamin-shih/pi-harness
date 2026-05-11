@@ -183,6 +183,10 @@ export async function runAmbientContextTests() {
 	assert(result.systemPrompt.includes("personal_context: auto_scoped"), "ambient receipt should report scoped memory auto-consideration");
 	assert(result.systemPrompt.includes("## Durable Memory Candidate Discipline"), "standard prompts should include candidate-memory final-response discipline");
 	assert(result.systemPrompt.includes("memory_candidates: included"), "ambient receipt should show candidate-memory discipline inclusion");
+	assert(result.systemPrompt.includes("## Git Push Default"), "standard coding prompts should include plain git-push guidance");
+	assert(result.systemPrompt.includes("use `git push`"), "plain git-push guidance should prefer the upstream-aware command");
+	assert(result.systemPrompt.includes("Do not use `git push origin main`"), "plain git-push guidance should discourage explicit origin/main refspecs by default");
+	assert(result.systemPrompt.includes("git_push: included"), "ambient receipt should show git-push guidance inclusion");
 	assert(result.systemPrompt.includes("## Repo Context"), "standard prompts should include passive repo metadata");
 	assert(result.systemPrompt.includes("repo: included"), "ambient receipt should show repo metadata inclusion");
 	await boundTask.commands.get("status").handler("", boundTask.ctx);
