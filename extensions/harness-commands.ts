@@ -19,6 +19,7 @@ import { queueFollowUpAfterCurrentAgent } from "./shared/deferred-user-message";
 import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
 import { checkRemoteCiAfterPush, isGitPushCommand, remoteCiGuardBlock, type RemoteCiGuardResult } from "./shared/remote-ci-guard";
 import { htmlArtifactPathFromTool, openHtmlArtifact } from "./shared/html-artifact-open";
+import { largeResponseHtmlCompactionReminder } from "./shared/large-response-html";
 import { applyMode, modeDescription, modeNames } from "./harness-commands/modes";
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
@@ -45,6 +46,8 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	let currentPromptNeedsCleanup = false;
 	let currentPromptWasMajor = false;
 	let pendingHtmlArtifacts = new Set<string>();
+	let htmlArtifactsSeenThisSession = new Set<string>();
+	let largeResponseHtmlGuidanceSeenThisSession = false;
 	let initialChangeSnapshot: GitChangeSnapshot | undefined;
 	let lastAmbientContext: AmbientContextSnapshot | undefined;
 	let lastOrchestrationDecision: OrchestrationDecisionState | undefined;
@@ -133,6 +136,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			taskScope: taskLayer.ambientScope(),
 		});
 		lastAmbientContext = ambient.snapshot;
+		largeResponseHtmlGuidanceSeenThisSession = largeResponseHtmlGuidanceSeenThisSession || ambient.snapshot.lanes.some((lane) => lane.id === "large_response_html" && lane.status === "included");
 		lastOrchestrationDecision = ambient.orchestrationDecision;
 		await taskLayer.recordOrchestrationRecommended(pi, ctx, ambient.orchestrationDecision?.decision);
 		refreshFinalVisibility();
@@ -152,7 +156,10 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	pi.on("tool_result", async (event, ctx) => {
 		await taskLayer.toolResult(pi, event, ctx);
 		const htmlArtifact = htmlArtifactPathFromTool(event, ctx.cwd, lastOrchestrationDecision);
-		if (htmlArtifact) pendingHtmlArtifacts.add(htmlArtifact);
+		if (htmlArtifact) {
+			pendingHtmlArtifacts.add(htmlArtifact);
+			htmlArtifactsSeenThisSession.add(htmlArtifact);
+		}
 		refreshFinalVisibility();
 	});
 	pi.on("message_end", async (event, ctx) => {
@@ -179,8 +186,15 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		if (!currentPromptWasMajor && !diffLooksMajor(changedStats)) return;
 		queueFollowUpAfterCurrentAgent(pi, cleanupGuardMessage(changedStats, currentPromptWasMajor));
 	});
+	pi.on("session_compact", async () => {
+		const reminder = largeResponseHtmlCompactionReminder(htmlArtifactsSeenThisSession, largeResponseHtmlGuidanceSeenThisSession);
+		if (!reminder) return;
+		pi.sendMessage({ customType: "harness-html-artifact-continuity", content: reminder, display: false }, { deliverAs: "nextTurn" });
+	});
 	pi.on("session_shutdown", async (_event, ctx) => {
 		finalVisibility = undefined;
+		htmlArtifactsSeenThisSession = new Set<string>();
+		largeResponseHtmlGuidanceSeenThisSession = false;
 		await taskLayer.sessionShutdown(pi, ctx);
 	});
 }

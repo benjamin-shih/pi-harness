@@ -25,6 +25,7 @@ export async function runAmbientContextTests() {
 	const ambientPolicy = loadExtensionModule("extensions/shared/ambient-policy.ts");
 	const repoContext = loadExtensionModule("extensions/shared/repo-context.ts");
 	const memoryContext = loadExtensionModule("extensions/shared/memory-context.ts");
+	const largeHtml = loadExtensionModule("extensions/shared/large-response-html.ts");
 	assert(typeof ambient.assembleAmbientContext === "function", "ambient context module should export assembler");
 	assert(ambientPolicy.decideAmbientPolicy("trivial").receipt === "off", "ambient policy should suppress receipts for trivial prompts");
 	assert(ambientPolicy.decideAmbientPolicy("standard").personalContext === "auto_scoped", "ambient policy should auto-consider scoped approved memory for nontrivial prompts");
@@ -93,6 +94,8 @@ export async function runAmbientContextTests() {
 	assert(!memoryContext.memoryAdminGuidance("Remember we use memory-context.ts tests"), "remember-use memory-context code prompts should not get memory admin guidance");
 	assert(!memoryContext.memoryAdminGuidance("Remember to update memory-context.ts tests"), "remember-to code prompts should not get memory admin guidance");
 	assert(!memoryContext.memoryAdminGuidance("Remember to inspect memory record serialization code"), "remember-to code inspection prompts should not get memory admin guidance");
+	assert(largeHtml.shouldUseLargeResponseHtmlGuidance("Write a comprehensive implementation status report with a table and next steps", "standard"), "large-response HTML guidance should trigger for lengthy structured reports");
+	assert(!largeHtml.shouldUseLargeResponseHtmlGuidance("Answer in chat only: what is 2+2?", "standard"), "large-response HTML guidance should honor explicit inline/chat-only requests");
 
 	await withEnv({ BEN_PI_COMPACT_TOOL_OUTPUT: "0" }, async () => {
 		const defaultToolDisplay = createTaskHarness({});
@@ -138,6 +141,30 @@ export async function runAmbientContextTests() {
 
 	const trivial = ambient.assembleAmbientContext("base", "trivial", [{ id: "one", title: "One", priority: 10, content: "one" }]);
 	assert(!trivial.receipt, "ambient assembler should not add receipt noise for trivial prompts");
+
+	const htmlGuidanceTask = createTaskHarness({ bindPayload: taskBindPayload() });
+	await htmlGuidanceTask.handlers.get("session_start")({ reason: "startup" }, htmlGuidanceTask.ctx);
+	const htmlGuidance = await htmlGuidanceTask.handlers.get("before_agent_start")({ prompt: "Write a comprehensive implementation status report with diagrams and next steps", systemPrompt: "base" }, htmlGuidanceTask.ctx);
+	assert(htmlGuidance.systemPrompt.includes("## Large Response HTML Medium"), "large structured report prompts should inject HTML-as-medium guidance");
+	assert(htmlGuidance.systemPrompt.includes("concise: conclusion/current state"), "HTML medium guidance should require concise chat response shape");
+	assert(htmlGuidance.systemPrompt.includes("benjamin-report-template.html"), "HTML medium guidance should point at the shared Benjamin report template");
+	assert(htmlGuidance.systemPrompt.includes("large_response_html: included"), "ambient receipt should expose large-response HTML guidance inclusion");
+	await htmlGuidanceTask.handlers.get("session_compact")({ compactionEntry: { summary: "compact" }, fromExtension: false }, htmlGuidanceTask.ctx);
+	assert(htmlGuidanceTask.sentMessages.some((message) => message.customType === "harness-html-artifact-continuity" && message.display === false && message.content.includes("Large Response HTML Artifact Continuity")), "compaction should preserve large-response HTML medium guidance as hidden continuity context");
+	const htmlContinuityTask = createTaskHarness({ bindPayload: taskBindPayload() });
+	await htmlContinuityTask.handlers.get("session_start")({ reason: "startup" }, htmlContinuityTask.ctx);
+	await htmlContinuityTask.handlers.get("before_agent_start")({ prompt: "Implement small fix", systemPrompt: "base" }, htmlContinuityTask.ctx);
+	const continuityTemp = mkdtempSync(join(tmpdir(), "pi-html-continuity-"));
+	try {
+		const htmlPath = join(continuityTemp, "status-report.html");
+		writeFileSync(htmlPath, "<!doctype html><title>Status</title>");
+		await htmlContinuityTask.handlers.get("tool_result")({ toolName: "write", input: { path: htmlPath }, isError: false }, htmlContinuityTask.ctx);
+		await htmlContinuityTask.handlers.get("session_compact")({ compactionEntry: { summary: "compact" }, fromExtension: false }, htmlContinuityTask.ctx);
+		const continuity = htmlContinuityTask.sentMessages.find((message) => message.customType === "harness-html-artifact-continuity");
+		assert(continuity?.content.includes(htmlPath), "compaction continuity should preserve known local HTML artifact paths");
+	} finally {
+		rmSync(continuityTemp, { recursive: true, force: true });
+	}
 
 	const boundTask = createTaskHarness({
 		bindPayload: taskBindPayload(),

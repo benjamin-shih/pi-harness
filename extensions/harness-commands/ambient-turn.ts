@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { assembleAmbientContext, type AmbientContextAssembly, type AmbientContextLane } from "../shared/ambient-context";
 import { decideAmbientPolicy, shouldIncludeMemoryContext, shouldIncludeRepoContext } from "../shared/ambient-policy";
 import { buildExecutionRouteState, type ExecutionRouteState } from "../shared/execution-guidance";
+import { largeResponseHtmlGuidance } from "../shared/large-response-html";
 import { buildMemoryContext, memoryAdminGuidance, memoryCandidateReminder, type MemoryContextResult } from "../shared/memory-context";
 import { buildOrchestrationDecisionState, type OrchestrationDecisionState } from "../shared/orchestration-guidance";
 import {
@@ -60,6 +61,7 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 		{ id: "skill_routing", title: "Skill routing", priority: 40, content: skillRoutingReminder(input.weight), reason: "trivial prompt" },
 		{ id: "cleanup", title: "Post-change cleanup gate", priority: 50, content: cleanupReminder(input.prompt, input.weight), reason: "non-coding prompt" },
 		{ id: "subagent_topology", title: "Subagent topology", priority: 55, content: buildSubagentTopologyReminder(input.prompt, input.weight), reason: "not a detailed subagent-worthy prompt" },
+		{ id: "large_response_html", title: "Large response HTML medium", priority: 58, content: largeResponseHtmlGuidance(input.prompt, input.weight, input.taskContext), reason: "not a long/structured report-style deliverable" },
 		{ id: "agents_task", title: "Active AGENTS task context", priority: 60, content: input.taskContext, reason: "no scoped active task context" },
 		{ id: "orchestration", title: "Orchestration guidance", priority: 62, content: input.weight === "trivial" ? undefined : input.orchestrationDecision?.decision?.guidance, publicSummary: input.orchestrationDecision?.summary, reason: orchestrationLaneReason(input.orchestrationDecision, input.weight) },
 		{ id: "memory", title: "Approved scoped memory", priority: 65, content: input.memoryContext?.content, reason: input.memoryContext?.reason ?? "memory disabled" },
