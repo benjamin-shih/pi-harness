@@ -10,9 +10,10 @@ export type InboxItem = {
 	route?: { confidence?: number; match_type?: string };
 	execution?: { worker_run_id?: string; backend?: string; async_dir?: string };
 	summary?: { available?: boolean; safe_text?: string };
+	control?: { state?: string; status?: string; gate_state?: string; needs_review?: boolean; needs_apply?: boolean; next_action?: string; cleanup?: { state?: string; diagnostic_available?: boolean; destructive_actions?: boolean } };
 };
 
-export type InboxListPayload = { inbox_api_version?: number; count?: number; returned?: number; summary?: { by_status?: Record<string, number>; by_project?: Record<string, number>; active_by_project?: Record<string, number>; queued_by_project?: Record<string, number> }; items?: InboxItem[] };
+export type InboxListPayload = { inbox_api_version?: number; count?: number; returned?: number; summary?: { by_status?: Record<string, number>; by_control_state?: Record<string, number>; by_cleanup_state?: Record<string, number>; by_project?: Record<string, number>; active_by_project?: Record<string, number>; queued_by_project?: Record<string, number>; review_by_project?: Record<string, number>; apply_by_project?: Record<string, number>; cleanup_by_project?: Record<string, number> }; items?: InboxItem[] };
 export type InboxEnqueuePayload = { inbox_api_version?: number; enqueued?: boolean; item?: InboxItem; warnings?: string[] };
 
 export type InboxLaunchSpec = {

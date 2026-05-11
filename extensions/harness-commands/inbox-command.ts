@@ -15,16 +15,25 @@ function formatCounts(counts: Record<string, number> | undefined): string {
 	return Object.entries(counts).map(([key, value]) => `${key}=${value}`).join(", ");
 }
 
+function controlStateLabel(item: InboxItem | undefined): string {
+	return item?.control?.state || item?.status || "unknown";
+}
+
+function itemNextAction(item: InboxItem | undefined): string {
+	const action = item?.control?.next_action;
+	return action && action !== "none" ? ` · next ${action}` : "";
+}
+
 function formatInboxList(payload: InboxListPayload): string {
-	const lines = ["## Async inbox", `- total: ${payload.count ?? 0}`, `- returned: ${payload.returned ?? 0}`, `- statuses: ${formatCounts(payload.summary?.by_status)}`, `- projects: ${formatCounts(payload.summary?.by_project)}`, `- active lanes: ${formatCounts(payload.summary?.active_by_project)}`, `- queued lanes: ${formatCounts(payload.summary?.queued_by_project)}`];
+	const lines = ["## Async inbox", `- total: ${payload.count ?? 0}`, `- returned: ${payload.returned ?? 0}`, `- statuses: ${formatCounts(payload.summary?.by_status)}`, `- control states: ${formatCounts(payload.summary?.by_control_state)}`, `- cleanup states: ${formatCounts(payload.summary?.by_cleanup_state)}`, `- projects: ${formatCounts(payload.summary?.by_project)}`, `- active lanes: ${formatCounts(payload.summary?.active_by_project)}`, `- queued lanes: ${formatCounts(payload.summary?.queued_by_project)}`, `- review lanes: ${formatCounts(payload.summary?.review_by_project)}`, `- apply lanes: ${formatCounts(payload.summary?.apply_by_project)}`, `- cleanup diagnostics: ${formatCounts(payload.summary?.cleanup_by_project)}`];
 	for (const item of payload.items ?? []) {
-		lines.push(`- ${item.id || "unknown"}: ${item.status || "unknown"} · ${projectLabel(item.project)} · ${item.safe_title || "Untitled inbox request"}`);
+		lines.push(`- ${item.id || "unknown"}: ${controlStateLabel(item)} · ${projectLabel(item.project)}${itemNextAction(item)} · ${item.safe_title || "Untitled inbox request"}`);
 	}
 	return lines.join("\n");
 }
 
 function itemLine(item: InboxItem | undefined): string {
-	return item ? `${item.id || "unknown"} · ${item.status || "unknown"} · ${projectLabel(item.project)} · ${item.safe_title || "Untitled inbox request"}` : "unknown";
+	return item ? `${item.id || "unknown"} · ${controlStateLabel(item)} · ${projectLabel(item.project)}${itemNextAction(item)} · ${item.safe_title || "Untitled inbox request"}` : "unknown";
 }
 
 function formatSchedule(schedule: InboxSchedulePayload, launchState: string): string[] {
