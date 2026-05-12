@@ -144,6 +144,27 @@ export const piPackagePolicyPayload = (overrides = {}) => ({
 	...overrides,
 });
 
+function inboxLaunchSpecPayload() {
+	return { backend: "pi_subagents_async", worker_run_id: "iw_submit", params: { agent: "worker", task: "Private request file: /tmp/request", cwd: root, async: true, context: "fresh" } };
+}
+
+function inboxTickPayload(args) {
+	const executing = args.includes("--execute");
+	const launchSpecs = executing ? [inboxLaunchSpecPayload()] : [];
+	return {
+		inbox_api_version: 1,
+		kind: "inbox_tick",
+		dry_run: args.includes("--dry-run"),
+		mutating_actions: executing,
+		worker_launches: false,
+		reconcile: executing ? { updated: 0, warnings: [] } : { executed: false, reason: "dry_run" },
+		summary: { checked: 1, launchable_count: 1, launch_spec_count: launchSpecs.length, queued_count: 0, needs_user_count: 0, noop_count: 0 },
+		schedule: { inbox_api_version: 1, kind: "inbox_schedule", action: "launch", items: [{ action: "launch", reason: "project lane is available", item: { id: "inq_submit", status: executing ? "launching" : "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" } } }], launch_specs: launchSpecs, warnings: [] },
+		launch_specs: launchSpecs,
+		warnings: [],
+	};
+}
+
 export const taskRetentionPayload = (overrides = {}) => ({
 	task_api_version: 1,
 	dry_run: true,
@@ -381,7 +402,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("memory-add.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, recorded: true, record: { id: "mem_candidate_1", state: "candidate", title: "Memory candidate", scope: { type: args.includes("--scope") ? args[args.indexOf("--scope") + 1] : "project" } } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("inbox-list.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_list", count: 1, returned: 1, summary: { by_status: { queued: 1 }, by_project: { kalshi: 1 }, active_by_project: {}, queued_by_project: { kalshi: 1 } }, items: [{ id: "inq_test", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" }, relation: { kind: "new_task" } }] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("inbox-enqueue.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_enqueue", enqueued: true, item: { id: "inq_submit", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" }, relation: { kind: "new_parallel_candidate", target_item_id: "inq_existing" } }, warnings: [] }), stderr: "" };
-			if (cmd === "bash" && script.endsWith("inbox-schedule.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_schedule", action: "launch", items: [{ action: "launch", reason: "project lane is available", item: { id: "inq_submit", status: "launching", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" } } }], launch_specs: [{ backend: "pi_subagents_async", worker_run_id: "iw_submit", params: { agent: "worker", task: "Private request file: /tmp/request", cwd: root, async: true, context: "fresh" } }], warnings: [] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("inbox-tick.sh")) return { code: 0, stdout: JSON.stringify(inboxTickPayload(args)), stderr: "" };
 			if (cmd === "bash" && script.endsWith("inbox-worker-start.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_worker_update", updated: true, item: { id: "inq_submit", status: "running", safe_title: "Build Kalshi tool" }, warnings: [] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("inbox-worker-complete.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_worker_update", updated: true, item: { id: "inq_submit", status: "completed", safe_title: "Build Kalshi tool" }, warnings: [] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-promote.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, promoted: true, record: { id: args[1], state: "approved", title: "Promoted memory", scope: { type: "task" } } }), stderr: "" };

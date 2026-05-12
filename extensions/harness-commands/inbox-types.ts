@@ -30,3 +30,16 @@ export type InboxSchedulePayload = {
 	launch_specs?: InboxLaunchSpec[];
 	warnings?: string[];
 };
+
+export type InboxTickPayload = {
+	inbox_api_version?: number;
+	kind?: "inbox_tick";
+	dry_run?: boolean;
+	mutating_actions?: boolean;
+	worker_launches?: boolean;
+	reconcile?: Record<string, unknown>;
+	schedule?: InboxSchedulePayload;
+	launch_specs?: InboxLaunchSpec[];
+	summary?: { checked?: number; launchable_count?: number; launch_spec_count?: number; needs_user_count?: number; queued_count?: number; noop_count?: number };
+	warnings?: string[];
+};

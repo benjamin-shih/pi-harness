@@ -63,7 +63,7 @@ Task closure is explicit. Use `/close-task completed [reason]` or `/close-task b
 
 Use `/orchestrator [label]` to tag the current session name as `[ORCHESTRATOR] <label>` so it is easy to identify in `pi -r` selectors and terminal titles. Use `/orchestrator off` to clear only that prefix.
 
-Async inbox support is a thin `.agents` adapter. `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh`, calls the shared `.agents` scheduler, and launches only explicit scheduler-provided worker specs. `/inbox schedule` asks `.agents` to drain the next eligible item. The harness does not invent scheduling policy or hidden worker launch rules.
+Async inbox support is a thin `.agents` adapter. `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh`, calls the shared `.agents` tick API, and launches only explicit tick-provided worker specs through the Pi subagent bridge. `/inbox tick` previews the next eligible item in dry-run mode; `/inbox schedule` asks `.agents` to execute one supervised tick and then starts only the returned worker spec. The harness does not invent scheduling policy, run a daemon, or hide worker launch rules.
 
 ## UI polish
 
@@ -91,7 +91,9 @@ After loading this package in pi, these commands provide explicit overrides and 
 /doctor            # heavier diagnostics/audit; /doct alias also works
 /memory
 /inbox                         # show async front-door inbox status
-/inbox submit <request>        # queue a request through .agents inbox API; does not launch workers yet
+/inbox tick                    # dry-run preview of the next shared .agents scheduler tick
+/inbox schedule                # supervised execute-one tick, then start only returned worker specs
+/inbox submit <request>        # queue a request, execute its tick, and bridge explicit worker specs
 /orchestrator [label|off]      # tag/untag this session as [ORCHESTRATOR] for pi -r selectors
 /checkpoint [note]
 /close-task completed|blocked [reason]  # explicit terminal task close via .agents task-close.sh

@@ -54,6 +54,10 @@ try {
 	assert(inbox.inbox_api_version === 1 && inbox.enqueued === true && inbox.item?.status === "queued", "inbox enqueue should record queued item");
 	const inboxList = runJson("bash", [join(scripts, "inbox-list.sh"), "--json"], { env, cwd: project });
 	assert(inboxList.inbox_api_version === 1 && inboxList.count === 1, "inbox list should return queued item metadata");
+	const tickPreview = runJson("bash", [join(scripts, "inbox-tick.sh"), "--item-id", inbox.item.id, "--runtime", "pi", "--session", "compat-session", "--cwd", project, "--dry-run", "--json"], { env, cwd: project });
+	assert(tickPreview.kind === "inbox_tick" && tickPreview.dry_run === true && tickPreview.worker_launches === false, "inbox tick dry-run should preview without worker launches");
+	const tickExecute = runJson("bash", [join(scripts, "inbox-tick.sh"), "--item-id", inbox.item.id, "--runtime", "pi", "--session", "compat-session", "--cwd", project, "--execute", "--json"], { env, cwd: project });
+	assert(tickExecute.kind === "inbox_tick" && tickExecute.mutating_actions === true && tickExecute.worker_launches === false, "inbox tick execute should schedule specs without launching workers");
 
 	const htmlPolicy = runJson("bash", [join(scripts, "html-artifact-policy.sh"), "--shape", "general", "--complexity", "standard", "--risk", "low", "--project-type", "repo", "--json"], { env, cwd: project });
 	assert(htmlPolicy.decision?.long_response?.enabled === true, "HTML policy should expose long-response guidance");

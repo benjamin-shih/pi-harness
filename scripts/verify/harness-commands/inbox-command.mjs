@@ -43,13 +43,16 @@ export async function runInboxCommandTests() {
 
 	await harness.commands.get("inbox").handler("submit Build Kalshi tool with private details", harness.ctx);
 	const receipt = harness.sentMessages.at(-1).content;
-	assert(receipt.includes("scheduler action: launch"), "/inbox submit should ask .agents scheduler for the item action");
+	assert(receipt.includes("scheduler action: launch"), "/inbox submit should ask .agents tick/scheduler for the item action");
 	assert(receipt.includes("worker launch: started; worker launch accepted"), "/inbox submit should execute returned .agents launch specs through the subagent bridge");
 	assert(!receipt.includes("private details"), "/inbox receipt should not echo raw request text");
 	assert(slashRequest?.params?.async === true, "/inbox worker bridge should preserve async launch params from .agents");
 	assert(slashRequest?.params?.task?.includes("Private request file:"), "/inbox worker launch should point at the private request file");
 	assert(!slashRequest?.params?.task?.includes("private details"), "/inbox worker launch should not include raw request text");
 
+	const tickCall = harness.execCalls.find((call) => call.args[0]?.endsWith("inbox-tick.sh") && call.args.includes("--execute"));
+	assert(tickCall, "/inbox submit should bridge through .agents inbox-tick --execute");
+	assert(!harness.execCalls.some((call) => call.args[0]?.endsWith("inbox-schedule.sh")), "/inbox submit should not bypass tick with direct scheduler calls");
 	const enqueueCall = harness.execCalls.find((call) => call.args[0]?.endsWith("inbox-enqueue.sh"));
 	assert(enqueueCall?.args.includes("--request-file"), "/inbox submit should pass request text through a private temp file");
 	assert(!enqueueCall?.args.includes("Build Kalshi tool with private details"), "/inbox submit should not pass raw request text through argv");
@@ -99,9 +102,26 @@ export async function runInboxCommandTests() {
 	assert(!startFailureReceipt.includes("raw private lifecycle stderr"), "/inbox submit should not expose lifecycle stderr");
 	assert(startFailureHarness.execCalls.some((call) => call.args[0]?.endsWith("inbox-worker-complete.sh") && call.args.includes("blocked")), "/inbox submit should record lifecycle-record failure as blocked");
 
+	await harness.commands.get("inbox").handler("tick", harness.ctx);
+	const tickPreview = harness.sentMessages.at(-1).content;
+	assert(tickPreview.includes("tick mode: dry-run"), "/inbox tick should preview without executing scheduler mutation");
+	const dryRunTickCall = harness.execCalls.find((call) => call.args[0]?.endsWith("inbox-tick.sh") && call.args.includes("--dry-run"));
+	assert(dryRunTickCall, "/inbox tick should call .agents inbox-tick --dry-run");
+
+	await harness.commands.get("inbox").handler("schedule", harness.ctx);
+	const scheduleReceipt = harness.sentMessages.at(-1).content;
+	assert(scheduleReceipt.includes("tick mode: execute"), "/inbox schedule should execute a supervised tick");
+	assert(scheduleReceipt.includes("worker launches by .agents: no"), "/inbox schedule should show that .agents did not launch workers itself");
+
+	const tickFailureHarness = createTaskHarness({ scriptResults: { "inbox-tick.sh": { code: 2, stdout: "", stderr: "raw private scheduler stderr" } } });
+	await tickFailureHarness.commands.get("inbox").handler("submit Build Kalshi tool", tickFailureHarness.ctx);
+	const tickFailureReceipt = tickFailureHarness.sentMessages.at(-1).content;
+	assert(tickFailureReceipt.includes("worker launch: tick failed: exit 2"), "/inbox submit should report tick failures after enqueue");
+	assert(!tickFailureReceipt.includes("raw private scheduler stderr"), "/inbox submit should not expose tick stderr");
+
 	const queuedHarness = createTaskHarness({
 		scriptResults: {
-			"inbox-schedule.sh": { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_schedule", action: "queued", items: [{ action: "queued", reason: "project lane already active", item: { id: "inq_submit", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi" } } }], launch_specs: [] }), stderr: "" },
+			"inbox-tick.sh": { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_tick", dry_run: false, mutating_actions: true, worker_launches: false, reconcile: { updated: 0 }, summary: { checked: 1, launchable_count: 0, launch_spec_count: 0, queued_count: 1, needs_user_count: 0, noop_count: 0 }, schedule: { inbox_api_version: 1, kind: "inbox_schedule", action: "queued", items: [{ action: "queued", reason: "project lane already active", item: { id: "inq_submit", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi" } } }], launch_specs: [] }, launch_specs: [] }), stderr: "" },
 		},
 	});
 	await queuedHarness.commands.get("inbox").handler("submit Build another Kalshi tool", queuedHarness.ctx);

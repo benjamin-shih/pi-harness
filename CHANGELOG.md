@@ -5,7 +5,9 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
-- `/inbox` and `/inbox submit <request>` expose the shared `.agents` async inbox MVP as a queue/status surface without launching workers.
+- `/inbox` and `/inbox submit <request>` expose the shared `.agents` async inbox MVP as a queue/status surface.
+- `/inbox tick` previews the shared `.agents` scheduler tick in dry-run mode.
+- `/inbox schedule` and `/inbox submit <request>` now bridge explicit `.agents` tick launch specs into Pi subagent async workers and record lifecycle metadata.
 - `/orchestrator [label|off]` tags the current session name with `[ORCHESTRATOR]` so it is easy to identify in `pi -r` selectors.
 - `harness.compactToolOutput` can override built-in read/write/edit/bash tool renderers with terse status rows.
 
