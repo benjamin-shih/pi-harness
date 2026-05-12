@@ -301,6 +301,9 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 	const tools = new Map();
 	const sentMessages = [];
 	const execCalls = [];
+	const notifications = [];
+	const sessionNames = [];
+	let sessionName = "parent-session";
 	const eventHandlers = new Map();
 	const events = eventBus ?? {
 		on: (event, handler) => { eventHandlers.set(event, handler); return () => eventHandlers.delete(event); },
@@ -322,7 +325,8 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 		getAllTools: () => [],
 		getActiveTools: () => ["read"],
 		events,
-		getSessionName: () => "parent-session",
+		getSessionName: () => sessionName,
+		setSessionName: (name) => { sessionName = name; sessionNames.push(name); },
 		getThinkingLevel: () => "xhigh",
 		exec: async (cmd, args, options) => {
 			execCalls.push({ cmd, args, cwd: options?.cwd });
@@ -407,6 +411,9 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			getSessionFile: () => join(root, ".test-session.jsonl"),
 			getLeafId: () => undefined,
 		},
+		ui: {
+			notify: (message, level = "info") => notifications.push({ message, level }),
+		},
 	};
-	return { handlers, commands, tools, sentMessages, execCalls, ctx, events };
+	return { handlers, commands, tools, sentMessages, execCalls, ctx, events, notifications, sessionNames, getSessionName: () => sessionName };
 }

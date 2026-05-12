@@ -6,6 +6,7 @@ All notable changes to this personal pi harness package are tracked here.
 
 ### Added
 - `/inbox` and `/inbox submit <request>` expose the shared `.agents` async inbox MVP as a queue/status surface without launching workers.
+- `/orchestrator [label|off]` tags the current session name with `[ORCHESTRATOR]` so it is easy to identify in `pi -r` selectors.
 - `harness.compactToolOutput` can override built-in read/write/edit/bash tool renderers with terse status rows.
 
 ### Changed
@@ -14,6 +15,7 @@ All notable changes to this personal pi harness package are tracked here.
 
 ### Fixed
 - Compact tool rows now include useful call summaries such as bash commands, read ranges, write line counts, and edit replacement counts while preserving green/red result backgrounds and parsed bash exit codes.
+- Restored compact edit rendering when `harness.compactToolOutput` is enabled, instead of showing full edit diffs.
 - Release verification and lifecycle smoke checks now clear inherited `PI_SUBAGENT_CHILD` so parent-mode tests remain deterministic when dogfooded from subagent contexts.
 
 ### Breaking

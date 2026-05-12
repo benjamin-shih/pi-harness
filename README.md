@@ -61,6 +61,8 @@ For long reports or briefs that would be hard to scan in chat, `.agents` may ste
 
 Task closure is explicit. Use `/close-task completed [reason]` or `/close-task blocked [reason]` when the active task should enter a terminal state. The command passes the reason through a private temporary file, calls `.agents/scripts/task-close.sh`, requests current-session lease release, and does not print raw closure text back into chat.
 
+Use `/orchestrator [label]` to tag the current session name as `[ORCHESTRATOR] <label>` so it is easy to identify in `pi -r` selectors and terminal titles. Use `/orchestrator off` to clear only that prefix.
+
 Async inbox support is a thin `.agents` adapter. `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh`, calls the shared `.agents` scheduler, and launches only explicit scheduler-provided worker specs. `/inbox schedule` asks `.agents` to drain the next eligible item. The harness does not invent scheduling policy or hidden worker launch rules.
 
 ## UI polish
@@ -90,6 +92,7 @@ After loading this package in pi, these commands provide explicit overrides and 
 /memory
 /inbox                         # show async front-door inbox status
 /inbox submit <request>        # queue a request through .agents inbox API; does not launch workers yet
+/orchestrator [label|off]      # tag/untag this session as [ORCHESTRATOR] for pi -r selectors
 /checkpoint [note]
 /close-task completed|blocked [reason]  # explicit terminal task close via .agents task-close.sh
 /skills-audit [skills-root]
