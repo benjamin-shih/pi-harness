@@ -159,6 +159,22 @@ export async function runSafetyGateBehaviorTests() {
 	assert(await blocked({ toolName: "bash", input: { command: "git commit -am test" } }), "safety-gate should block commit -am with sensitive changed paths");
 	assert(await blocked({ toolName: "bash", input: { command: `git commit ${protectedEnv} -m test` } }), "safety-gate should block git commit pathspecs that mention sensitive files");
 	assert(await blocked({ toolName: "bash", input: { command: "git add subdir" } }), "safety-gate should inspect non-broad git add pathspecs recursively through git status");
+	{
+		const localHandlers = new Map();
+		safetyGate({
+			on(event, handler) {
+				localHandlers.set(event, handler);
+			},
+			exec: async (cmd, args) => {
+				const key = args.join(" ");
+				if (cmd === "bash" && args[0]?.endsWith("path-safety.sh")) return { code: 0, stdout: JSON.stringify({ policy_api_version: 1, action: "allow", allowed: true }), stderr: "" };
+				if (key === "status --porcelain=v1 --untracked-files=all -- safe.txt") return { code: 0, stdout: "?? safe.txt\n", stderr: "" };
+				return { code: 0, stdout: "", stderr: "" };
+			},
+		});
+		const result = await localHandlers.get("tool_call")({ toolName: "bash", input: { command: "git add safe.txt" } }, ctx);
+		assert(!result?.block, "safety-gate should allow explicit git add pathspecs when git/path inspection is safe");
+	}
 	assert(await blocked({ toolName: "bash", input: { command: "git add --pathspec-from-file=/tmp/list" } }), "safety-gate should fail closed for git add pathspec files");
 	assert(await blocked({ toolName: "bash", input: { command: "git commit --pathspec-from-file=/tmp/list -m test" } }), "safety-gate should fail closed for git commit pathspec files");
 	assert(await blocked({ toolName: "bash", input: { command: "git push origin feature" } }), "safety-gate should fail closed for explicit git push refspecs");

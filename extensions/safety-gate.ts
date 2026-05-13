@@ -183,8 +183,6 @@ async function gitBlockReason(pi: ExtensionAPI, pathSafety: PathSafetyCheck, cwd
 	const gitCommands = parseGitCommands(command);
 	for (const git of gitCommands) {
 		const effectiveCwd = gitEffectiveCwd(cwd, git.cwd);
-		const writesToIndex = git.subcommand === "add" || git.subcommand === "commit";
-		if (writesToIndex && await commandMentionsSensitivePath(pathSafety, command, effectiveCwd, "git")) return BLOCKED_GIT;
 		if (git.subcommand === "add") {
 			if (hasPathspecFileOption(git.args)) return BLOCKED_GIT;
 			if (isBroadGitAdd(git.args) && unsafeIfUnknown(await changedGitPathStatus(pi, pathSafety, effectiveCwd))) return BLOCKED_GIT;
