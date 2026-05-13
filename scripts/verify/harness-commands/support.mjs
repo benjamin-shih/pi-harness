@@ -78,6 +78,39 @@ export const controlPlaneDashboardPayload = (overrides = {}) => ({
 	warnings: [],
 	...overrides,
 });
+export const orchestrationPlanPayload = (overrides = {}) => ({
+	orchestration_plan_api_version: 1,
+	kind: "orchestration_plan",
+	generated_at: "2026-05-13T00:00:00Z",
+	read_only: true,
+	mutating_actions: false,
+	auto_launch: false,
+	plan_id: "plan123",
+	source: { prompt_recorded: true, prompt_digest: "digest", prompt_bytes: 42, raw_prompt_in_output: false, cwd_recorded: true, cwd_digest: "cwddigest", raw_cwd_in_output: false },
+	project: { id: "project", name: "Project", type: "repo", registered: true, match_type: "cwd", bindable: true, write_policy: "single_writer", default_checks: ["make verify"], root_recorded: true, root_digest: "rootdigest", workspace: { matched: false } },
+	task: { shape: "coding", complexity: "standard", risk: "low" },
+	execution: { execution_intent: true, execution_intent_forced: false, profile: "software", overlays: [], summary: "profile software; overlays none", reasons: ["explicit execution intent detected"] },
+	topology: { recommended: "single_agent_standard", name: "Single-agent standard", reason: "standard", pattern: "single_writer_optional_review", advisory_only: true },
+	autonomy: { mode: "confirm", read_only_auto_run_eligible: false, confirmation_required: true, execute_low_risk_policy: "future adapter may auto-run only read-only role specs when explicitly configured", dashboard_mutations: false },
+	private_input_policy: { request_text: "private_prompt_file_or_stdin_only", raw_argv_text_allowed: false, role_prompts: "compose from task_template plus private request context at launch time", worker_summaries: "private_to_parent_until_bounded_synthesis" },
+	stages: [{ id: "parallel_recon", kind: "subagent_group", read_only: true, role_ids: ["code_context"] }, { id: "bounded_implementation", kind: "subagent_group", read_only: false, role_ids: ["bounded_implementation"] }, { id: "review", kind: "subagent_group", read_only: true, role_ids: ["implementation_review"] }],
+	role_launch_plan: [
+		{ id: "code_context", source: "execution_profile_template", phase: "parallel_recon", parallel_group: "recon", agent: "scout", role: "engineering_scout", profile: "software", overlays: [], mode: "read_only", may_write: false, requires_confirmation: false, cwd_policy: { source: "selected_project_root", project_id: "project", path_recorded: true, path_digest: "rootdigest", raw_path_in_output: false }, prompt_policy: "parent supplies request through private prompt file/stdin; do not echo raw request text", task_template: "Inspect code context.", expected_output: "findings", constraints: ["read-only unless a later explicit work order changes scope"] },
+		{ id: "bounded_implementation", source: "execution_profile_template", phase: "implementation", parallel_group: "implementation", agent: "worker", role: "implementation_worker", profile: "software", overlays: [], mode: "bounded_write", may_write: true, requires_confirmation: true, cwd_policy: { source: "selected_project_root", project_id: "project", path_recorded: true, path_digest: "rootdigest", raw_path_in_output: false }, prompt_policy: "parent supplies request through private prompt file/stdin; do not echo raw request text", task_template: "Implement bounded code changes.", expected_output: "summary and verification", constraints: ["requires explicit bounded scope and main-agent verification before launch"] },
+		{ id: "implementation_review", source: "execution_profile_template", phase: "review", parallel_group: "review", agent: "reviewer", role: "engineering_reviewer", profile: "software", overlays: [], mode: "read_only", may_write: false, requires_confirmation: false, cwd_policy: { source: "selected_project_root", project_id: "project", path_recorded: true, path_digest: "rootdigest", raw_path_in_output: false }, prompt_policy: "parent supplies request through private prompt file/stdin; do not echo raw request text", task_template: "Review implementation plan.", expected_output: "blockers", constraints: ["read-only unless a later explicit work order changes scope"] },
+	],
+	gates: { ids: ["repo_clean_preflight", "narrow_verification"] },
+	checks: ["make verify"],
+	evidence_required: ["commands/checks run"],
+	human_decisions: [],
+	stop_conditions: ["stop if local instructions conflict with the request"],
+	next_actions: ["render this plan for the front-door operator"],
+	warnings: [],
+	notices: [],
+	reasons: ["orchestration plan is read-only"],
+	guidance: "## Orchestration Plan",
+	...overrides,
+});
 export const executionRoutePayload = (overrides = {}) => ({ execution_route_api_version: 1, execution_intent: true, profile: "software", overlays: [], summary: "profile software; overlays none", guidance: "## Ambient Execution Protocol\nExecution intent was detected.", ...overrides });
 export const taskLifecyclePayload = (overrides = {}) => ({
 	task_api_version: 1,
@@ -316,7 +349,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook } = {}) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, orchestrationPlanPayload: planPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
 	const tools = new Map();
@@ -376,6 +409,12 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
 				return { code: 0, stdout: JSON.stringify(executionPayload ?? { execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "", reasons: ["no explicit execution intent"] }), stderr: "" };
+			}
+			if (cmd === "bash" && script.endsWith("orchestration-plan.sh")) {
+				const promptFileIndex = args.indexOf("--prompt-file");
+				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
+				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
+				return { code: 0, stdout: JSON.stringify(planPayload ?? orchestrationPlanPayload()), stderr: "" };
 			}
 			if (cmd === "bash" && (script.endsWith("control-plane.sh") || script.endsWith("orchestration-decision.sh"))) {
 				const promptFileIndex = args.indexOf("--prompt-file");

@@ -25,6 +25,7 @@ import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { registerInboxCommand } from "./harness-commands/inbox-command";
+import { registerOrchestrateCommand } from "./harness-commands/orchestrate-command";
 import { registerOrchestratorCommand } from "./harness-commands/orchestrator-command";
 import { registerTaskCloseCommand } from "./harness-commands/task-close-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
@@ -109,6 +110,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	registerChooseTopologyCommand(pi, taskLayer);
 	registerMemoryAdminCommands(pi, taskLayer);
 	registerInboxCommand(pi);
+	registerOrchestrateCommand(pi);
 	registerOrchestratorCommand(pi);
 	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
 	registerTaskCloseCommand(pi, taskLayer);

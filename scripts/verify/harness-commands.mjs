@@ -5,6 +5,7 @@ import { runFinalVisibilityTests } from "./harness-commands/final-visibility.mjs
 import { runGitSummaryTests } from "./harness-commands/git-summary.mjs";
 import { runInboxCommandTests } from "./harness-commands/inbox-command.mjs";
 import { runModeBehaviorTests } from "./harness-commands/modes.mjs";
+import { runOrchestrateCommandTests } from "./harness-commands/orchestrate-command.mjs";
 import { runPromptGuidanceTests } from "./harness-commands/prompt-guidance.mjs";
 import { runRemoteCiGuardTests } from "./harness-commands/remote-ci-guard.mjs";
 import { runStatusCommandTests } from "./harness-commands/status-commands.mjs";
@@ -19,6 +20,7 @@ export async function runHarnessCommandBehaviorTests() {
 	await runGitSummaryTests();
 	await runInboxCommandTests();
 	await runModeBehaviorTests();
+	await runOrchestrateCommandTests();
 	await runPromptGuidanceTests();
 	await runRemoteCiGuardTests();
 	await runStatusCommandTests();

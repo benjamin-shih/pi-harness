@@ -65,6 +65,8 @@ Use `/orchestrator [label]` to tag the current session name as `[ORCHESTRATOR] <
 
 Async inbox support is a thin `.agents` adapter. `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh`, calls the shared `.agents` tick API, and launches only explicit tick-provided worker specs through the Pi subagent bridge. `/inbox tick` previews the next eligible item in dry-run mode; `/inbox schedule` asks `.agents` to execute one supervised tick and then starts only the returned worker spec. The harness does not invent scheduling policy, run a daemon, or hide worker launch rules.
 
+Natural-language orchestration planning is also a thin `.agents` adapter. `/orchestrate <request>` calls `.agents/scripts/orchestration-plan.sh` with a private prompt file and renders the bounded role/stage plan without launching anything. `/orchestrate run <request>` launches only read-only/advisory roles from the plan through `pi-subagents`; `/orchestrate run --workers <request>` is the explicit confirmation required to include bounded write-capable worker roles. The plan compiler remains read-only; task-capable workers run only as supervised subagent launches with parent synthesis and verification still required.
+
 ## UI polish
 
 The UI polish extension keeps the compact `π` terminal title while idle and animates a small braille spinner in the titlebar during active agent turns. Kitty shows this in tabs when tab titles are enabled. It also displays live elapsed wall-clock time in the working indicator and appends the elapsed time to each final assistant response.
@@ -94,6 +96,9 @@ After loading this package in pi, these commands provide explicit overrides and 
 /inbox tick                    # dry-run preview of the next shared .agents scheduler tick
 /inbox schedule                # supervised execute-one tick, then start only returned worker specs
 /inbox submit <request>        # queue a request, execute its tick, and bridge explicit worker specs
+/orchestrate <request>         # preview a .agents natural-language orchestration plan
+/orchestrate run <request>     # launch read-only/advisory plan roles through pi-subagents
+/orchestrate run --workers <request>  # explicitly include bounded write-capable worker roles
 /orchestrator [label|off]      # tag/untag this session as [ORCHESTRATOR] for pi -r selectors
 /checkpoint [note]
 /close-task completed|blocked [reason]  # explicit terminal task close via .agents task-close.sh

@@ -47,6 +47,9 @@ try {
 	const decision = runJson("bash", [join(scripts, "orchestration-decision.sh"), "--prompt-file", promptFile, "--cwd", project, "--json"], { env, cwd: project });
 	assert(decision.orchestration_api_version === 1 && decision.read_only === true, "orchestration decision should be read-only v1");
 	assert(decision.artifacts?.html?.long_response?.enabled === true, "orchestration decision should expose long-response HTML policy");
+	const plan = runJson("bash", [join(scripts, "orchestration-plan.sh"), "--prompt-file", promptFile, "--cwd", project, "--json"], { env, cwd: project });
+	assert(plan.orchestration_plan_api_version === 1 && plan.read_only === true && plan.auto_launch === false, "orchestration plan should be read-only v1 without auto-launch");
+	assert(Array.isArray(plan.role_launch_plan), "orchestration plan should expose bounded role metadata");
 
 	const route = runJson("bash", [join(scripts, "project-route.sh"), "--request-file", promptFile, "--cwd", project, "--project-root", project, "--json"], { env, cwd: project });
 	assert(route.project_route_api_version === 1 && route.matched === true, "project route should resolve explicit project root");
