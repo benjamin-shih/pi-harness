@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { Box } from "@earendil-works/pi-tui";
 import { loadExtensionModule } from "../harness.mjs";
@@ -205,20 +205,26 @@ export async function runAmbientContextTests() {
 	assert(htmlGuidance.systemPrompt.includes("large_response_html: included"), "ambient receipt should expose large-response HTML guidance inclusion");
 	await htmlGuidanceTask.handlers.get("session_compact")({ compactionEntry: { summary: "compact" }, fromExtension: false }, htmlGuidanceTask.ctx);
 	assert(htmlGuidanceTask.sentMessages.some((message) => message.customType === "harness-html-artifact-continuity" && message.display === false && message.content.includes("Large Response HTML Artifact Continuity")), "compaction should preserve large-response HTML medium guidance as hidden continuity context");
-	const htmlContinuityTask = createTaskHarness({ bindPayload: taskBindPayload() });
-	await htmlContinuityTask.handlers.get("session_start")({ reason: "startup" }, htmlContinuityTask.ctx);
-	await htmlContinuityTask.handlers.get("before_agent_start")({ prompt: "Implement small fix", systemPrompt: "base" }, htmlContinuityTask.ctx);
+	const policyRoot = mkdtempSync(join(tmpdir(), "pi-html-policy-"));
 	const continuityTemp = mkdtempSync(join(tmpdir(), "pi-html-continuity-"));
 	try {
-		const htmlPath = join(continuityTemp, "status-report.html");
-		writeFileSync(htmlPath, "<!doctype html><title>Status</title>");
-		await htmlContinuityTask.handlers.get("tool_result")({ toolName: "write", input: { path: htmlPath }, isError: false }, htmlContinuityTask.ctx);
-		await htmlContinuityTask.handlers.get("session_compact")({ compactionEntry: { summary: "compact" }, fromExtension: false }, htmlContinuityTask.ctx);
-		const continuity = htmlContinuityTask.sentMessages.find((message) => message.customType === "harness-html-artifact-continuity");
-		assert(continuity?.content.includes(htmlPath), "compaction continuity should preserve known local HTML artifact paths");
-		await htmlContinuityTask.handlers.get("agent_end")({}, htmlContinuityTask.ctx);
-		assert(htmlContinuityTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPath), "lean profile should preserve HTML artifact auto-open from shared policy without ambient orchestration");
+		mkdirSync(join(policyRoot, "policy"));
+		writeFileSync(join(policyRoot, "policy", "html-artifacts.json"), JSON.stringify({ auto_open: { enabled: true, modes: ["html_report"] }, modes: [{ id: "html_report" }] }));
+		await withEnv({ AGENTS_SHARED_ROOT: policyRoot }, async () => {
+			const htmlContinuityTask = createTaskHarness({ bindPayload: taskBindPayload() });
+			await htmlContinuityTask.handlers.get("session_start")({ reason: "startup" }, htmlContinuityTask.ctx);
+			await htmlContinuityTask.handlers.get("before_agent_start")({ prompt: "Implement small fix", systemPrompt: "base" }, htmlContinuityTask.ctx);
+			const htmlPath = join(continuityTemp, "status-report.html");
+			writeFileSync(htmlPath, "<!doctype html><title>Status</title>");
+			await htmlContinuityTask.handlers.get("tool_result")({ toolName: "write", input: { path: htmlPath }, isError: false }, htmlContinuityTask.ctx);
+			await htmlContinuityTask.handlers.get("session_compact")({ compactionEntry: { summary: "compact" }, fromExtension: false }, htmlContinuityTask.ctx);
+			const continuity = htmlContinuityTask.sentMessages.find((message) => message.customType === "harness-html-artifact-continuity");
+			assert(continuity?.content.includes(htmlPath), "compaction continuity should preserve known local HTML artifact paths");
+			await htmlContinuityTask.handlers.get("agent_end")({}, htmlContinuityTask.ctx);
+			assert(htmlContinuityTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPath), "lean profile should preserve HTML artifact auto-open from shared policy without ambient orchestration");
+		});
 	} finally {
+		rmSync(policyRoot, { recursive: true, force: true });
 		rmSync(continuityTemp, { recursive: true, force: true });
 	}
 
