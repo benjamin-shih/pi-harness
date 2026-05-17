@@ -185,6 +185,17 @@ export async function runAmbientContextTests() {
 	const trivial = ambient.assembleAmbientContext("base", "trivial", [{ id: "one", title: "One", priority: 10, content: "one" }]);
 	assert(!trivial.receipt, "ambient assembler should not add receipt noise for trivial prompts");
 
+	const leanHarness = createTaskHarness({ bindPayload: taskBindPayload(), memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep task binding and memory hot." } });
+	assert(!leanHarness.commands.has("inbox"), "lean harness profile should not register async inbox commands by default");
+	assert(!leanHarness.commands.has("control-center") && !leanHarness.commands.has("run-card") && !leanHarness.commands.has("choose-topology"), "lean harness profile should not register control-plane diagnostic surfaces by default");
+	assert(leanHarness.commands.has("memory") && leanHarness.commands.has("orchestrate") && leanHarness.commands.has("orchestrator"), "lean harness profile should keep memory, manual orchestration, and session tagging commands");
+	await leanHarness.handlers.get("session_start")({ reason: "startup" }, leanHarness.ctx);
+	const leanResult = await leanHarness.handlers.get("before_agent_start")({ prompt: "Implement a focused docs token optimization", systemPrompt: "base" }, leanHarness.ctx);
+	assert(!leanResult.systemPrompt.includes("## Orchestration Decision"), "lean harness profile should not inject ambient orchestration decisions");
+	assert(leanResult.systemPrompt.includes("orchestration: skipped, ambient orchestration disabled by harness profile"), "lean ambient receipt should explain skipped orchestration");
+	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "lean harness profile should not call ambient orchestration decision API");
+	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_recommended")), "lean harness profile should not record orchestration_recommended task events");
+	assert(leanResult.systemPrompt.includes("## Approved Scoped Memory") && leanResult.systemPrompt.includes("## Active AGENTS Task Context"), "lean harness profile should keep memory and task binding hot-path lanes");
 	const htmlGuidanceTask = createTaskHarness({ bindPayload: taskBindPayload() });
 	await htmlGuidanceTask.handlers.get("session_start")({ reason: "startup" }, htmlGuidanceTask.ctx);
 	const htmlGuidance = await htmlGuidanceTask.handlers.get("before_agent_start")({ prompt: "Write a comprehensive implementation status report with diagrams and next steps", systemPrompt: "base" }, htmlGuidanceTask.ctx);
@@ -205,11 +216,14 @@ export async function runAmbientContextTests() {
 		await htmlContinuityTask.handlers.get("session_compact")({ compactionEntry: { summary: "compact" }, fromExtension: false }, htmlContinuityTask.ctx);
 		const continuity = htmlContinuityTask.sentMessages.find((message) => message.customType === "harness-html-artifact-continuity");
 		assert(continuity?.content.includes(htmlPath), "compaction continuity should preserve known local HTML artifact paths");
+		await htmlContinuityTask.handlers.get("agent_end")({}, htmlContinuityTask.ctx);
+		assert(htmlContinuityTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPath), "lean profile should preserve HTML artifact auto-open from shared policy without ambient orchestration");
 	} finally {
 		rmSync(continuityTemp, { recursive: true, force: true });
 	}
 
 	const boundTask = createTaskHarness({
+		harnessProfile: "full",
 		bindPayload: taskBindPayload(),
 		memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep ambient behavior command-light." },
 	});
@@ -270,6 +284,7 @@ export async function runAmbientContextTests() {
 		rmSync(htmlOpenTemp, { recursive: true, force: true });
 	}
 	const htmlOpenDisabled = createTaskHarness({
+		harnessProfile: "full",
 		bindPayload: taskBindPayload(),
 		controlPlaneDecisionPayload: controlPlaneDecisionPayload({
 			artifacts: { html: { publish_policy: "explicit_only", source_of_truth: "json_or_markdown", modes: [{ id: "html_report" }], auto_open: { enabled: false, when: "after_local_html_artifact_created", modes: [], safety: ["local_file_only"] }, long_response: { enabled: true, chat_response: "concise_summary_plus_local_artifact_path_and_next_action" }, authoring: { structure_policy: "content_first_flexible", title_style: "compact_first_screen_readable" }, template: { id: "benjamin_local_v1", path: `${agentsRoot}/shared/templates/html-artifacts/benjamin-local-template.html`, allowed_components: [] }, templates: [{ id: "benjamin_local_v1" }], retention: { cleanup_strategy: "manifest_and_marker", delete_on_task_status: ["completed", "stale"], marker: "agents-html-artifact" }, safety: [] } },
@@ -316,6 +331,7 @@ export async function runAmbientContextTests() {
 	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard")), "/control-center should call the shared dashboard API");
 
 	const explicitControlCenterTask = createTaskHarness({
+		harnessProfile: "full",
 		bindPayload: taskBindPayload(),
 		controlPlaneDashboardPayload: controlPlaneDashboardPayload({ route: { task: { shape: "coursework", complexity: "complex", risk: "medium" }, run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" } }, orchestration_decision: controlPlaneDecisionPayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "explicit_project", steward: "course-steward", description: "Course project", tags: ["course"], default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" }, route: { run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" }, reasons: [] }, topology: { recommended: "parallel_recon", reason: "coursework needs recon", advisory_only: true, subagents: [] } }), project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "explicit_project", steward: "course-steward", description: "Course project", tags: ["course"], default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" } }),
 	});
@@ -350,6 +366,7 @@ export async function runAmbientContextTests() {
 	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("stopped: yes"), "/control-center web stop should close the local web dashboard server");
 
 	const fallbackRunCardTask = createTaskHarness({
+		harnessProfile: "full",
 		controlPlaneDecisionPayload: controlPlaneDecisionPayload({ notices: ["project not bindable: home_root"], warnings: [] }),
 	});
 	await fallbackRunCardTask.handlers.get("session_start")({ reason: "startup" }, fallbackRunCardTask.ctx);
@@ -358,6 +375,7 @@ export async function runAmbientContextTests() {
 	assert(fallbackRunCardTask.sentMessages.at(-1).content.includes("source: generated current-project fallback"), "/run-card fallback should label its source");
 	assert(fallbackRunCardTask.sentMessages.at(-1).content.includes("notices: project not bindable: home_root"), "/run-card should render decision notices separately from warnings");
 	const explicitRunCardTask = createTaskHarness({
+		harnessProfile: "full",
 		bindPayload: taskBindPayload(),
 		controlPlaneDecisionPayload: controlPlaneDecisionPayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", bindable: true, reason: "project_path", registry_id: "STATS300C", registered: true, match_type: "prompt_alias", steward: "course-steward", default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify", local_instructions_required: true }, route: { run: { shape: "parallel_recon", summary: "front-door main agent remains accountable; coursework assist/explain/verify" }, reasons: [] }, topology: { recommended: "parallel_recon", reason: "coursework assist/explain/verify", advisory_only: true, subagents: [] }, guidance: "## Orchestration Decision\n- task: coursework; complexity complex; risk medium" }),
 	});

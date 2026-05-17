@@ -51,7 +51,7 @@ To enable it globally while keeping it outside the core harness package:
 
 ## Ambient-first context
 
-The normal workflow is to ask naturally; slash commands are inspect/override/admin/debug surfaces, not the primary UX. On each agent turn, the harness runs a deterministic ambient context assembler over ordered lanes such as rendering guidance, active mode, skill routing, qmd search-first retrieval guidance for Markdown-heavy work, cleanup guidance, subagent topology guidance for detailed work, active `.agents` task context, and bounded repo metadata. Standard/complex turns include a compact Ambient Context Receipt so the inferred context remains visible without requiring a command. Natural-language execution prompts such as “go ahead and implement” or “ship this end-to-end” activate an ambient execution protocol routed by the shared `.agents` `execution-route.sh` contract. The injected guidance asks the agent to use the selected primary execution profile, capability overlays, profile-aware subagents when useful, verification, simplification, and automatic commit/push of task-relevant verified changes with incremental commits for larger tasks. `/status` and `/doctor` expose the last route state as active, inactive, or safely degraded without exposing raw prompts or script-output details. Subagent topology remains guidance-only: the harness does not spawn subagents or track subagent usage in `/status` or final footers. Final assistant responses for nontrivial turns also get a terminal-width-aware compact visual harness footer covering ambient weight, safe execution route metadata when detected, task operational state, artifact metadata capture, and durable-memory write posture without exposing raw prompts, paths, or memory content. ANSI color rendering is supported for explicit display-only callers, but persisted assistant footers stay plain by default to keep transcripts and logs clean.
+The normal workflow is to ask naturally; slash commands are inspect/override/admin/debug surfaces, not the primary UX. On each agent turn, the harness runs a deterministic ambient context assembler over ordered lanes such as rendering guidance, active mode, skill routing, qmd search-first retrieval guidance for Markdown-heavy work, cleanup guidance, subagent topology guidance for detailed work, active `.agents` task context, memory, HTML guidance, execution-route guidance, and bounded repo metadata. Standard/complex turns include a compact Ambient Context Receipt so the inferred context remains visible without requiring a command. Natural-language execution prompts such as “go ahead and implement” or “ship this end-to-end” activate an ambient execution protocol routed by the shared `.agents` `execution-route.sh` contract. The injected guidance asks the agent to use the selected primary execution profile, capability overlays, profile-aware subagents when useful, verification, simplification, and automatic commit/push of task-relevant verified changes with incremental commits for larger tasks. `/status` and `/doctor` expose the last route state as active, inactive, or safely degraded without exposing raw prompts or script-output details. Subagent topology remains guidance-only: the harness does not spawn subagents or track subagent usage in `/status` or final footers. The default `lean` harness profile does not run ambient orchestration-decision routing or record recommended-topology task events; use `harness.profile: "full"` to restore those control-plane diagnostics. Final assistant responses for nontrivial turns also get a terminal-width-aware compact visual harness footer covering ambient weight, safe execution route metadata when detected, task operational state, artifact metadata capture, and durable-memory write posture without exposing raw prompts, paths, or memory content. ANSI color rendering is supported for explicit display-only callers, but persisted assistant footers stay plain by default to keep transcripts and logs clean.
 
 Pi reuses the shared `.agents/tasks` control plane through the versioned `.agents` task API. By default the harness looks under `$HOME/.agents`; set `AGENTS_SHARED_ROOT` when using a different checkout. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, capture safe typed task-artifact metadata, and release current-session leases on shutdown. `/doctor` also surfaces bounded lifecycle diagnostics from `.agents` such as active/terminal status, lease state, route metadata, event counts, blocker count, and next action without reading task files directly. It additionally shows read-only task retention, artifact-hygiene, archive, and archived-bundle delete counts from the shared retention API so task-package buildup is visible without enabling deletion/archive execution or path/content reporting. Task classification passes prompts through a private temporary file instead of raw argv, and session compaction uses git status without scanning untracked filenames.
 
@@ -63,9 +63,36 @@ Task closure is explicit. Use `/close-task completed [reason]` or `/close-task b
 
 Use `/orchestrator [label]` to tag the current session name as `[ORCHESTRATOR] <label>` so it is easy to identify in `pi -r` selectors and terminal titles. Use `/orchestrator off` to clear only that prefix.
 
-Async inbox support is a thin `.agents` adapter. `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh`, calls the shared `.agents` tick API, and launches only explicit tick-provided worker specs through the Pi subagent bridge. `/inbox tick` previews the next eligible item in dry-run mode; `/inbox schedule` asks `.agents` to execute one supervised tick and then starts only the returned worker spec. The harness does not invent scheduling policy, run a daemon, or hide worker launch rules.
+Async inbox support is a thin `.agents` adapter, but it is disabled in the default `lean` harness profile because ordinary `pi-subagents` chains/swarms are the preferred delegation path. Set `harness.profile: "full"` or `harness.asyncInbox: true` to register `/inbox`. When enabled, `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh`, calls the shared `.agents` tick API, and launches only explicit tick-provided worker specs through the Pi subagent bridge. `/inbox tick` previews the next eligible item in dry-run mode; `/inbox schedule` asks `.agents` to execute one supervised tick and then starts only the returned worker spec. The harness does not invent scheduling policy, run a daemon, or hide worker launch rules.
 
 Natural-language orchestration planning is also a thin `.agents` adapter. `/orchestrate <request>` calls `.agents/scripts/orchestration-plan.sh` with a private prompt file and renders the bounded role/stage plan without launching anything. `/orchestrate run <request>` launches only read-only/advisory roles from the plan through `pi-subagents`; `/orchestrate run --workers <request>` is the explicit confirmation required to include bounded write-capable worker roles. The plan compiler remains read-only; task-capable workers run only as supervised subagent launches with parent synthesis and verification still required.
+
+## Harness profiles
+
+The default profile is `lean`: it keeps safety, compact tool output, task binding, memory, HTML guidance, session continuity, qmd guidance, manual `/orchestrate`, and normal `/status`/`/doctor` diagnostics. It does not register async inbox commands, Control Center/run-card/topology commands, or ambient orchestration-decision injection.
+
+Use `full` when actively developing/debugging the `.agents` control plane:
+
+```json
+{
+  "harness": {
+    "profile": "full"
+  }
+}
+```
+
+Fine-grained overrides are also supported:
+
+```json
+{
+  "harness": {
+    "profile": "lean",
+    "asyncInbox": true,
+    "controlPlaneSurfaces": true,
+    "ambientOrchestration": true
+  }
+}
+```
 
 ## UI polish
 
@@ -92,15 +119,18 @@ After loading this package in pi, these commands provide explicit overrides and 
 /status            # visual bounded snapshot with task/ambient init hints; avoids heavy audit/untracked filename scans
 /doctor            # heavier diagnostics/audit; /doct alias also works
 /memory
-/inbox                         # show async front-door inbox status
-/inbox tick                    # dry-run preview of the next shared .agents scheduler tick
-/inbox schedule                # supervised execute-one tick, then start only returned worker specs
-/inbox submit <request>        # queue a request, execute its tick, and bridge explicit worker specs
+/inbox                         # full profile or harness.asyncInbox=true only
+/inbox tick                    # full profile or harness.asyncInbox=true only
+/inbox schedule                # full profile or harness.asyncInbox=true only
+/inbox submit <request>        # full profile or harness.asyncInbox=true only
 /orchestrate <request>         # preview a .agents natural-language orchestration plan
 /orchestrate run <request>     # launch read-only/advisory plan roles through pi-subagents
 /orchestrate run --workers <request>  # explicitly include bounded write-capable worker roles
 /orchestrator [label|off]      # tag/untag this session as [ORCHESTRATOR] for pi -r selectors
 /checkpoint [note]
+/run-card                      # full profile or harness.controlPlaneSurfaces=true only
+/control-center                # full profile or harness.controlPlaneSurfaces=true only
+/choose-topology <topology>     # full profile or harness.controlPlaneSurfaces=true only
 /close-task completed|blocked [reason]  # explicit terminal task close via .agents task-close.sh
 /skills-audit [skills-root]
 /simplify [scope]

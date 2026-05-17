@@ -1,7 +1,9 @@
+import { existsSync, readFileSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import { agentsRoot } from "./config";
 import type { OrchestrationDecisionState } from "./orchestration-guidance";
 
 function shellUnquote(value: string): string {
@@ -27,21 +29,44 @@ function isHtmlPath(filePath: string): boolean {
 	return ext === ".html" || ext === ".htm";
 }
 
-function htmlAutoOpenEnabled(decision?: OrchestrationDecisionState): boolean {
-	const html = decision?.decision?.artifacts?.html;
-	const autoOpen = html?.auto_open;
-	if (!autoOpen?.enabled) return false;
-	const allowedModes = new Set(autoOpen.modes ?? []);
-	return Boolean(html?.modes?.some((mode) => mode.id && allowedModes.has(mode.id)));
+type HtmlAutoOpenPolicy = {
+	modes?: Array<{ id?: string }>;
+	auto_open?: { enabled?: boolean; modes?: string[] };
+};
+
+function htmlPolicyFromDisk(): HtmlAutoOpenPolicy | undefined {
+	try {
+		const policyPath = path.join(agentsRoot(), "policy", "html-artifacts.json");
+		if (!existsSync(policyPath)) return undefined;
+		const parsed = JSON.parse(readFileSync(policyPath, "utf8"));
+		return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as HtmlAutoOpenPolicy : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
-export function htmlArtifactPathFromTool(event: ToolResultEvent, cwd: string, decision?: OrchestrationDecisionState): string | undefined {
+function htmlAutoOpenEnabled(policy?: HtmlAutoOpenPolicy): boolean {
+	const autoOpen = policy?.auto_open;
+	if (!autoOpen?.enabled) return false;
+	const allowedModes = new Set(autoOpen.modes ?? []);
+	return Boolean(policy?.modes?.some((mode) => mode.id && allowedModes.has(mode.id)));
+}
+
+function htmlAutoOpenPolicy(decision?: OrchestrationDecisionState): HtmlAutoOpenPolicy | undefined {
+	return decision?.decision?.artifacts?.html ?? htmlPolicyFromDisk();
+}
+
+export function localHtmlArtifactPathFromTool(event: ToolResultEvent, cwd: string): string | undefined {
 	if (event.isError || (event.toolName !== "write" && event.toolName !== "edit")) return undefined;
 	const rawPath = event.input?.path;
 	if (typeof rawPath !== "string" || !rawPath.trim()) return undefined;
 	const filePath = expandLocalPath(rawPath, cwd);
-	if (!filePath || !isHtmlPath(filePath)) return undefined;
-	if (!htmlAutoOpenEnabled(decision)) return undefined;
+	return filePath && isHtmlPath(filePath) ? filePath : undefined;
+}
+
+export function htmlArtifactPathFromTool(event: ToolResultEvent, cwd: string, decision?: OrchestrationDecisionState): string | undefined {
+	const filePath = localHtmlArtifactPathFromTool(event, cwd);
+	if (!filePath || !htmlAutoOpenEnabled(htmlAutoOpenPolicy(decision))) return undefined;
 	return filePath;
 }
 

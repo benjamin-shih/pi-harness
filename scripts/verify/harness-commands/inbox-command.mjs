@@ -32,8 +32,8 @@ export async function runInboxCommandTests() {
 		});
 	});
 
-	const harness = createTaskHarness({ eventBus: bus });
-	assert(harness.commands.has("inbox"), "/inbox should be registered in parent harness mode");
+	const harness = createTaskHarness({ eventBus: bus, harnessProfile: "full" });
+	assert(harness.commands.has("inbox"), "/inbox should be registered in full harness profile");
 
 	await harness.commands.get("inbox").handler("", harness.ctx);
 	const listText = harness.sentMessages.at(-1).content;
@@ -70,7 +70,7 @@ export async function runInboxCommandTests() {
 	const summaryPath = completeCall.args[completeCall.args.indexOf("--summary-file") + 1];
 	assert(summaryPath && !existsSync(summaryPath), "/inbox completion should clean up the private summary file");
 
-	const noBridgeHarness = createTaskHarness({ eventBus: {} });
+	const noBridgeHarness = createTaskHarness({ eventBus: {}, harnessProfile: "full" });
 	await noBridgeHarness.commands.get("inbox").handler("submit Build Kalshi tool", noBridgeHarness.ctx);
 	const noBridgeReceipt = noBridgeHarness.sentMessages.at(-1).content;
 	assert(noBridgeReceipt.includes("worker launch: degraded; worker bridge unavailable"), "/inbox submit should report unavailable worker bridge without pretending work launched");
@@ -80,14 +80,14 @@ export async function runInboxCommandTests() {
 
 	const errorBus = createEventBus();
 	errorBus.on("subagent:slash:request", (data) => errorBus.emit("subagent:slash:response", { requestId: data.requestId, isError: true, errorText: "raw private bridge stderr" }));
-	const errorHarness = createTaskHarness({ eventBus: errorBus });
+	const errorHarness = createTaskHarness({ eventBus: errorBus, harnessProfile: "full" });
 	await errorHarness.commands.get("inbox").handler("submit Build Kalshi tool", errorHarness.ctx);
 	const errorReceipt = errorHarness.sentMessages.at(-1).content;
 	assert(errorReceipt.includes("worker launch: failed; subagent bridge returned an error"), "/inbox submit should surface generic bridge errors");
 	assert(!errorReceipt.includes("raw private bridge stderr"), "/inbox submit should not expose raw bridge errors");
 
 	const throwingBus = { on: () => {}, emit: () => { throw new Error("raw private thrown bridge error"); } };
-	const throwingHarness = createTaskHarness({ eventBus: throwingBus });
+	const throwingHarness = createTaskHarness({ eventBus: throwingBus, harnessProfile: "full" });
 	await throwingHarness.commands.get("inbox").handler("submit Build Kalshi tool", throwingHarness.ctx);
 	const throwingReceipt = throwingHarness.sentMessages.at(-1).content;
 	assert(throwingReceipt.includes("worker launch: failed; worker bridge launch failed"), "/inbox submit should catch bridge emit exceptions");
@@ -95,7 +95,7 @@ export async function runInboxCommandTests() {
 
 	const startFailureBus = createEventBus();
 	startFailureBus.on("subagent:slash:request", (data) => startFailureBus.emit("subagent:slash:response", { requestId: data.requestId, isError: false, result: { details: { asyncId: "async-start-fail" } } }));
-	const startFailureHarness = createTaskHarness({ eventBus: startFailureBus, scriptResults: { "inbox-worker-start.sh": { code: 1, stdout: "", stderr: "raw private lifecycle stderr" } } });
+	const startFailureHarness = createTaskHarness({ eventBus: startFailureBus, harnessProfile: "full", scriptResults: { "inbox-worker-start.sh": { code: 1, stdout: "", stderr: "raw private lifecycle stderr" } } });
 	await startFailureHarness.commands.get("inbox").handler("submit Build Kalshi tool", startFailureHarness.ctx);
 	const startFailureReceipt = startFailureHarness.sentMessages.at(-1).content;
 	assert(startFailureReceipt.includes("worker launch: degraded; worker lifecycle recording failed"), "/inbox submit should report lifecycle-record failures generically");
@@ -113,13 +113,14 @@ export async function runInboxCommandTests() {
 	assert(scheduleReceipt.includes("tick mode: execute"), "/inbox schedule should execute a supervised tick");
 	assert(scheduleReceipt.includes("worker launches by .agents: no"), "/inbox schedule should show that .agents did not launch workers itself");
 
-	const tickFailureHarness = createTaskHarness({ scriptResults: { "inbox-tick.sh": { code: 2, stdout: "", stderr: "raw private scheduler stderr" } } });
+	const tickFailureHarness = createTaskHarness({ harnessProfile: "full", scriptResults: { "inbox-tick.sh": { code: 2, stdout: "", stderr: "raw private scheduler stderr" } } });
 	await tickFailureHarness.commands.get("inbox").handler("submit Build Kalshi tool", tickFailureHarness.ctx);
 	const tickFailureReceipt = tickFailureHarness.sentMessages.at(-1).content;
 	assert(tickFailureReceipt.includes("worker launch: tick failed: exit 2"), "/inbox submit should report tick failures after enqueue");
 	assert(!tickFailureReceipt.includes("raw private scheduler stderr"), "/inbox submit should not expose tick stderr");
 
 	const queuedHarness = createTaskHarness({
+		harnessProfile: "full",
 		scriptResults: {
 			"inbox-tick.sh": { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_tick", dry_run: false, mutating_actions: true, worker_launches: false, reconcile: { updated: 0 }, summary: { checked: 1, launchable_count: 0, launch_spec_count: 0, queued_count: 1, needs_user_count: 0, noop_count: 0 }, schedule: { inbox_api_version: 1, kind: "inbox_schedule", action: "queued", items: [{ action: "queued", reason: "project lane already active", item: { id: "inq_submit", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi" } } }], launch_specs: [] }, launch_specs: [] }), stderr: "" },
 		},

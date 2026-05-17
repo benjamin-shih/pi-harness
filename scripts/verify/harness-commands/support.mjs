@@ -11,6 +11,19 @@ export const homeRoot = homedir();
 export const agentsRoot = process.env.AGENTS_SHARED_ROOT || join(homeRoot, ".agents");
 export const agentsTasksRoot = join(agentsRoot, "tasks");
 
+function withTemporaryHarnessProfile(profile, fn) {
+	const previous = process.env.BEN_PI_HARNESS_PROFILE;
+	if (profile !== undefined) process.env.BEN_PI_HARNESS_PROFILE = profile;
+	try {
+		return fn();
+	} finally {
+		if (profile !== undefined) {
+			if (previous === undefined) delete process.env.BEN_PI_HARNESS_PROFILE;
+			else process.env.BEN_PI_HARNESS_PROFILE = previous;
+		}
+	}
+}
+
 export const taskBindPayload = (overrides = {}) => ({ action: "created", bound: true, blocked: false, reason: "", task_id: "pi-task", project_root: root, ...overrides });
 export const taskDiscoverPayload = (overrides = {}) => ({ task_api_version: 1, found: true, task_id: "pi-task", project_root: root, task_project_root: root, blocked: false, reason: "", ...overrides });
 export const memoryReviewPayload = (overrides = {}) => ({ memory_api_version: 1, count: 0, skipped: 0, candidates: [], omitted: [], scope: { project: true, task: true, global: false, all: false }, warnings: [], ...overrides });
@@ -349,7 +362,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, orchestrationPlanPayload: planPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook } = {}) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, orchestrationPlanPayload: planPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook, harnessProfile } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
 	const tools = new Map();
@@ -372,7 +385,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 		const result = Array.isArray(value) ? value.shift() : value;
 		return typeof result === "function" ? result(call) : result;
 	};
-	harnessCommands({
+	withTemporaryHarnessProfile(harnessProfile, () => harnessCommands({
 		on: (event, handler) => handlers.set(event, handler),
 		registerCommand: (name, command) => commands.set(name, command),
 		registerTool: (tool) => tools.set(tool.name, tool),
@@ -460,7 +473,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 		},
 		sendUserMessage: () => {},
 		sendMessage: (message) => sentMessages.push(message),
-	});
+	}));
 	const ctx = {
 		cwd,
 		model: { provider: "test", id: "model" },

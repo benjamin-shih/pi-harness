@@ -12,8 +12,10 @@ All notable changes to this personal pi harness package are tracked here.
 - `/orchestrator [label|off]` tags the current session name with `[ORCHESTRATOR]` so it is easy to identify in `pi -r` selectors.
 - `harness.compactToolOutput` can override built-in read/write/edit/bash tool renderers with terse status rows.
 - Markdown-heavy standard/complex turns now get short qmd search-first retrieval guidance so agents search indexed skills/docs/artifacts before opening full files.
+- `harness.profile` supports `lean` and `full`; the default lean profile keeps task binding, memory, HTML, safety, compact tools, continuity, qmd guidance, and manual `/orchestrate` while disabling optional control-plane surfaces.
 
 ### Changed
+- The async inbox commands, Control Center/run-card/topology commands, and ambient orchestration-decision injection are disabled by default in the lean harness profile; use `harness.profile: "full"` or fine-grained overrides to restore them.
 - Large bash tool results are compacted for model context when `harness.compactToolOutput` is enabled: full output is saved to a private local temp file, while the inline result keeps bounded metadata and a tail for debugging.
 - CI now also runs on version tag pushes.
 - Local package compatibility now targets `pi-subagents@0.24.2`, which includes the `jiti` async loader dependency and `@earendil-works/*` Pi peer namespace.

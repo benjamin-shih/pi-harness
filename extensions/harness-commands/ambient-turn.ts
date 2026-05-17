@@ -30,9 +30,10 @@ type AmbientTurnInput = {
 	activeMode?: string;
 	taskContext?: string;
 	taskScope: AmbientTurnTaskScope;
+	ambientOrchestration?: boolean;
 };
 
-type AmbientLaneInput = Pick<AmbientTurnInput, "prompt" | "weight" | "activeMode" | "taskContext"> & {
+type AmbientLaneInput = Pick<AmbientTurnInput, "prompt" | "weight" | "activeMode" | "taskContext" | "ambientOrchestration"> & {
 	memoryContext?: MemoryContextResult;
 	orchestrationDecision?: OrchestrationDecisionState;
 	executionRoute?: ExecutionRouteState;
@@ -47,8 +48,9 @@ function executionLaneReason(route: ExecutionRouteState | undefined): string {
 	return route?.health === "degraded" ? `execution-route degraded: ${route.status}` : "no explicit execution intent";
 }
 
-function orchestrationLaneReason(decision: OrchestrationDecisionState | undefined, weight: TaskWeight): string {
+function orchestrationLaneReason(decision: OrchestrationDecisionState | undefined, weight: TaskWeight, ambientOrchestration: boolean | undefined): string {
 	if (weight === "trivial") return "trivial prompt";
+	if (!ambientOrchestration) return "ambient orchestration disabled by harness profile";
 	if (!decision) return "orchestration not checked";
 	if (decision.health === "degraded") return `orchestration decision degraded: ${decision.status}`;
 	return decision.status === "trivial" ? "direct-answer decision" : "empty orchestration guidance";
@@ -67,7 +69,7 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 		{ id: "subagent_topology", title: "Subagent topology", priority: 55, content: buildSubagentTopologyReminder(input.prompt, input.weight), reason: "not a detailed subagent-worthy prompt" },
 		{ id: "large_response_html", title: "Large response HTML medium", priority: 58, content: largeResponseHtmlGuidance(input.prompt, input.weight, input.taskContext), reason: "not a long/structured report-style deliverable" },
 		{ id: "agents_task", title: "Active AGENTS task context", priority: 60, content: input.taskContext, reason: "no scoped active task context" },
-		{ id: "orchestration", title: "Orchestration guidance", priority: 62, content: input.weight === "trivial" ? undefined : input.orchestrationDecision?.decision?.guidance, publicSummary: input.orchestrationDecision?.summary, reason: orchestrationLaneReason(input.orchestrationDecision, input.weight) },
+		{ id: "orchestration", title: "Orchestration guidance", priority: 62, content: input.weight === "trivial" ? undefined : input.orchestrationDecision?.decision?.guidance, publicSummary: input.orchestrationDecision?.summary, reason: orchestrationLaneReason(input.orchestrationDecision, input.weight, input.ambientOrchestration) },
 		{ id: "memory", title: "Approved scoped memory", priority: 65, content: input.memoryContext?.content, reason: input.memoryContext?.reason ?? "memory disabled" },
 		{ id: "memory_candidates", title: "Durable memory candidates", priority: 66, content: memoryCandidateReminder(input.weight !== "trivial"), reason: "trivial prompt" },
 		{ id: "memory_admin", title: "Explicit memory admin", priority: 67, content: memoryAdminGuidance(input.prompt), reason: "no explicit memory admin request" },
@@ -87,7 +89,7 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 export async function buildAmbientTurn(pi: ExtensionAPI, ctx: ExtensionContext, input: AmbientTurnInput): Promise<AmbientTurnResult> {
 	const policy = decideAmbientPolicy(input.weight);
 	const repoSummaryPromise = shouldIncludeRepoContext(policy) ? buildRepoContextSummary(pi, ctx.cwd) : Promise.resolve(undefined);
-	const orchestrationPromise = input.weight === "trivial" ? Promise.resolve(undefined) : buildOrchestrationDecisionState(pi, ctx.cwd, input.prompt);
+	const orchestrationPromise = input.weight === "trivial" || !input.ambientOrchestration ? Promise.resolve(undefined) : buildOrchestrationDecisionState(pi, ctx.cwd, input.prompt);
 	const executionPromise = buildExecutionRouteState(pi, ctx.cwd, input.prompt);
 	const repoSummary = await repoSummaryPromise;
 	const memoryProjectRoot = input.taskScope.projectRoot || repoSummary?.root;

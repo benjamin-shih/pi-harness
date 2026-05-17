@@ -18,7 +18,8 @@ import {
 import { queueFollowUpAfterCurrentAgent } from "./shared/deferred-user-message";
 import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
 import { checkRemoteCiAfterPush, isGitPushCommand, remoteCiGuardBlock, type RemoteCiGuardResult } from "./shared/remote-ci-guard";
-import { htmlArtifactPathFromTool, openHtmlArtifact } from "./shared/html-artifact-open";
+import { htmlArtifactPathFromTool, localHtmlArtifactPathFromTool, openHtmlArtifact } from "./shared/html-artifact-open";
+import { harnessRuntimeConfig } from "./shared/harness-profile";
 import { largeResponseHtmlCompactionReminder } from "./shared/large-response-html";
 import { applyMode, modeDescription, modeNames } from "./harness-commands/modes";
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
@@ -41,6 +42,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	if (isPiSubagentChild()) return;
 
 	registerCompactToolOutput(pi);
+	const runtimeConfig = harnessRuntimeConfig();
 	const taskLayer = createAgentsTaskLayer();
 	let activeMode: string | undefined;
 	let sawFileMutation = false;
@@ -105,11 +107,13 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			pi.sendMessage({ customType: "harness-memory", content: await buildMemoryReport(pi, ctx, taskLayer, args), display: true });
 		},
 	});
-	registerRunCardCommand(pi, taskLayer, () => lastOrchestrationDecision);
-	registerControlCenterCommand(pi, taskLayer);
-	registerChooseTopologyCommand(pi, taskLayer);
+	if (runtimeConfig.controlPlaneSurfaces) {
+		registerRunCardCommand(pi, taskLayer, () => lastOrchestrationDecision);
+		registerControlCenterCommand(pi, taskLayer);
+		registerChooseTopologyCommand(pi, taskLayer);
+	}
 	registerMemoryAdminCommands(pi, taskLayer);
-	registerInboxCommand(pi);
+	if (runtimeConfig.asyncInbox) registerInboxCommand(pi);
 	registerOrchestrateCommand(pi);
 	registerOrchestratorCommand(pi);
 	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
@@ -138,11 +142,12 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			activeMode,
 			taskContext,
 			taskScope: taskLayer.ambientScope(),
+			ambientOrchestration: runtimeConfig.ambientOrchestration,
 		});
 		lastAmbientContext = ambient.snapshot;
 		largeResponseHtmlGuidanceSeenThisSession = largeResponseHtmlGuidanceSeenThisSession || ambient.snapshot.lanes.some((lane) => lane.id === "large_response_html" && lane.status === "included");
 		lastOrchestrationDecision = ambient.orchestrationDecision;
-		await taskLayer.recordOrchestrationRecommended(pi, ctx, ambient.orchestrationDecision?.decision);
+		if (runtimeConfig.ambientOrchestration) await taskLayer.recordOrchestrationRecommended(pi, ctx, ambient.orchestrationDecision?.decision);
 		refreshFinalVisibility();
 		return ambient.systemPrompt === event.systemPrompt ? undefined : { systemPrompt: ambient.systemPrompt };
 	});
@@ -159,11 +164,10 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	});
 	pi.on("tool_result", async (event, ctx) => {
 		await taskLayer.toolResult(pi, event, ctx);
+		const localHtmlArtifact = localHtmlArtifactPathFromTool(event, ctx.cwd);
+		if (localHtmlArtifact) htmlArtifactsSeenThisSession.add(localHtmlArtifact);
 		const htmlArtifact = htmlArtifactPathFromTool(event, ctx.cwd, lastOrchestrationDecision);
-		if (htmlArtifact) {
-			pendingHtmlArtifacts.add(htmlArtifact);
-			htmlArtifactsSeenThisSession.add(htmlArtifact);
-		}
+		if (htmlArtifact) pendingHtmlArtifacts.add(htmlArtifact);
 		refreshFinalVisibility();
 		return compactToolResultForContext(event, ctx.cwd);
 	});

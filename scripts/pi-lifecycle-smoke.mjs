@@ -20,6 +20,7 @@ function assertExtension(extensions, relativePath, options = {}) {
 	const extension = extensions.find((entry) => relative(root, entry.resolvedPath || entry.path).split("\\").join("/") === relativePath);
 	assert(extension, `pi package smoke: missing extension ${relativePath}`);
 	for (const command of options.commands ?? []) assert(extension.commands.has(command), `pi package smoke: ${relativePath} did not register /${command}`);
+	for (const command of options.absentCommands ?? []) assert(!extension.commands.has(command), `pi package smoke: ${relativePath} unexpectedly registered /${command}`);
 	for (const event of options.handlers ?? []) assert(extension.handlers.has(event), `pi package smoke: ${relativePath} did not subscribe to ${event}`);
 }
 
@@ -39,7 +40,8 @@ try {
 	assert(extensionResult.extensions.length === 4, `pi package smoke: expected 4 extensions, got ${extensionResult.extensions.length}`);
 
 	assertExtension(extensionResult.extensions, "extensions/harness-commands.ts", {
-		commands: ["mode", "status", "doctor", "doct", "memory", "inbox", "checkpoint", "close-task", "task-close", "skills-audit"],
+		commands: ["mode", "status", "doctor", "doct", "memory", "orchestrate", "orchestrator", "checkpoint", "close-task", "task-close", "skills-audit"],
+		absentCommands: ["inbox", "run-card", "control-center", "choose-topology"],
 		handlers: ["session_start", "before_agent_start", "tool_call", "tool_result", "agent_end", "session_shutdown"],
 	});
 	assertExtension(extensionResult.extensions, "extensions/safety-gate.ts", {

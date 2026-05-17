@@ -1,9 +1,11 @@
-import { homedir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { assert, loadExtensionModule, withEnv } from "./harness.mjs";
 
 export async function runSupportModuleTests() {
 	const config = loadExtensionModule("extensions/shared/config.ts");
+	const harnessProfile = loadExtensionModule("extensions/shared/harness-profile.ts");
 	await withEnv({ AGENTS_SHARED_ROOT: undefined, AGENTS_SKILLS_ROOT: undefined }, async () => {
 		assert(config.agentsRoot() === join(homedir(), ".agents"), "shared config should default agents root under the current home directory");
 		assert(config.skillsRoot() === join(homedir(), ".agents", "skills"), "shared config should default skills root under the current home directory");
@@ -26,4 +28,30 @@ export async function runSupportModuleTests() {
 	await withEnv({ AGENTS_SKILLS_ROOT: "/tmp/pi-skills-root" }, async () => {
 		assert(config.skillsRoot() === "/tmp/pi-skills-root", "shared config should honor AGENTS_SKILLS_ROOT");
 	});
+
+	await withEnv({ BEN_PI_HARNESS_PROFILE: undefined, BEN_PI_ASYNC_INBOX: undefined, BEN_PI_CONTROL_PLANE_SURFACES: undefined, BEN_PI_AMBIENT_ORCHESTRATION: undefined }, async () => {
+		const lean = harnessProfile.harnessRuntimeConfig(process.cwd());
+		assert(lean.profile === "lean", "harness profile should default to lean");
+		assert(!lean.asyncInbox && !lean.controlPlaneSurfaces && !lean.ambientOrchestration, "lean profile should disable optional control-plane surfaces by default");
+	});
+	await withEnv({ BEN_PI_HARNESS_PROFILE: "full" }, async () => {
+		const full = harnessProfile.harnessRuntimeConfig(process.cwd());
+		assert(full.profile === "full", "harness profile should honor full profile env override");
+		assert(full.asyncInbox && full.controlPlaneSurfaces && full.ambientOrchestration, "full profile should enable control-plane surfaces by default");
+	});
+	await withEnv({ BEN_PI_HARNESS_PROFILE: "lean", BEN_PI_ASYNC_INBOX: "1" }, async () => {
+		const explicit = harnessProfile.harnessRuntimeConfig(process.cwd());
+		assert(explicit.profile === "lean" && explicit.asyncInbox && !explicit.controlPlaneSurfaces, "explicit feature env overrides should work within lean profile");
+	});
+	const settingsRoot = mkdtempSync(join(tmpdir(), "pi-harness-profile-"));
+	try {
+		mkdirSync(join(settingsRoot, ".pi"));
+		writeFileSync(join(settingsRoot, ".pi", "settings.json"), JSON.stringify({ harness: { profile: "lean", controlPlaneSurfaces: true, ambientOrchestration: true } }));
+		await withEnv({ BEN_PI_HARNESS_PROFILE: undefined, BEN_PI_ASYNC_INBOX: undefined, BEN_PI_CONTROL_PLANE_SURFACES: undefined, BEN_PI_AMBIENT_ORCHESTRATION: undefined }, async () => {
+			const fromSettings = harnessProfile.harnessRuntimeConfig(join(settingsRoot, "subdir"));
+			assert(fromSettings.profile === "lean" && !fromSettings.asyncInbox && fromSettings.controlPlaneSurfaces && fromSettings.ambientOrchestration, "project .pi/settings.json should configure harness profile feature overrides");
+		});
+	} finally {
+		rmSync(settingsRoot, { recursive: true, force: true });
+	}
 }
