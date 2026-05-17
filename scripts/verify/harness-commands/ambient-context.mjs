@@ -117,6 +117,7 @@ export async function runAmbientContextTests() {
 	await withEnv({ BEN_PI_COMPACT_TOOL_OUTPUT: "1" }, async () => {
 		const compactToolDisplay = createTaskHarness({});
 		assert(compactToolDisplay.tools.has("read") && compactToolDisplay.tools.has("bash") && compactToolDisplay.tools.has("edit") && compactToolDisplay.tools.has("write"), "compact tool output should be enabled by setting/env and override built-in renderers");
+		for (const name of ["read", "bash", "edit", "write"]) assert(compactToolDisplay.tools.get(name).renderShell === "default", `compact ${name} renderer should force Pi's default highlighted shell`);
 		const theme = { fg: (_color, text) => text, bg: (color, text) => `[${color}]${text}`, bold: (text) => text };
 		const bashCall = compactToolDisplay.tools.get("bash").renderCall({ command: `python3 scripts/build-report.py --input ${homeRoot}/project/data.json\necho done` }, theme, {});
 		assert(bashCall.text.includes("python3 scripts/build-report.py") && bashCall.text.includes("~/project/data.json") && bashCall.text.includes("+1 lines"), "compact bash call should show the command summary and shorten home paths");

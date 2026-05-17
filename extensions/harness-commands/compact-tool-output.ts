@@ -279,6 +279,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		...getBuiltInTools(process.cwd()).read,
+		renderShell: "default",
 		execute: (toolCallId, params, signal, onUpdate, ctx) => getBuiltInTools(ctx.cwd).read.execute(toolCallId, params, signal, onUpdate),
 		renderCall(args, theme) {
 			return new Text(`${theme.fg("toolTitle", theme.bold("read"))} ${theme.fg("accent", readSummary(args))}`, 0, 0);
@@ -293,6 +294,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		...getBuiltInTools(process.cwd()).write,
+		renderShell: "default",
 		execute: (toolCallId, params, signal, onUpdate, ctx) => getBuiltInTools(ctx.cwd).write.execute(toolCallId, params, signal, onUpdate),
 		renderCall(args, theme) {
 			return new Text(`${theme.fg("toolTitle", theme.bold("write"))} ${theme.fg("accent", writeSummary(args))}`, 0, 0);
@@ -305,6 +307,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		...getBuiltInTools(process.cwd()).edit,
+		renderShell: "default",
 		execute: (toolCallId, params, signal, onUpdate, ctx) => getBuiltInTools(ctx.cwd).edit.execute(toolCallId, params, signal, onUpdate),
 		renderCall(args, theme) {
 			return new Text(`${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", editSummary(args))}`, 0, 0);
@@ -319,6 +322,7 @@ export function registerCompactToolOutput(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		...getBuiltInTools(process.cwd()).bash,
+		renderShell: "default",
 		execute: (toolCallId, params, signal, onUpdate, ctx) => getBuiltInTools(ctx.cwd).bash.execute(toolCallId, params, signal, onUpdate),
 		renderCall(args, theme) {
 			return new Text(`${theme.fg("toolTitle", theme.bold("bash"))} ${theme.fg("accent", bashSummary(args))}`, 0, 0);
