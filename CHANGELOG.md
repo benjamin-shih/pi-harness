@@ -11,8 +11,10 @@ All notable changes to this personal pi harness package are tracked here.
 - `/orchestrate <request>` previews the shared `.agents` natural-language orchestration plan, `/orchestrate run <request>` launches read-only plan roles through `pi-subagents`, and `/orchestrate run --workers <request>` explicitly includes bounded write-capable worker roles.
 - `/orchestrator [label|off]` tags the current session name with `[ORCHESTRATOR]` so it is easy to identify in `pi -r` selectors.
 - `harness.compactToolOutput` can override built-in read/write/edit/bash tool renderers with terse status rows.
+- Markdown-heavy standard/complex turns now get short qmd search-first retrieval guidance so agents search indexed skills/docs/artifacts before opening full files.
 
 ### Changed
+- Large bash tool results are compacted for model context when `harness.compactToolOutput` is enabled: full output is saved to a private local temp file, while the inline result keeps bounded metadata and a tail for debugging.
 - CI now also runs on version tag pushes.
 - Local package compatibility now targets `pi-subagents@0.24.2`, which includes the `jiti` async loader dependency and `@earendil-works/*` Pi peer namespace.
 

@@ -10,6 +10,7 @@ import {
 	DISPLAY_MATH_RENDERING_INSTRUCTION,
 	gitPushReminder,
 	MARKDOWN_HEADING_RENDERING_INSTRUCTION,
+	qmdRetrievalGuidance,
 	skillRoutingReminder,
 	type TaskWeight,
 } from "../shared/prompt-guidance";
@@ -60,6 +61,7 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 		{ id: "markdown_heading", title: "Markdown heading rendering", priority: 20, content: MARKDOWN_HEADING_RENDERING_INSTRUCTION },
 		{ id: "mode", title: "Active harness mode", priority: 30, content: modeInstructions(input.activeMode), reason: "no active mode override" },
 		{ id: "skill_routing", title: "Skill routing", priority: 40, content: skillRoutingReminder(input.weight), reason: "trivial prompt" },
+		{ id: "qmd_retrieval", title: "QMD Markdown retrieval", priority: 45, content: qmdRetrievalGuidance(input.prompt, input.weight), reason: "not a markdown-heavy retrieval prompt" },
 		{ id: "cleanup", title: "Post-change cleanup gate", priority: 50, content: cleanupReminder(input.prompt, input.weight), reason: "non-coding prompt" },
 		{ id: "git_push", title: "Git push default", priority: 52, content: gitPushReminder(input.prompt, input.weight), reason: "non-coding prompt" },
 		{ id: "subagent_topology", title: "Subagent topology", priority: 55, content: buildSubagentTopologyReminder(input.prompt, input.weight), reason: "not a detailed subagent-worthy prompt" },

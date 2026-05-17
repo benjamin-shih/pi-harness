@@ -60,6 +60,23 @@ export function promptSuggestsMajorCleanup(prompt: string, _weight: TaskWeight):
 	const lower = prompt.toLowerCase();
 	return /\b(major|large|big|broad|codebase|repo-wide|repository-wide|general review|overhaul|migration|sweep|entire repo|all of them|full rewrite|old slop)\b/.test(lower);
 }
+function promptSuggestsMarkdownKnowledgeRetrieval(prompt: string, weight: TaskWeight): boolean {
+	if (weight === "trivial") return false;
+	const lower = prompt.toLowerCase();
+	return /\b(qmd|skill(?:s)?|docs?|documentation|markdown|notes?|knowledge|research|paper(?:s)?|artifact(?:s)?|lesson(?:s)?|readme|agents\.md|claude\.md|skill\.md|token(?:s)?)\b/.test(lower);
+}
+
+export function qmdRetrievalGuidance(prompt: string, weight: TaskWeight): string | undefined {
+	if (!promptSuggestsMarkdownKnowledgeRetrieval(prompt, weight)) return undefined;
+	return [
+		"## QMD Markdown Retrieval",
+		"For local Markdown knowledge such as skills, docs, notes, lessons, or task artifacts, search before opening full files.",
+		"Prefer `qmd search \"<query>\" -c skills --files -n 20`, then `qmd get` or `qmd multi-get` only for the selected docs.",
+		"Use `qmd vsearch` only when keyword search misses semantically relevant material; fall back to `rg` if qmd is unavailable or unhealthy.",
+		"Do not dump whole Markdown trees into context when targeted qmd retrieval or a narrow file read is enough.",
+	].join("\n");
+}
+
 export function gitPushReminder(prompt: string, weight: TaskWeight): string | undefined {
 	if (weight === "trivial" || !isCodingOrFilePrompt(prompt)) return undefined;
 	return [

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { Box } from "@earendil-works/pi-tui";
 import { loadExtensionModule } from "../harness.mjs";
@@ -26,6 +26,7 @@ export async function runAmbientContextTests() {
 	const repoContext = loadExtensionModule("extensions/shared/repo-context.ts");
 	const memoryContext = loadExtensionModule("extensions/shared/memory-context.ts");
 	const largeHtml = loadExtensionModule("extensions/shared/large-response-html.ts");
+	const promptGuidance = loadExtensionModule("extensions/shared/prompt-guidance.ts");
 	assert(typeof ambient.assembleAmbientContext === "function", "ambient context module should export assembler");
 	assert(ambientPolicy.decideAmbientPolicy("trivial").receipt === "off", "ambient policy should suppress receipts for trivial prompts");
 	assert(ambientPolicy.decideAmbientPolicy("standard").personalContext === "auto_scoped", "ambient policy should auto-consider scoped approved memory for nontrivial prompts");
@@ -96,6 +97,10 @@ export async function runAmbientContextTests() {
 	assert(!memoryContext.memoryAdminGuidance("Remember to inspect memory record serialization code"), "remember-to code inspection prompts should not get memory admin guidance");
 	assert(largeHtml.shouldUseLargeResponseHtmlGuidance("Write a comprehensive implementation status report with a table and next steps", "standard"), "large-response HTML guidance should trigger for lengthy structured reports");
 	assert(!largeHtml.shouldUseLargeResponseHtmlGuidance("Answer in chat only: what is 2+2?", "standard"), "large-response HTML guidance should honor explicit inline/chat-only requests");
+	assert(promptGuidance.qmdRetrievalGuidance("Search the skills and docs for token optimization guidance", "standard")?.includes("qmd search"), "markdown-heavy prompts should get qmd search-first retrieval guidance");
+	assert(!promptGuidance.qmdRetrievalGuidance("Ship the CI release workflow end-to-end", "complex"), "non-Markdown complex prompts should not get qmd retrieval guidance");
+	assert(!promptGuidance.qmdRetrievalGuidance("Summarize the CI failure and next action", "complex"), "generic summarize prompts should not get qmd retrieval guidance without a Markdown retrieval term");
+	assert(!promptGuidance.qmdRetrievalGuidance("What is 2+2?", "trivial"), "trivial prompts should not get qmd retrieval guidance");
 
 	await withEnv({ BEN_PI_COMPACT_TOOL_OUTPUT: "0" }, async () => {
 		const defaultToolDisplay = createTaskHarness({});
@@ -133,6 +138,27 @@ export async function runAmbientContextTests() {
 		assert(!bashErrorResult.text.includes("hidden output") && bashErrorResult.text.includes("✗ exit 2"), "compact bash renderer should show failure exit code without dumping output");
 		const bashErrorBox = renderToolBox(theme, true, 48, compactToolDisplay.tools.get("bash").renderCall({ command: "npm test" }, theme, {}), bashErrorResult);
 		assertFullBackground(bashErrorBox, "toolErrorBg", 48, "compact bash error shell should paint every responsive column");
+		const compactedOutput = Array.from({ length: 180 }, (_, index) => `line ${index} ${"x".repeat(70)}`).join("\n");
+		const compactedResult = await compactToolDisplay.handlers.get("tool_result")({ toolName: "bash", input: { command: "python noisy.py" }, content: [{ type: "text", text: compactedOutput }], details: {}, isError: false }, compactToolDisplay.ctx);
+		assert(compactedResult?.content?.[0]?.text.includes("bash output compacted to reduce context"), "large bash tool results should be compacted for model context");
+		assert(compactedResult.content[0].text.includes("captured full output saved to:"), "compacted bash results should include a local captured-output pointer");
+		assert(!compactedResult.content[0].text.includes("line 0"), "compacted bash result should avoid dumping the full original output");
+		const compactedFile = compactedResult.details?.harnessCompaction?.outputFile;
+		assert(compactedFile && existsSync(compactedFile), "compacted bash result should persist the full output locally for targeted follow-up reads");
+		rmSync(compactedFile, { force: true });
+		const hugeSingleLine = "x".repeat(20_000);
+		const hugeLineResult = await compactToolDisplay.handlers.get("tool_result")({ toolName: "bash", input: { command: "python one-line.py" }, content: [{ type: "text", text: hugeSingleLine }], details: {}, isError: false }, compactToolDisplay.ctx);
+		assert(hugeLineResult.content[0].text.length < 4_800, "single-line huge bash outputs should still be hard-capped after compaction");
+		rmSync(hugeLineResult.details?.harnessCompaction?.outputFile, { force: true });
+		const builtInFullOutputPath = join(root, ".tmp-built-in-full-output.log");
+		writeFileSync(builtInFullOutputPath, "complete output");
+		const truncatedResult = await compactToolDisplay.handlers.get("tool_result")({ toolName: "bash", input: { command: "python truncated.py" }, content: [{ type: "text", text: compactedOutput }], details: { truncation: { truncated: true }, fullOutputPath: builtInFullOutputPath }, isError: false }, compactToolDisplay.ctx);
+		assert(truncatedResult.content[0].text.includes("already truncated by bash tool"), "compacted bash results should not claim visible truncated output is complete");
+		assert(truncatedResult.content[0].text.includes("complete output saved by bash tool at:"), "compacted bash results should point to built-in full output when available");
+		assert(truncatedResult.details?.harnessCompaction?.outputFile === builtInFullOutputPath, "compaction metadata should preserve built-in full output path");
+		rmSync(builtInFullOutputPath, { force: true });
+		const smallResult = await compactToolDisplay.handlers.get("tool_result")({ toolName: "bash", input: { command: "echo ok" }, content: [{ type: "text", text: "ok" }], details: {}, isError: false }, compactToolDisplay.ctx);
+		assert(!smallResult, "small bash results should remain inline and unmodified");
 		const editResult = compactToolDisplay.tools.get("edit").renderResult({ content: [{ type: "text", text: "ok" }], details: { diff: "diff --git" } }, { expanded: true, isPartial: false }, theme, { isError: false });
 		const editBox = renderToolBox(theme, false, 54, editCall, editResult);
 		assertFullBackground(editBox, "toolSuccessBg", 54, "compact edit shell should paint call and result lines");

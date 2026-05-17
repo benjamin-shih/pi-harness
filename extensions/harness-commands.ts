@@ -34,7 +34,7 @@ import { registerMemoryAdminCommands } from "./shared/memory-admin-command";
 import { registerChooseTopologyCommand, registerRunCardCommand } from "./shared/orchestration-commands";
 import type { OrchestrationDecisionState } from "./shared/orchestration-guidance";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
-import { registerCompactToolOutput } from "./harness-commands/compact-tool-output";
+import { compactToolResultForContext, registerCompactToolOutput } from "./harness-commands/compact-tool-output";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 export default function harnessCommands(pi: ExtensionAPI) {
@@ -165,6 +165,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			htmlArtifactsSeenThisSession.add(htmlArtifact);
 		}
 		refreshFinalVisibility();
+		return compactToolResultForContext(event, ctx.cwd);
 	});
 	pi.on("message_end", async (event, ctx) => {
 		if (event.message.role !== "assistant" || event.message.stopReason === "toolUse") return;
