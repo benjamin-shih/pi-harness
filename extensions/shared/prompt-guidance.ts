@@ -63,16 +63,26 @@ export function promptSuggestsMajorCleanup(prompt: string, _weight: TaskWeight):
 function promptSuggestsMarkdownKnowledgeRetrieval(prompt: string, weight: TaskWeight): boolean {
 	if (weight === "trivial") return false;
 	const lower = prompt.toLowerCase();
-	return /\b(qmd|skill(?:s)?|docs?|documentation|markdown|notes?|knowledge|research|paper(?:s)?|artifact(?:s)?|lesson(?:s)?|readme|agents\.md|claude\.md|skill\.md|token(?:s)?)\b/.test(lower);
+	return /\b(qmd|skill(?:s)?|docs?|documentation|markdown|notes?|knowledge|research|paper(?:s)?|artifact(?:s)?|lesson(?:s)?|readme|agents\.md|claude\.md|skill\.md|contract(?:s)?|template(?:s)?|policy|token(?:s)?)\b/.test(lower);
+}
+
+function qmdCollectionHint(prompt: string): string {
+	const lower = prompt.toLowerCase();
+	if (/\b(?:contract(?:s)?|api|policy|control[- ]plane|\.agents\/shared)\b/.test(lower)) return "`agents-contracts` for `.agents/shared` contracts/policies";
+	if (/\b(?:template(?:s)?|html artifact|artifact template)\b/.test(lower)) return "`agents-templates` for template README guidance, then read exact HTML template paths only when needed";
+	if (/\b(?:agents\.md|claude\.md|bootstrap|template_agents|template_claude)\b/.test(lower)) return "`agents-root-docs` for root bootstrap docs/templates";
+	return "`skills` for skill docs";
 }
 
 export function qmdRetrievalGuidance(prompt: string, weight: TaskWeight): string | undefined {
 	if (!promptSuggestsMarkdownKnowledgeRetrieval(prompt, weight)) return undefined;
+	const collectionHint = qmdCollectionHint(prompt);
 	return [
 		"## QMD Markdown Retrieval",
-		"For local Markdown knowledge such as skills, docs, notes, lessons, or task artifacts, search before opening full files.",
-		"Prefer `qmd search \"<query>\" -c skills --files -n 20`, then `qmd get` or `qmd multi-get` only for the selected docs.",
-		"Use `qmd vsearch` only when keyword search misses semantically relevant material; fall back to `rg` if qmd is unavailable or unhealthy.",
+		"For local Markdown knowledge such as skills, docs, notes, lessons, contracts, templates, or task artifacts, search before opening full files.",
+		`Prefer \`qmd search \"<query>\" -c <collection> --files -n 20\`; likely collection: ${collectionHint}.`,
+		"Useful collections: `skills`, `agents-contracts`, `agents-templates`, `agents-root-docs`, `task-progress`, `task-lessons`, and `task-todos`.",
+		"Use `qmd get` or `qmd multi-get` only for selected docs; use `qmd vsearch` only when keyword search misses semantically relevant material; fall back to `rg` if qmd is unavailable or unhealthy.",
 		"Do not dump whole Markdown trees into context when targeted qmd retrieval or a narrow file read is enough.",
 	].join("\n");
 }

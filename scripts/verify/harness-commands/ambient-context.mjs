@@ -98,6 +98,8 @@ export async function runAmbientContextTests() {
 	assert(largeHtml.shouldUseLargeResponseHtmlGuidance("Write a comprehensive implementation status report with a table and next steps", "standard"), "large-response HTML guidance should trigger for lengthy structured reports");
 	assert(!largeHtml.shouldUseLargeResponseHtmlGuidance("Answer in chat only: what is 2+2?", "standard"), "large-response HTML guidance should honor explicit inline/chat-only requests");
 	assert(promptGuidance.qmdRetrievalGuidance("Search the skills and docs for token optimization guidance", "standard")?.includes("qmd search"), "markdown-heavy prompts should get qmd search-first retrieval guidance");
+	assert(promptGuidance.qmdRetrievalGuidance("Search the .agents shared contracts for memory policy", "standard")?.includes("agents-contracts"), "contract prompts should point qmd at .agents shared contracts");
+	assert(promptGuidance.qmdRetrievalGuidance("Find the HTML artifact template guidance", "standard")?.includes("agents-templates"), "template prompts should point qmd at .agents template docs");
 	assert(!promptGuidance.qmdRetrievalGuidance("Ship the CI release workflow end-to-end", "complex"), "non-Markdown complex prompts should not get qmd retrieval guidance");
 	assert(!promptGuidance.qmdRetrievalGuidance("Summarize the CI failure and next action", "complex"), "generic summarize prompts should not get qmd retrieval guidance without a Markdown retrieval term");
 	assert(!promptGuidance.qmdRetrievalGuidance("What is 2+2?", "trivial"), "trivial prompts should not get qmd retrieval guidance");
