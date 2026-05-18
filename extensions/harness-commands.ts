@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AmbientContextSnapshot } from "./shared/ambient-context";
 import { buildAmbientTurn } from "./harness-commands/ambient-turn";
+import { commandDescription, enabledProfileGatedCommandCapabilities, type CommandCapability } from "./harness-commands/capability-registry";
 import { registerCheckpointCommand } from "./harness-commands/checkpoint-command";
 import {
 	CLEANUP_GUARD_MARKER,
@@ -69,7 +70,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		finalVisibility = lastAmbientContext ? { ambient: lastAmbientContext, mode: activeMode, task: taskLayer.finalVisibility(), remoteCi: remoteCiStatus } : undefined;
 	};
 	pi.registerCommand("mode", {
-		description: "Switch harness mode: fast, default, deep, readonly, full",
+		description: commandDescription("mode"),
 		getArgumentCompletions: (prefix: string) => {
 			const p = prefix.trim().toLowerCase();
 			return modeNames()
@@ -95,62 +96,74 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		pi.sendMessage({ customType: "harness-doctor", content: await buildDoctor(pi, ctx, taskLayer, lastAmbientContext), display: true });
 	};
 	pi.registerCommand("status", {
-		description: "Show a quick bounded harness, model, tool, context, git, memory, and task status",
+		description: commandDescription("status"),
 		handler: async (_args, ctx) => {
 			pi.sendMessage({ customType: "harness-status", content: await buildStatus(pi, ctx, taskLayer, lastAmbientContext), display: true });
 		},
 	});
 	pi.registerCommand("doctor", {
-		description: "Run a read-only harness health check with memory-spine and AGENTS task diagnostics",
+		description: commandDescription("doctor"),
 		handler: async (_args, ctx) => sendDoctor(ctx),
 	});
 	pi.registerCommand("doct", {
-		description: "Alias for /doctor",
+		description: commandDescription("doct"),
 		handler: async (_args, ctx) => sendDoctor(ctx),
 	});
 	pi.registerCommand("memory", {
-		description: "Show memory diagnostics; use `/memory review`, `/memory review global`, or `/memory help` for explicit admin flow",
+		description: commandDescription("memory"),
 		handler: async (args, ctx) => {
 			pi.sendMessage({ customType: "harness-memory", content: await buildMemoryReport(pi, ctx, taskLayer, args), display: true });
 		},
 	});
 	registerMemoryAdminCommands(pi, taskLayer);
-	if (runtimeConfig.controlPlaneSurfaces) {
-		pi.registerCommand("run-card", {
-			description: "Show the latest orchestration run card, or decide provided text without executing it",
-			handler: async (args, ctx) => {
-				const mod = await import("./shared/orchestration-commands");
-				const command = captureCommand(pi, "run-card", (capturingPi) => mod.registerRunCardCommand(capturingPi, taskLayer, () => lastOrchestrationDecision));
-				await command.handler(args, ctx);
-			},
-		});
-		pi.registerCommand("choose-topology", {
-			description: "Explicitly record the orchestration topology the main agent chose for the active task",
-			handler: async (args, ctx) => {
-				const mod = await import("./shared/orchestration-commands");
-				const command = captureCommand(pi, "choose-topology", (capturingPi) => mod.registerChooseTopologyCommand(capturingPi, taskLayer));
-				await command.handler(args, ctx);
-			},
-		});
-		pi.registerCommand("control-center", {
-			description: "Show the read-only local Agent Control Center",
-			handler: async (args, ctx) => {
-				const mod = await import("./shared/control-center-command");
-				const command = captureCommand(pi, "control-center", (capturingPi) => mod.registerControlCenterCommand(capturingPi, taskLayer));
-				await command.handler(args, ctx);
-			},
-		});
-	}
-	if (runtimeConfig.asyncInbox) {
-		pi.registerCommand("inbox", {
-			description: "Show and tick the shared .agents async inbox",
-			handler: async (args, ctx) => {
-				const mod = await import("./harness-commands/inbox-command");
-				const command = captureCommand(pi, "inbox", (capturingPi) => mod.registerInboxCommand(capturingPi));
-				await command.handler(args, ctx);
-			},
-		});
-	}
+	const registerProfileGatedCommand = (capability: CommandCapability) => {
+		if (capability.name === "run-card") {
+			pi.registerCommand(capability.name, {
+				description: capability.description,
+				handler: async (args, ctx) => {
+					const mod = await import("./shared/orchestration-commands");
+					const command = captureCommand(pi, capability.name, (capturingPi) => mod.registerRunCardCommand(capturingPi, taskLayer, () => lastOrchestrationDecision));
+					await command.handler(args, ctx);
+				},
+			});
+			return;
+		}
+		if (capability.name === "choose-topology") {
+			pi.registerCommand(capability.name, {
+				description: capability.description,
+				handler: async (args, ctx) => {
+					const mod = await import("./shared/orchestration-commands");
+					const command = captureCommand(pi, capability.name, (capturingPi) => mod.registerChooseTopologyCommand(capturingPi, taskLayer));
+					await command.handler(args, ctx);
+				},
+			});
+			return;
+		}
+		if (capability.name === "control-center") {
+			pi.registerCommand(capability.name, {
+				description: capability.description,
+				handler: async (args, ctx) => {
+					const mod = await import("./shared/control-center-command");
+					const command = captureCommand(pi, capability.name, (capturingPi) => mod.registerControlCenterCommand(capturingPi, taskLayer));
+					await command.handler(args, ctx);
+				},
+			});
+			return;
+		}
+		if (capability.name === "inbox") {
+			pi.registerCommand(capability.name, {
+				description: capability.description,
+				handler: async (args, ctx) => {
+					const mod = await import("./harness-commands/inbox-command");
+					const command = captureCommand(pi, capability.name, (capturingPi) => mod.registerInboxCommand(capturingPi));
+					await command.handler(args, ctx);
+				},
+			});
+			return;
+		}
+		throw new Error(`unhandled profile-gated harness command capability: ${capability.name}`);
+	};
+	for (const capability of enabledProfileGatedCommandCapabilities(runtimeConfig)) registerProfileGatedCommand(capability);
 	registerOrchestrateCommand(pi);
 	registerOrchestratorCommand(pi);
 	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
