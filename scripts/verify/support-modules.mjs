@@ -5,6 +5,7 @@ import { assert, loadExtensionModule, withEnv } from "./harness.mjs";
 
 export async function runSupportModuleTests() {
 	const config = loadExtensionModule("extensions/shared/config.ts");
+	const agentsClient = loadExtensionModule("extensions/shared/agents-client.ts");
 	const harnessProfile = loadExtensionModule("extensions/shared/harness-profile.ts");
 	const capabilityRegistry = loadExtensionModule("extensions/harness-commands/capability-registry.ts");
 	await withEnv({ AGENTS_SHARED_ROOT: undefined, AGENTS_SKILLS_ROOT: undefined }, async () => {
@@ -15,6 +16,10 @@ export async function runSupportModuleTests() {
 	await withEnv({ AGENTS_SHARED_ROOT: "/tmp/pi-agents-root", AGENTS_SKILLS_ROOT: undefined }, async () => {
 		assert(config.agentsRoot() === "/tmp/pi-agents-root", "shared config should honor AGENTS_SHARED_ROOT");
 		assert(config.skillsRoot() === join("/tmp/pi-agents-root", "skills"), "shared config should derive skills root from AGENTS_SHARED_ROOT");
+		const pi = { exec: async (_cmd, args, options) => ({ code: 0, stdout: JSON.stringify({ task_api_version: 1, script: args[0], cwd: options.cwd }), stderr: "" }) };
+		const payload = await agentsClient.runAgentsJson(pi, { scriptName: "task-api.sh", args: ["info"], cwd: "/tmp/project", versionKey: "task_api_version", expectedVersion: 1 });
+		assert(payload?.script === join("/tmp/pi-agents-root", "scripts", "task-api.sh") && payload?.cwd === "/tmp/project", "agents client should centralize script path, cwd, and JSON version checks");
+		assert(!agentsClient.agentsJsonPayload({ code: 0, stdout: JSON.stringify({ task_api_version: 2 }), stderr: "" }, "task_api_version", 1), "agents client should reject unsupported JSON versions");
 	});
 
 	await withEnv({ AGENTS_SHARED_ROOT: "~/.agents", AGENTS_SKILLS_ROOT: undefined }, async () => {

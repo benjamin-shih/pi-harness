@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { runAgentsScript as runScript } from "../shared/agents-client";
 import { parseJson } from "../shared/json";
 import { withPrivateTempTextFile } from "../shared/private-temp";
-import { runScript } from "../harness-task-layer/task-layer-api";
 import type { InboxEnqueuePayload, InboxItem, InboxLaunchSpec, InboxListPayload, InboxProject, InboxSchedulePayload, InboxTickPayload } from "./inbox-types";
 import { createInboxWorkerBridge } from "./inbox-worker-bridge";
 

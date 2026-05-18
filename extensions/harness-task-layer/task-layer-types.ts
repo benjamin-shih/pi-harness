@@ -38,6 +38,7 @@ export type ArtifactListResult = {
 };
 
 export type TaskCloseResult = {
+	task_api_version?: number;
 	status?: string;
 	closed_at?: string;
 	has_next_action?: boolean;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { runAgentsScript as runScript } from "../shared/agents-client";
 import { withPrivateTempTextFile } from "../shared/private-temp";
-import { runScript } from "../harness-task-layer/task-layer-api";
 import type { InboxLaunchSpec } from "./inbox-types";
 
 const SLASH_SUBAGENT_REQUEST_EVENT = "subagent:slash:request";

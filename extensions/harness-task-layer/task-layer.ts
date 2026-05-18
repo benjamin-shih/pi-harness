@@ -2,12 +2,11 @@ import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { modelSummary } from "../session-continuity/context";
 import { agentsRoot } from "../shared/config";
-import { parseJson } from "../shared/json";
 import { withPrivateTempTextFile } from "../shared/private-temp";
 import type { FinalTaskVisibility } from "../shared/final-visibility";
 import type { OrchestrationDecision } from "../shared/orchestration-guidance";
 import type { TaskWeight } from "../shared/prompt-guidance";
-import { candidateRoot, classifyTask, discoverTask, ensureTaskApi, runScript, shortError } from "./task-layer-api";
+import { candidateRoot, classifyTask, discoverTask, ensureTaskApi, runScript, scriptJsonPayload, shortError } from "./task-layer-api";
 import { activityFromTool, pathArtifactFromTool, pathFromTool, verificationArtifactFromTool } from "./task-layer-artifacts";
 import { retentionSection } from "./task-layer-retention";
 import {
@@ -118,15 +117,10 @@ export function createAgentsTaskLayer() {
 				state.lastError = shortError(result);
 				return undefined;
 			}
-			const payload = parseJson<BindResult>(result.stdout);
+			const payload = scriptJsonPayload<BindResult>(result, "task_api_version", SUPPORTED_TASK_API_VERSION);
 			if (!payload) {
 				state.lastAction = "error";
-				state.lastError = "task-bind returned invalid JSON";
-				return undefined;
-			}
-			if (payload.task_api_version !== SUPPORTED_TASK_API_VERSION) {
-				state.lastAction = "error";
-				state.lastError = `task-bind returned unsupported API version: ${payload.task_api_version ?? "missing"}`;
+				state.lastError = "task-bind returned invalid JSON or unsupported API version";
 				return undefined;
 			}
 			state.lastAction = payload.action;
@@ -173,8 +167,8 @@ export function createAgentsTaskLayer() {
 		try {
 			const result = await runScript(pi, "task-artifact-list.sh", [state.active.task_id, "--json", "--limit", "1"], ctx.cwd, 5_000);
 			if (result.code !== 0) return;
-			const payload = parseJson<ArtifactListResult>(result.stdout);
-			if (payload?.artifact_api_version === SUPPORTED_ARTIFACT_API_VERSION) state.artifactCount = payload.count;
+			const payload = scriptJsonPayload<ArtifactListResult>(result, "artifact_api_version", SUPPORTED_ARTIFACT_API_VERSION);
+			if (payload) state.artifactCount = payload.count;
 		} catch {
 			// Artifact listing is best-effort; do not affect task binding.
 		}
@@ -187,8 +181,8 @@ export function createAgentsTaskLayer() {
 				state.artifactSkipped++;
 				return;
 			}
-			const payload = parseJson<ArtifactAddResult>(result.stdout);
-			if (payload?.artifact_api_version !== SUPPORTED_ARTIFACT_API_VERSION) {
+			const payload = scriptJsonPayload<ArtifactAddResult>(result, "artifact_api_version", SUPPORTED_ARTIFACT_API_VERSION);
+			if (!payload) {
 				state.artifactSkipped++;
 				return;
 			}
@@ -283,8 +277,8 @@ export function createAgentsTaskLayer() {
 		try {
 			const result = await runScript(pi, "task-lifecycle.sh", [state.active.task_id, "--cwd", ctx.cwd], ctx.cwd, 5_000);
 			if (result.code !== 0) return ["- lifecycle API: unavailable (script_error)"];
-			const payload = parseJson<TaskLifecycleResult>(result.stdout);
-			if (payload?.task_api_version !== SUPPORTED_TASK_API_VERSION) return ["- lifecycle API: unavailable (unsupported API version)"];
+			const payload = scriptJsonPayload<TaskLifecycleResult>(result, "task_api_version", SUPPORTED_TASK_API_VERSION);
+			if (!payload) return ["- lifecycle API: unavailable (unsupported API version)"];
 			return lifecycleLines(payload);
 		} catch {
 			return ["- lifecycle API: unavailable (exception)"];
@@ -310,8 +304,8 @@ export function createAgentsTaskLayer() {
 		};
 		const result = reason.trim() ? await withPrivateTempTextFile("pi-task-close-reason-", reason.trim(), runClose) : await runClose();
 		if (result.code !== 0) return { ok: false, lines: ["## Task close", "- result: blocked", `- reason: ${closeErrorSummary(result)}`] };
-		const payload = parseJson<TaskCloseResult>(result.stdout);
-		if (!payload?.status) return { ok: false, lines: ["## Task close", "- result: unavailable", "- reason: task-close returned invalid JSON"] };
+		const payload = scriptJsonPayload<TaskCloseResult>(result, "task_api_version", SUPPORTED_TASK_API_VERSION);
+		if (!payload?.status) return { ok: false, lines: ["## Task close", "- result: unavailable", "- reason: task-close returned invalid JSON or unsupported API version"] };
 		state.active = undefined;
 		state.discovered = undefined;
 		state.context = undefined;

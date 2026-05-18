@@ -1,6 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { agentsScriptPath } from "../shared/config";
-import { parseJson } from "../shared/json";
+import { agentsJsonPayload, runAgentsJson, runAgentsScript, shortAgentsScriptError } from "../shared/agents-client";
 import { withPrivateTempTextFile } from "../shared/private-temp";
 import {
 	SUPPORTED_TASK_API_VERSION,
@@ -12,14 +11,11 @@ import {
 	type TaskLayerState,
 } from "./task-layer-types";
 
-const SCRIPT_TIMEOUT_MS = 10_000;
+export const runScript = runAgentsScript;
+export const shortError = shortAgentsScriptError;
 
-export async function runScript(pi: ExtensionAPI, scriptName: string, args: string[], cwd: string, timeout = SCRIPT_TIMEOUT_MS): Promise<ExecResult> {
-	return pi.exec("bash", [agentsScriptPath(scriptName), ...args], { cwd, timeout });
-}
-
-export function shortError(result: ExecResult): string {
-	return (result.stderr || result.stdout || `exit ${result.code}`).replace(/\s+/g, " ").trim().slice(0, 500);
+export function scriptJsonPayload<T extends Record<string, unknown>>(result: ExecResult, versionKey?: string, expectedVersion?: number | string): T | undefined {
+	return agentsJsonPayload<T>(result, versionKey, expectedVersion);
 }
 
 export async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd: string): Promise<boolean> {
@@ -33,9 +29,9 @@ export async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd
 			state.lastError = shortError(result);
 			return false;
 		}
-		const payload = parseJson<TaskApiInfo>(result.stdout);
-		if (!payload || payload.task_api_version !== SUPPORTED_TASK_API_VERSION) {
-			state.lastError = `unsupported AGENTS task API version: ${payload?.task_api_version ?? "unknown"}`;
+		const payload = scriptJsonPayload<TaskApiInfo>(result, "task_api_version", SUPPORTED_TASK_API_VERSION);
+		if (!payload) {
+			state.lastError = "unsupported AGENTS task API version or invalid JSON";
 			return false;
 		}
 		state.apiInfo = payload;
@@ -50,11 +46,7 @@ export async function ensureTaskApi(pi: ExtensionAPI, state: TaskLayerState, cwd
 
 export async function candidateRoot(pi: ExtensionAPI, candidate: string, cwd: string): Promise<CandidateRootResult | undefined> {
 	try {
-		const result = await runScript(pi, "task-candidate-root.sh", ["--candidate", candidate, "--cwd", cwd], cwd, 5_000);
-		if (result.code !== 0) return undefined;
-		const payload = parseJson<CandidateRootResult>(result.stdout);
-		if (!payload || payload.task_api_version !== SUPPORTED_TASK_API_VERSION) return undefined;
-		return payload;
+		return await runAgentsJson<CandidateRootResult>(pi, { scriptName: "task-candidate-root.sh", args: ["--candidate", candidate, "--cwd", cwd], cwd, timeout: 5_000, versionKey: "task_api_version", expectedVersion: SUPPORTED_TASK_API_VERSION });
 	} catch {
 		return undefined;
 	}
@@ -62,11 +54,7 @@ export async function candidateRoot(pi: ExtensionAPI, candidate: string, cwd: st
 
 export async function discoverTask(pi: ExtensionAPI, cwd: string, sessionId: string): Promise<TaskDiscoverResult | undefined> {
 	try {
-		const result = await runScript(pi, "task-discover.sh", ["--cwd", cwd, "--runtime", "pi", "--session", sessionId], cwd, 5_000);
-		if (result.code !== 0) return undefined;
-		const payload = parseJson<TaskDiscoverResult>(result.stdout);
-		if (!payload || payload.task_api_version !== SUPPORTED_TASK_API_VERSION) return undefined;
-		return payload;
+		return await runAgentsJson<TaskDiscoverResult>(pi, { scriptName: "task-discover.sh", args: ["--cwd", cwd, "--runtime", "pi", "--session", sessionId], cwd, timeout: 5_000, versionKey: "task_api_version", expectedVersion: SUPPORTED_TASK_API_VERSION });
 	} catch {
 		return undefined;
 	}
@@ -74,13 +62,7 @@ export async function discoverTask(pi: ExtensionAPI, cwd: string, sessionId: str
 
 export async function classifyTask(pi: ExtensionAPI, prompt: string, cwd: string): Promise<TaskClassification | undefined> {
 	try {
-		return await withPrivateTempTextFile("pi-task-classify-", prompt, async (promptFile) => {
-			const result = await runScript(pi, "task-classify.sh", ["--prompt-file", promptFile, "--cwd", cwd], cwd, 5_000);
-			if (result.code !== 0) return undefined;
-			const payload = parseJson<TaskClassification>(result.stdout);
-			if (!payload) return undefined;
-			return payload.task_api_version === SUPPORTED_TASK_API_VERSION ? payload : undefined;
-		});
+		return await withPrivateTempTextFile("pi-task-classify-", prompt, async (promptFile) => runAgentsJson<TaskClassification>(pi, { scriptName: "task-classify.sh", args: ["--prompt-file", promptFile, "--cwd", cwd], cwd, timeout: 5_000, versionKey: "task_api_version", expectedVersion: SUPPORTED_TASK_API_VERSION }));
 	} catch {
 		return undefined;
 	}

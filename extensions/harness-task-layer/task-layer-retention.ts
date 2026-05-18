@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { parseJson } from "../shared/json";
-import { runScript } from "./task-layer-api";
+import { runScript, scriptJsonPayload } from "./task-layer-api";
 import { SUPPORTED_TASK_API_VERSION, supportsTaskRetentionDiagnostics, type TaskLayerState } from "./task-layer-types";
 type TaskRetentionResult = { task_api_version?: number; scope?: "project" | "all"; project_scoped?: boolean; policy?: { destructive_actions?: boolean; archive_supported?: boolean; archive_delete_supported?: boolean }; summary?: Record<string, number | undefined> };
 function retentionLines(payload: TaskRetentionResult): string[] {
@@ -31,8 +30,8 @@ export async function retentionSection(pi: ExtensionAPI, ctx: ExtensionContext, 
 	try {
 		const result = await runScript(pi, "task-retention.sh", ["--cwd", ctx.cwd], ctx.cwd, 8_000);
 		if (result.code !== 0) return ["- retention API: unavailable (script_error)"];
-		const payload = parseJson<TaskRetentionResult>(result.stdout);
-		return payload?.task_api_version === SUPPORTED_TASK_API_VERSION ? retentionLines(payload) : ["- retention API: unavailable (unsupported API version)"];
+		const payload = scriptJsonPayload<TaskRetentionResult>(result, "task_api_version", SUPPORTED_TASK_API_VERSION);
+		return payload ? retentionLines(payload) : ["- retention API: unavailable (unsupported API version)"];
 	} catch {
 		return ["- retention API: unavailable (exception)"];
 	}
