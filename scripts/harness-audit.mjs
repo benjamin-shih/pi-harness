@@ -66,7 +66,9 @@ function isAllowedStaleReference(label, line) {
 
 function topLevelImports(relativePath) {
 	const text = readFileSync(join(root, relativePath), "utf8");
-	return [...text.matchAll(/^import\s+(?:type\s+)?(?:[^";]+\s+from\s+)?["']([^"']+)["'];?/gm)].map((match) => match[1]);
+	return [...text.matchAll(/^import\s+(type\s+)?(?:[^";]+\s+from\s+)?["']([^"']+)["'];?/gm)]
+		.filter((match) => !match[1])
+		.map((match) => match[2]);
 }
 
 function countBetween(text, startPattern, endPattern, needle) {

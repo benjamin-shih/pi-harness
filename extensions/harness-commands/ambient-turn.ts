@@ -4,7 +4,7 @@ import { decideAmbientPolicy, shouldIncludeMemoryContext, shouldIncludeRepoConte
 import { buildExecutionRouteState, formatExecutionFactCard, type ExecutionRouteState } from "../shared/execution-guidance";
 import { largeResponseHtmlGuidance } from "../shared/large-response-html";
 import { buildMemoryContext, memoryAdminGuidance, memoryCandidateReminder, type MemoryContextResult } from "../shared/memory-context";
-import { buildOrchestrationDecisionState, type OrchestrationDecisionState } from "../shared/orchestration-guidance";
+import type { OrchestrationDecisionState } from "../shared/orchestration-guidance";
 import {
 	cleanupReminder,
 	DISPLAY_MATH_RENDERING_INSTRUCTION,
@@ -43,6 +43,11 @@ type AmbientLaneInput = Pick<AmbientTurnInput, "prompt" | "weight" | "activeMode
 export type AmbientTurnResult = AmbientContextAssembly & {
 	orchestrationDecision?: OrchestrationDecisionState;
 };
+
+async function buildOrchestrationDecision(pi: ExtensionAPI, cwd: string, prompt: string): Promise<OrchestrationDecisionState | undefined> {
+	const mod = await import("../shared/orchestration-guidance");
+	return mod.buildOrchestrationDecisionState(pi, cwd, prompt);
+}
 
 function executionLaneReason(route: ExecutionRouteState | undefined): string {
 	return route?.health === "degraded" ? `execution-route degraded: ${route.status}` : "no explicit execution intent";
@@ -91,7 +96,7 @@ export async function buildAmbientTurn(pi: ExtensionAPI, ctx: ExtensionContext, 
 	const includeRepo = shouldIncludeRepoContext(policy);
 	const includeMemory = shouldIncludeMemoryContext(policy);
 	const repoSummaryPromise = includeRepo ? buildRepoContextSummary(pi, ctx.cwd) : Promise.resolve(undefined);
-	const orchestrationPromise = input.weight === "trivial" || !input.ambientOrchestration ? Promise.resolve(undefined) : buildOrchestrationDecisionState(pi, ctx.cwd, input.prompt);
+	const orchestrationPromise = input.weight === "trivial" || !input.ambientOrchestration ? Promise.resolve(undefined) : buildOrchestrationDecision(pi, ctx.cwd, input.prompt);
 	const executionPromise = buildExecutionRouteState(pi, ctx.cwd, input.prompt);
 	const memoryPromise = includeMemory && input.taskScope.projectRoot
 		? buildMemoryContext(pi, ctx.cwd, { projectRoot: input.taskScope.projectRoot, taskId: input.taskScope.taskId })

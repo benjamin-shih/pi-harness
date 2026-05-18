@@ -25,19 +25,26 @@ import { applyMode, modeDescription, modeNames } from "./harness-commands/modes"
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
-import { registerInboxCommand } from "./harness-commands/inbox-command";
 import { registerOrchestrateCommand } from "./harness-commands/orchestrate-command";
 import { registerOrchestratorCommand } from "./harness-commands/orchestrator-command";
 import { registerTaskCloseCommand } from "./harness-commands/task-close-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
-import { registerControlCenterCommand } from "./shared/control-center-command";
 import { registerMemoryAdminCommands } from "./shared/memory-admin-command";
-import { registerChooseTopologyCommand, registerRunCardCommand } from "./shared/orchestration-commands";
 import type { OrchestrationDecisionState } from "./shared/orchestration-guidance";
 import { createAgentsTaskLayer } from "./harness-commands/task-layer";
 import { compactToolResultForContext, registerCompactToolOutput } from "./harness-commands/compact-tool-output";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+
+type RegisteredCommand = { handler: (args: string, ctx: ExtensionContext) => unknown; description?: string };
+
+function captureCommand(pi: ExtensionAPI, name: string, register: (capturingPi: ExtensionAPI) => void): RegisteredCommand {
+	let command: RegisteredCommand | undefined;
+	register({ ...pi, registerCommand: (candidate, registered) => { if (candidate === name) command = registered as RegisteredCommand; } } as ExtensionAPI);
+	if (!command) throw new Error(`lazy command registration failed: ${name}`);
+	return command;
+}
+
 export default function harnessCommands(pi: ExtensionAPI) {
 	if (isPiSubagentChild()) return;
 
@@ -107,13 +114,43 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			pi.sendMessage({ customType: "harness-memory", content: await buildMemoryReport(pi, ctx, taskLayer, args), display: true });
 		},
 	});
-	if (runtimeConfig.controlPlaneSurfaces) {
-		registerRunCardCommand(pi, taskLayer, () => lastOrchestrationDecision);
-		registerControlCenterCommand(pi, taskLayer);
-		registerChooseTopologyCommand(pi, taskLayer);
-	}
 	registerMemoryAdminCommands(pi, taskLayer);
-	if (runtimeConfig.asyncInbox) registerInboxCommand(pi);
+	if (runtimeConfig.controlPlaneSurfaces) {
+		pi.registerCommand("run-card", {
+			description: "Show the latest orchestration run card, or decide provided text without executing it",
+			handler: async (args, ctx) => {
+				const mod = await import("./shared/orchestration-commands");
+				const command = captureCommand(pi, "run-card", (capturingPi) => mod.registerRunCardCommand(capturingPi, taskLayer, () => lastOrchestrationDecision));
+				await command.handler(args, ctx);
+			},
+		});
+		pi.registerCommand("choose-topology", {
+			description: "Explicitly record the orchestration topology the main agent chose for the active task",
+			handler: async (args, ctx) => {
+				const mod = await import("./shared/orchestration-commands");
+				const command = captureCommand(pi, "choose-topology", (capturingPi) => mod.registerChooseTopologyCommand(capturingPi, taskLayer));
+				await command.handler(args, ctx);
+			},
+		});
+		pi.registerCommand("control-center", {
+			description: "Show the read-only local Agent Control Center",
+			handler: async (args, ctx) => {
+				const mod = await import("./shared/control-center-command");
+				const command = captureCommand(pi, "control-center", (capturingPi) => mod.registerControlCenterCommand(capturingPi, taskLayer));
+				await command.handler(args, ctx);
+			},
+		});
+	}
+	if (runtimeConfig.asyncInbox) {
+		pi.registerCommand("inbox", {
+			description: "Show and tick the shared .agents async inbox",
+			handler: async (args, ctx) => {
+				const mod = await import("./harness-commands/inbox-command");
+				const command = captureCommand(pi, "inbox", (capturingPi) => mod.registerInboxCommand(capturingPi));
+				await command.handler(args, ctx);
+			},
+		});
+	}
 	registerOrchestrateCommand(pi);
 	registerOrchestratorCommand(pi);
 	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
