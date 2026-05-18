@@ -83,10 +83,11 @@ function countBetween(text, startPattern, endPattern, needle) {
 function leanHotPathMetrics() {
 	const harnessEntrypoint = "extensions/harness-commands.ts";
 	const harnessText = readFileSync(join(root, harnessEntrypoint), "utf8");
-	const ambientText = readFileSync(join(root, "extensions/harness-commands/ambient-turn.ts"), "utf8");
+	const ambientFiles = ["extensions/harness-commands/ambient-turn.ts", "extensions/harness-commands/ambient-runner.ts", "extensions/harness-commands/ambient-lane-registry.ts"];
+	const ambientRunnerText = readFileSync(join(root, "extensions/harness-commands/ambient-runner.ts"), "utf8");
 	const imports = [
 		...topLevelImports(harnessEntrypoint).map((source) => ({ file: harnessEntrypoint, source })),
-		...topLevelImports("extensions/harness-commands/ambient-turn.ts").map((source) => ({ file: "extensions/harness-commands/ambient-turn.ts", source })),
+		...ambientFiles.flatMap((file) => topLevelImports(file).map((source) => ({ file, source }))),
 	];
 	const fullOnlyStaticImports = imports.filter((entry) => FULL_ONLY_IMPORT_PATTERNS.some((pattern) => entry.source.includes(pattern)));
 	return {
@@ -95,7 +96,7 @@ function leanHotPathMetrics() {
 		fullOnlyStaticImports,
 		harnessEntrypointLoc: linesOf(join(root, harnessEntrypoint)),
 		beforeAgentStartExecSites: countBetween(harnessText, 'pi.on("before_agent_start"', 'pi.on("tool_call"', "pi.exec"),
-		ambientTurnExecSites: countBetween(ambientText, "export async function buildAmbientTurn", undefined, "buildExecutionRouteState") + countBetween(ambientText, "export async function buildAmbientTurn", undefined, "buildRepoContextSummary") + countBetween(ambientText, "export async function buildAmbientTurn", undefined, "buildMemoryContext") + countBetween(ambientText, "export async function buildAmbientTurn", undefined, "buildOrchestrationDecisionState"),
+		ambientTurnExecSites: countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildExecutionRouteState") + countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildRepoContextSummary") + countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildMemoryContext") + countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildOrchestrationDecisionState"),
 		deferredCleanupSnapshot: !countBetween(harnessText, 'pi.on("before_agent_start"', 'pi.on("tool_call"', "gitChangeSnapshot"),
 	};
 }

@@ -26,7 +26,6 @@ import { applyMode, modeDescription, modeNames } from "./harness-commands/modes"
 import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
-import { registerOrchestrateCommand } from "./harness-commands/orchestrate-command";
 import { registerOrchestratorCommand } from "./harness-commands/orchestrator-command";
 import { registerTaskCloseCommand } from "./harness-commands/task-close-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
@@ -164,7 +163,15 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		throw new Error(`unhandled profile-gated harness command capability: ${capability.name}`);
 	};
 	for (const capability of enabledProfileGatedCommandCapabilities(runtimeConfig)) registerProfileGatedCommand(capability);
-	registerOrchestrateCommand(pi);
+	pi.registerCommand("orchestrate", {
+		description: "Plan or run a supervised natural-language subagent workflow",
+		getArgumentCompletions: (prefix: string) => ["plan", "run", "run --workers"].filter((item) => item.startsWith(prefix.trim().toLowerCase())).map((value) => ({ value, label: value })),
+		handler: async (args, ctx) => {
+			const mod = await import("./harness-commands/orchestrate-command");
+			const command = captureCommand(pi, "orchestrate", (capturingPi) => mod.registerOrchestrateCommand(capturingPi));
+			await command.handler(args, ctx);
+		},
+	});
 	registerOrchestratorCommand(pi);
 	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
 	registerTaskCloseCommand(pi, taskLayer);

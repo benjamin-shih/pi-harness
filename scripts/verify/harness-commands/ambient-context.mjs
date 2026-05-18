@@ -23,11 +23,13 @@ function assertFullBackground(lines, color, width, message) {
 export async function runAmbientContextTests() {
 	const ambient = loadExtensionModule("extensions/shared/ambient-context.ts");
 	const ambientPolicy = loadExtensionModule("extensions/shared/ambient-policy.ts");
+	const ambientRegistry = loadExtensionModule("extensions/harness-commands/ambient-lane-registry.ts");
 	const repoContext = loadExtensionModule("extensions/shared/repo-context.ts");
 	const memoryContext = loadExtensionModule("extensions/shared/memory-context.ts");
 	const largeHtml = loadExtensionModule("extensions/shared/large-response-html.ts");
 	const promptGuidance = loadExtensionModule("extensions/shared/prompt-guidance.ts");
 	assert(typeof ambient.assembleAmbientContext === "function", "ambient context module should export assembler");
+	assert(ambientRegistry.AMBIENT_LANE_REGISTRY.map((lane) => `${lane.id}:${lane.priority}`).join(",") === "display_math:10,markdown_heading:20,mode:30,skill_routing:40,qmd_retrieval:45,cleanup:50,git_push:52,subagent_topology:55,large_response_html:58,agents_task:60,orchestration:62,memory:65,memory_candidates:66,memory_admin:67,execution:68,repo:70", "ambient lane registry should preserve lane ids and priorities");
 	assert(ambientPolicy.decideAmbientPolicy("trivial").receipt === "off", "ambient policy should suppress receipts for trivial prompts");
 	assert(ambientPolicy.decideAmbientPolicy("standard").personalContext === "auto_scoped", "ambient policy should auto-consider scoped approved memory for nontrivial prompts");
 	assert(ambientPolicy.shouldIncludeRepoContext(ambientPolicy.decideAmbientPolicy("standard")), "ambient policy should include repo context for nontrivial prompts");
