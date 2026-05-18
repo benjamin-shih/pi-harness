@@ -7,14 +7,13 @@ async function controlCenter() {
 
 type TaskScopeProvider = { ambientScope?: () => { taskId?: string; projectRoot?: string } };
 
-type ControlCenterMode = "card" | "html" | "web" | "web-stop";
+type ControlCenterMode = "card" | "html" | "removed-web";
 
 function controlCenterOptions(raw: string, taskLayer: TaskScopeProvider): { mode: ControlCenterMode; options: ControlCenterOptions } {
 	const tokens = raw.trim().split(/\s+/).filter(Boolean);
 	let mode: ControlCenterMode = "card";
 	if (tokens[0] === "html") { mode = "html"; tokens.shift(); }
-	else if (tokens[0] === "web" && tokens[1] === "stop") { mode = "web-stop"; tokens.splice(0, 2); }
-	else if (tokens[0] === "web") { mode = "web"; tokens.shift(); }
+	else if (tokens[0] === "web") { mode = "removed-web"; tokens.splice(0, tokens[1] === "stop" ? 2 : 1); }
 	let project = "";
 	let projectRoot = "";
 	const promptParts: string[] = [];
@@ -33,18 +32,12 @@ function controlCenterOptions(raw: string, taskLayer: TaskScopeProvider): { mode
 
 export function registerControlCenterCommand(pi: ExtensionAPI, taskLayer: TaskScopeProvider): void {
 	pi.registerCommand("control-center", {
-		description: "Show the read-only local Agent Control Center; use `html`, `web`, or `--project harness`",
+		description: "Show the read-only local Agent Control Center; use `html` or `--project harness`",
 		handler: async (args, ctx) => {
 			const { mode, options } = controlCenterOptions(args, taskLayer);
 			const center = await controlCenter();
-			if (mode === "web-stop") {
-				const stopped = await center.stopControlCenterWeb();
-				pi.sendMessage({ customType: "harness-control-center", content: ["## Agent Control Center web", `- stopped: ${stopped ? "yes" : "no active server"}`].join("\n"), display: true });
-				return;
-			}
-			if (mode === "web") {
-				const result = await center.startControlCenterWeb(pi, ctx.cwd, options);
-				pi.sendMessage({ customType: "harness-control-center", content: ["## Agent Control Center web", `- url: ${result.url}`, `- opened: ${result.opened ? "yes" : "no"}`, ...(result.error ? [`- warning: ${result.error}`] : []), "- mode: read-only local web dashboard with refresh"].join("\n"), display: true });
+			if (mode === "removed-web") {
+				pi.sendMessage({ customType: "harness-control-center", content: ["## Agent Control Center web", "- status: removed", "- use `/control-center` for the text card or `/control-center html` for the static local dashboard"].join("\n"), display: true });
 				return;
 			}
 			if (mode === "html") {

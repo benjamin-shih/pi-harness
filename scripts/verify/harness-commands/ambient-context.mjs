@@ -390,14 +390,11 @@ export async function runAmbientContextTests() {
 	const dashboardCall = explicitControlCenterTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard"));
 	assert(dashboardCall?.args.includes("--project") && dashboardCall.args.includes("STATS300C"), "/control-center should forward --project to control-plane dashboard");
 	await explicitControlCenterTask.commands.get("control-center").handler("web --project STATS300C", explicitControlCenterTask.ctx);
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("## Agent Control Center web"), "/control-center web should report the local web dashboard URL");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("read-only local web dashboard"), "/control-center web should be explicitly read-only");
-	assert(explicitControlCenterTask.execCalls.some((call) => call.cmd === "open" && String(call.args?.[0] || "").startsWith("http://127.0.0.1:")), "/control-center web should open a localhost dashboard URL");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("status: removed"), "/control-center web should report that local web mode was removed");
+	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("/control-center html"), "/control-center web removal message should point at static HTML dashboard mode");
+	assert(!explicitControlCenterTask.execCalls.some((call) => call.cmd === "open" && String(call.args?.[0] || "").startsWith("http://127.0.0.1:")), "/control-center web should not start or open a localhost server");
 	const controlCenterSource = readFileSync(join(root, "extensions/shared/control-center.ts"), "utf8");
-	assert(controlCenterSource.includes("method: 'POST'"), "control-center web should send project/prompt inputs in a POST body");
-	assert(!controlCenterSource.includes("searchParams.get(\"prompt\")"), "control-center web should not transport prompt text in URL query strings");
-	await explicitControlCenterTask.commands.get("control-center").handler("web stop", explicitControlCenterTask.ctx);
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("stopped: yes"), "/control-center web stop should close the local web dashboard server");
+	assert(!controlCenterSource.includes("node:http") && !controlCenterSource.includes("startControlCenterWeb"), "control-center implementation should not retain local web server code");
 
 	const fallbackRunCardTask = createTaskHarness({
 		harnessProfile: "full",

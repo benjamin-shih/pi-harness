@@ -16,6 +16,7 @@ All notable changes to this personal pi harness package are tracked here.
 
 ### Changed
 - The async inbox commands, Control Center/run-card/topology commands, and ambient orchestration-decision injection are disabled by default in the lean harness profile; use `harness.profile: "full"` or fine-grained overrides to restore them.
+- `/control-center web` localhost dashboard mode was removed; use `/control-center` or `/control-center html` for full-profile diagnostics.
 - Large bash tool results are compacted for model context when `harness.compactToolOutput` is enabled: full output is saved to a private local temp file, while the inline result keeps bounded metadata and a tail for debugging.
 - CI now also runs on version tag pushes.
 - Local package compatibility now targets `pi-subagents@0.24.2`, which includes the `jiti` async loader dependency and `@earendil-works/*` Pi peer namespace.

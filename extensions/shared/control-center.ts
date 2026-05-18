@@ -1,5 +1,3 @@
-import { createServer, type IncomingMessage, type Server } from "node:http";
-import { randomBytes } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -112,8 +110,6 @@ export type ControlCenterState = {
 
 const SUPPORTED_CONTROL_PLANE_API_VERSION = 1;
 
-let webServer: { server: Server; url: string } | undefined;
-
 function state(health: ControlCenterHealth, status: ControlCenterStatus, summary: string, apiVersion?: number, payload?: ControlCenterPayload): ControlCenterState {
 	return { health, status, summary, ...(apiVersion === undefined ? {} : { apiVersion }), ...(payload ? { payload } : {}) };
 }
@@ -181,130 +177,6 @@ export async function openControlCenterHtml(pi: ExtensionAPI, cwd: string, optio
 	} catch (error) {
 		return { opened: false, error: error instanceof Error ? error.message : String(error) };
 	}
-}
-
-export async function stopControlCenterWeb(): Promise<boolean> {
-	if (!webServer) return false;
-	const { server } = webServer;
-	webServer = undefined;
-	await new Promise<void>((resolve) => server.close(() => resolve()));
-	return true;
-}
-
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, string>> {
-	let body = "";
-	for await (const chunk of req) {
-		body += chunk;
-		if (body.length > 12_000) return {};
-	}
-	try {
-		const parsed = JSON.parse(body || "{}");
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-		return Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === "string")) as Record<string, string>;
-	} catch {
-		return {};
-	}
-}
-
-function webValue(value: string | undefined): string | undefined {
-	const trimmed = value?.trim();
-	return trimmed || undefined;
-}
-
-function webShell(token: string): string {
-	const base = `/${token}/`;
-	return `<!doctype html>
-<html><head><meta charset="utf-8"><title>Agent Control Center</title>
-<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:2rem;line-height:1.45;background:#fbfbfb;color:#1f2328}header{display:flex;justify-content:space-between;gap:1rem;align-items:center}button{padding:.45rem .8rem;border:1px solid #ccc;border-radius:8px;background:white}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}section{background:white;border:1px solid #ddd;border-radius:12px;padding:1rem}h1,h2{margin-top:0}.muted{color:#666}.warn{color:#9a6700}.bad{color:#b42318}li{margin:.2rem 0}code{background:#f0f0f0;padding:.1rem .25rem;border-radius:4px}</style>
-</head><body><header><div><h1>Agent Control Center</h1><p class="muted">Read-only local dashboard · refreshes every 15s while this Pi session is alive.</p></div><button id="refresh">Refresh</button></header><p id="status" class="muted">Loading...</p><section><h2>Project / prompt</h2><p><input id="project" placeholder="project alias" style="width:14rem"> <input id="prompt" placeholder="prompt text for routing" style="width:32rem"> <button id="apply">Apply</button></p><p class="muted">Optional; values only request a read-only dashboard decision.</p></section><main id="cards"></main>
-<script>
-const cards = document.getElementById('cards');
-const status = document.getElementById('status');
-function esc(v){return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function list(items){return (items && items.length) ? '<ul>' + items.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' : '<p class="muted">None</p>';}
-function count(obj,key){return Number((obj || {})[key] || 0);}
-function section(title, body){return '<section><h2>' + esc(title) + '</h2>' + body + '</section>';}
-function dashboardRequest(){
-  return JSON.stringify({
-    project: document.getElementById('project').value.trim(),
-    prompt: document.getElementById('prompt').value.trim()
-  });
-}
-async function load(){
-  const res = await fetch('${base}api/dashboard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: dashboardRequest(), cache: 'no-store' });
-  const state = await res.json();
-  const p = state.payload || {};
-  const project = p.project || {}, tasks = p.tasks || {}, taskSummary = tasks.summary || {}, activeTask = tasks.active_task || {}, tracking = (activeTask.orchestration || tasks.orchestration || {}), asyncInbox = p.async_inbox || {}, asyncInboxSummary = asyncInbox.summary || {}, htmlRetention = p.html_artifacts || {}, htmlRetentionSummary = htmlRetention.summary || {}, htmlRetentionPolicy = htmlRetention.policy || {}, memory = p.memory || {}, mem = memory.counts_by_state || {}, pkg = p.package_policy || {}, pkgSummary = pkg.summary || {}, instr = p.project_instructions || {}, instrSummary = instr.summary || {}, route = p.route || {}, decision = p.orchestration_decision || {}, topology = decision.topology || {}, gates = decision.gates || {}, delegation = decision.delegation_workflow || {}, html = ((decision.artifacts || {}).html || {});
-  status.textContent = 'Health: ' + state.health + ' · ' + (p.generated_at || 'unknown') + ' · ' + state.summary;
-  status.className = state.health === 'ok' ? 'muted' : 'warn';
-  cards.innerHTML = [
-    section('Project', '<p><b>' + esc(project.name) + '</b> (' + esc(project.type) + ')</p><p><code>' + esc(project.root) + '</code></p><p>Registry: ' + esc(project.registry_id || 'unregistered') + ' via ' + esc(project.match_type || 'unknown') + '</p><p>Policy: write ' + esc(project.write_policy) + '; coursework ' + esc(project.coursework_policy || 'none') + '</p><p>Default checks: ' + esc((project.default_checks || []).join(', ') || 'none') + '</p>'),
-    section('Route', route.task ? '<p>Task: ' + esc(route.task.shape) + ' · ' + esc(route.task.complexity) + ' · risk ' + esc(route.task.risk) + '</p><p>Run: ' + esc((route.run || {}).shape || 'none') + '</p>' : '<p class="muted">No prompt route requested.</p>'),
-    section('Orchestration', topology.recommended ? '<p>Topology: <b>' + esc(topology.recommended) + '</b></p><p>Rationale: ' + esc(topology.reason || '') + '</p><p>Description: ' + esc(topology.description || 'none') + '</p><p>Decision basis: ' + esc((decision.reasons || []).join(', ') || 'none') + '</p><p>Project defaults: checks ' + esc((project.default_checks || []).join(', ') || 'none') + '; write ' + esc(project.write_policy || 'unknown') + '</p><p>Preflight: ' + esc((gates.preflight || []).map(g => g.id).join(', ') || 'none') + '</p><p>Execution: ' + esc((gates.execution || []).map(g => g.id).join(', ') || 'none') + '</p><p>Verification: ' + esc((gates.verification || []).map(g => g.id).join(', ') || 'none') + '</p><p>Final: ' + esc((gates.final || []).map(g => g.id).join(', ') || 'none') + '</p><p>Memory: ' + esc(((decision.memory || {}).ambient_reads) || 'unknown') + ' reads; writes ' + esc(((decision.memory || {}).durable_writes) || 'explicit_only') + '</p>' : '<p class="muted">No orchestration decision requested.</p>'),
-    section('Delegation workflow', delegation.launch_policy ? '<p>Launch: ' + esc(delegation.launch_policy) + ' · auto-launch ' + esc(Boolean(delegation.auto_launch)) + '</p><p>Pattern: ' + esc(delegation.recommended_pattern || 'none') + '</p><p>Next: ' + esc(delegation.next_action || 'none') + '</p><p>Subagents: ' + esc((delegation.subagent_contracts || []).map(s => s.role + ' (' + s.mode + ')').join(', ') || 'none') + '</p><p>Progress: ' + esc(((delegation.coordination || {}).progress_updates) || 'unknown') + '</p>' : '<p class="muted">No delegation workflow decision.</p>'),
-    section('HTML artifacts', (html.modes || []).length ? '<p>Modes: ' + esc((html.modes || []).map(m => m.id).join(', ')) + '</p><p>Template: ' + esc(((html.template || {}).path) || ((html.template || {}).id) || 'none') + '</p><p>Templates: ' + esc((html.templates || []).map(t => t.id).join(', ') || 'none') + '</p><p>Components: ' + esc((((html.template || {}).allowed_components) || []).slice(0,8).join(', ') || 'none') + '</p><p>Publish: ' + esc(html.publish_policy || 'explicit_only') + ' · source: ' + esc(html.source_of_truth || 'json_or_markdown') + '</p><p>Auto-open: ' + esc(((html.auto_open || {}).enabled) ? 'enabled' : 'disabled') + '</p><p>Long responses: ' + esc(((html.long_response || {}).enabled === false) ? 'disabled' : (((html.long_response || {}).chat_response) || 'concise_summary_plus_local_artifact_path_and_next_action')) + '</p><p>Structure: ' + esc(((html.authoring || {}).structure_policy) || 'content_first_flexible') + '</p><p>Title style: ' + esc(((html.authoring || {}).title_style) || 'compact_first_screen_readable') + '</p><p>Retention: ' + esc(((html.retention || {}).cleanup_strategy) || 'manifest_and_marker') + '</p><p>Safety: ' + esc((html.safety || []).slice(0,6).join(', ')) + '</p>' : '<p class="muted">No HTML artifact recommendation.</p>'),
-    section('HTML retention', '<p>Scope: ' + esc(htmlRetention.scope || 'project') + ' · strategy ' + esc(htmlRetentionPolicy.cleanup_strategy || 'manifest_and_marker') + '</p><p>Tracked: ' + count(htmlRetentionSummary,'tracked_html_artifacts') + ' · Managed: ' + count(htmlRetentionSummary,'managed_html_artifacts') + ' · Cleanup candidates: ' + count(htmlRetentionSummary,'cleanup_candidates') + '</p><p>Kept active/blocked: ' + count(htmlRetentionSummary,'kept_active_or_blocked') + ' · Unmarked kept: ' + count(htmlRetentionSummary,'skipped_unmarked') + ' · Unsafe skipped: ' + count(htmlRetentionSummary,'skipped_unsafe_path') + '</p>'),
-    section('Chosen vs recommended', tracking.available ? '<p>Recommended: ' + esc(((tracking.recommended || {}).topology) || 'none') + '</p><p>Chosen: ' + esc(((tracking.chosen || {}).topology) || 'none') + '</p><p>Status: ' + esc(tracking.status || 'unknown') + ' · mismatch ' + esc(Boolean(tracking.mismatch)) + '</p><p>Explanation: ' + esc(tracking.explanation || '') + '</p><p>Action: ' + esc(tracking.recommended_action || '') + '</p>' : '<p class="muted">No orchestration tracking events.</p>'),
-    section('Tasks', '<p>Scoped packages: ' + count(taskSummary,'task_packages_scoped') + '</p><p>Active: ' + count(taskSummary,'active_tasks') + ' · Terminal: ' + count(taskSummary,'terminal_tasks') + ' · Live leases: ' + count(taskSummary,'live_leases') + '</p><p>Stale candidates: ' + count(taskSummary,'stale_candidates') + '</p><h3>Recent events</h3>' + list((activeTask.recent_events || []).map(e => (e.timestamp ? e.timestamp + ' ' : '') + (e.type || 'event') + (e.summary ? ' (' + e.summary + ')' : '')))),
-    section('Async inbox', '<p>Available: ' + esc(asyncInbox.available !== false) + ' · Scope: ' + esc(asyncInbox.scope || 'project') + '</p><p>Items: ' + count(asyncInbox,'count') + ' · Active: ' + count(asyncInbox,'active_items') + '</p><p>Statuses: ' + esc(Object.entries(asyncInboxSummary.by_status || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + '</p><p>Control states: ' + esc(Object.entries(asyncInboxSummary.by_control_state || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + '</p><p>Cleanup states: ' + esc(Object.entries(asyncInboxSummary.by_cleanup_state || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + '</p><p>Active lanes: ' + esc(Object.entries(asyncInboxSummary.active_by_project || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + '</p><p>Queued lanes: ' + esc(Object.entries(asyncInboxSummary.queued_by_project || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + '</p><p>Review: ' + esc(Object.entries(asyncInboxSummary.review_by_project || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + ' · Apply: ' + esc(Object.entries(asyncInboxSummary.apply_by_project || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + ' · Cleanup diagnostics: ' + esc(Object.entries(asyncInboxSummary.cleanup_by_project || {}).map(([k,v]) => k + '=' + v).join(', ') || 'none') + '</p>'),
-    section('Memory', '<p>Available: ' + esc(memory.available !== false) + '</p><p>Approved: ' + count(mem,'approved') + ' · Candidates: ' + count(mem,'candidate') + ' · Deprecated: ' + count(mem,'deprecated') + '</p>'),
-    section('Pi package policy', '<p>Health: ' + esc(pkg.health || 'unknown') + '</p><p>Configured: ' + count(pkgSummary,'configured_packages') + ' · Approved: ' + count(pkgSummary,'approved_packages') + ' · Unapproved: ' + count(pkgSummary,'unapproved_packages') + ' · Unpinned: ' + count(pkgSummary,'unpinned_packages') + '</p>'),
-    section('Project instructions', '<p>Health: ' + esc(instr.health || 'unknown') + '</p><p>Files: ' + count(instrSummary,'instruction_files_found') + ' · Thin style: ' + count(instrSummary,'thin_style_files') + '</p>'),
-    section('Attention', list(p.attention || [])),
-    section('Warnings', list(p.warnings || [])),
-    section('Notices', list(p.notices || []))
-  ].join('');
-}
-document.getElementById('refresh').onclick = () => load().catch(e => { status.textContent = 'Refresh failed: ' + e; status.className = 'bad'; });
-document.getElementById('apply').onclick = () => load().catch(e => { status.textContent = 'Refresh failed: ' + e; status.className = 'bad'; });
-load().catch(e => { status.textContent = 'Load failed: ' + e; status.className = 'bad'; });
-setInterval(() => load().catch(() => {}), 15000);
-</script></body></html>`;
-}
-
-export async function startControlCenterWeb(pi: ExtensionAPI, cwd: string, options: ControlCenterOptions = {}): Promise<{ url: string; opened: boolean; reused: boolean; error?: string }> {
-	await stopControlCenterWeb();
-	const token = randomBytes(12).toString("hex");
-	const server = createServer(async (req, res) => {
-		try {
-			const parsedUrl = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
-			const path = parsedUrl.pathname;
-			if (path === `/${token}/` || path === `/${token}`) {
-				res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-				res.end(webShell(token));
-				return;
-			}
-			if (path === `/${token}/api/dashboard`) {
-				const body = req.method === "POST" ? await readJsonBody(req) : {};
-				const requestOptions = {
-					...options,
-					prompt: webValue(body.prompt) ?? options.prompt,
-					project: webValue(body.project) ?? options.project,
-					projectRoot: webValue(body.projectRoot) ?? options.projectRoot,
-				};
-				const dashboard = await buildControlCenterState(pi, cwd, requestOptions);
-				res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-				res.end(JSON.stringify(dashboard));
-				return;
-			}
-			res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-			res.end("not found");
-		} catch (error) {
-			res.writeHead(500, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-			res.end(JSON.stringify({ health: "degraded", status: "exception", summary: error instanceof Error ? error.message : String(error) }));
-		}
-	});
-	await new Promise<void>((resolve, reject) => {
-		server.once("error", reject);
-		server.listen(0, "127.0.0.1", () => resolve());
-	});
-	server.unref();
-	const address = server.address();
-	const port = typeof address === "object" && address ? address.port : 0;
-	const url = `http://127.0.0.1:${port}/${token}/`;
-	webServer = { server, url };
-	const opened = await pi.exec("open", [url], { cwd, timeout: 5_000 });
-	return { url, opened: opened.code === 0, reused: false, ...(opened.code === 0 ? {} : { error: "open command failed" }) };
 }
 
 function listLine(label: string, items: string[] | undefined): string {
