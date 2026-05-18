@@ -20,7 +20,6 @@ import {
 	type ArtifactAddResult,
 	type ArtifactListResult,
 	type BindResult,
-	type OrchestrationTrackingState,
 	type TaskCloseResult,
 	type TaskLayerState,
 	type TaskLifecycleResult,
@@ -194,29 +193,15 @@ export function createAgentsTaskLayer() {
 			state.artifactSkipped++;
 		}
 	}
-	function refreshOrchestrationMismatch(tracking: OrchestrationTrackingState): OrchestrationTrackingState {
-		tracking.mismatch = Boolean(tracking.recommendedTopology && tracking.chosenTopology && tracking.recommendedTopology !== tracking.chosenTopology);
-		return tracking;
-	}
 	function orchestrationStatusLine(): string | undefined {
 		const tracking = state.orchestration;
-		if (!tracking?.recommendedTopology && !tracking?.chosenTopology) return undefined;
-		const recommended = tracking.recommendedTopology || "none";
-		const chosen = tracking.chosenTopology || "none";
-		const mismatch = tracking.mismatch ? "yes" : "no";
-		return `- orchestration: recommended ${recommended}; chosen ${chosen}; mismatch ${mismatch}`;
+		if (!tracking?.recommendedTopology) return undefined;
+		const gateSummary = tracking.gateIds?.length ? `; gates ${tracking.gateIds.slice(0, 3).join(", ")}` : "";
+		return `- orchestration: recommended ${tracking.recommendedTopology}${gateSummary}`;
 	}
 	function orchestrationSummaryLines(): string[] {
-		const line = orchestrationStatusLine(), tracking = state.orchestration;
-		if (!line || !tracking) return ["- orchestration: no session-local choice recorded"];
-		let explanation = "latest recommendation has no explicit chosen topology", action = "follow the advisory recommendation or record an explicit choice";
-		if (tracking.recommendedTopology && tracking.chosenTopology) {
-			explanation = tracking.mismatch ? "explicit choice differs from the latest session-local recommendation" : "explicit choice matches the latest session-local recommendation";
-			action = tracking.mismatch ? "reconfirm topology or record a new choice" : "proceed under the chosen topology";
-		} else if (tracking.chosenTopology) {
-			explanation = "chosen topology exists without a current session-local recommendation"; action = "refresh run-card before relying on the choice";
-		}
-		return [line, `- orchestration explanation: ${explanation}`, `- orchestration action: ${action}`, "- orchestration pairing: session-local view; use /control-center for decision-id stale-choice checks"];
+		const line = orchestrationStatusLine();
+		return line ? [line, "- orchestration action: advisory only; continue through the ambient guidance"] : ["- orchestration: no session-local recommendation recorded"];
 	}
 	function orchestrationEventArgs(decision: OrchestrationDecision): string[] {
 		return [
@@ -397,24 +382,14 @@ export function createAgentsTaskLayer() {
 		},
 		async recordOrchestrationRecommended(pi: ExtensionAPI, ctx: ExtensionContext, decision?: OrchestrationDecision): Promise<boolean> {
 			if (!decision) return false;
-			state.orchestration = refreshOrchestrationMismatch({
-				...(state.orchestration ?? {}),
+			state.orchestration = {
 				recommendedTopology: decision.topology.recommended,
-				decisionId: decision.decision_id,
 				gateIds: decision.gates.ids,
-			});
+			};
 			return await recordTaskEvent(pi, ctx, "orchestration_recommended", orchestrationEventArgs(decision));
 		},
 		async closeTask(pi: ExtensionAPI, ctx: ExtensionContext, status: "completed" | "blocked", reason = ""): Promise<{ ok: boolean; lines: string[] }> {
 			return closeTask(pi, ctx, status, reason);
-		},
-		async recordOrchestrationChosen(pi: ExtensionAPI, ctx: ExtensionContext, topology: string, _reason = "explicit /choose-topology command"): Promise<boolean> {
-			const chosen = topology.trim().replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 80);
-			if (!chosen) return false;
-			state.orchestration = refreshOrchestrationMismatch({ ...(state.orchestration ?? {}), chosenTopology: chosen });
-			const args = [`chosen_topology=${JSON.stringify(chosen)}`, "reason_code=explicit_choice"];
-			if (state.orchestration?.decisionId) args.push(`decision_id=${JSON.stringify(state.orchestration.decisionId)}`);
-			return await recordTaskEvent(pi, ctx, "orchestration_chosen", args);
 		},
 		async agentEnd(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 			if (!state.active?.task_id || !state.meaningfulActivity) return;

@@ -49,7 +49,7 @@ export function pathArtifactFromTool(event: ToolResultEvent): { kind: string; ti
 	const candidate = event.input?.path;
 	if (typeof candidate !== "string" || !candidate.trim()) return undefined;
 	const normalizedPath = normalizeCandidatePath(candidate), ext = path.extname(normalizedPath).toLowerCase();
-	const htmlKind = ext !== ".html" && ext !== ".htm" ? undefined : /(?:dashboard|run-card|control-center)/i.test(path.basename(normalizedPath)) ? "html_dashboard" : "html_report";
+	const htmlKind = ext !== ".html" && ext !== ".htm" ? undefined : /dashboard/i.test(path.basename(normalizedPath)) ? "html_dashboard" : "html_report";
 	if (!htmlKind) {
 		const title = event.toolName === "edit" ? "Edited path" : "Wrote path";
 		return { kind: "file_path", title, summary: `${title} during pi turn.`, path: normalizedPath };

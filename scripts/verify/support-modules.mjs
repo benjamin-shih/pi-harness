@@ -35,34 +35,26 @@ export async function runSupportModuleTests() {
 		assert(config.skillsRoot() === "/tmp/pi-skills-root", "shared config should honor AGENTS_SKILLS_ROOT");
 	});
 
-	await withEnv({ BEN_PI_HARNESS_PROFILE: undefined, BEN_PI_ASYNC_INBOX: undefined, BEN_PI_CONTROL_PLANE_SURFACES: undefined, BEN_PI_AMBIENT_ORCHESTRATION: undefined }, async () => {
+	await withEnv({ BEN_PI_HARNESS_PROFILE: undefined, BEN_PI_AMBIENT_ORCHESTRATION: undefined }, async () => {
 		const lean = harnessProfile.harnessRuntimeConfig(process.cwd());
-		const leanCommands = capabilityRegistry.enabledCommandCapabilities(lean).map((capability) => capability.name);
+		const commands = capabilityRegistry.COMMAND_CAPABILITIES.map((capability) => capability.name);
 		assert(lean.profile === "lean", "harness profile should default to lean");
-		assert(!lean.asyncInbox && !lean.controlPlaneSurfaces && !lean.ambientOrchestration, "lean profile should disable optional control-plane surfaces by default");
-		assert(leanCommands.includes("mode") && leanCommands.includes("status") && leanCommands.includes("memory"), "capability registry should keep core lean commands enabled");
-		assert(!leanCommands.includes("inbox") && !leanCommands.includes("control-center") && !leanCommands.includes("run-card") && !leanCommands.includes("choose-topology"), "capability registry should keep full-only commands out of lean by default");
+		assert(!lean.ambientOrchestration, "lean profile should disable ambient orchestration by default");
+		assert(commands.includes("mode") && commands.includes("status") && commands.includes("memory"), "capability registry should keep core commands enabled");
+		assert(!commands.includes("inbox") && !commands.includes("control-center") && !commands.includes("run-card") && !commands.includes("choose-topology") && !commands.includes("orchestrate"), "removed slash surfaces should stay out of the command registry");
 	});
 	await withEnv({ BEN_PI_HARNESS_PROFILE: "full" }, async () => {
 		const full = harnessProfile.harnessRuntimeConfig(process.cwd());
-		const fullCommands = capabilityRegistry.enabledCommandCapabilities(full).map((capability) => capability.name);
 		assert(full.profile === "full", "harness profile should honor full profile env override");
-		assert(full.asyncInbox && full.controlPlaneSurfaces && full.ambientOrchestration, "full profile should enable control-plane surfaces by default");
-		assert(fullCommands.includes("inbox") && fullCommands.includes("control-center") && fullCommands.includes("run-card") && fullCommands.includes("choose-topology"), "capability registry should enable profile-gated commands in full profile");
-	});
-	await withEnv({ BEN_PI_HARNESS_PROFILE: "lean", BEN_PI_ASYNC_INBOX: "1" }, async () => {
-		const explicit = harnessProfile.harnessRuntimeConfig(process.cwd());
-		const explicitCommands = capabilityRegistry.enabledCommandCapabilities(explicit).map((capability) => capability.name);
-		assert(explicit.profile === "lean" && explicit.asyncInbox && !explicit.controlPlaneSurfaces, "explicit feature env overrides should work within lean profile");
-		assert(explicitCommands.includes("inbox") && !explicitCommands.includes("control-center"), "capability registry should honor independent feature overrides within lean profile");
+		assert(full.ambientOrchestration, "full profile should enable ambient orchestration diagnostics by default");
 	});
 	const settingsRoot = mkdtempSync(join(tmpdir(), "pi-harness-profile-"));
 	try {
 		mkdirSync(join(settingsRoot, ".pi"));
-		writeFileSync(join(settingsRoot, ".pi", "settings.json"), JSON.stringify({ harness: { profile: "lean", controlPlaneSurfaces: true, ambientOrchestration: true } }));
-		await withEnv({ BEN_PI_HARNESS_PROFILE: undefined, BEN_PI_ASYNC_INBOX: undefined, BEN_PI_CONTROL_PLANE_SURFACES: undefined, BEN_PI_AMBIENT_ORCHESTRATION: undefined }, async () => {
+		writeFileSync(join(settingsRoot, ".pi", "settings.json"), JSON.stringify({ harness: { profile: "lean", ambientOrchestration: true } }));
+		await withEnv({ BEN_PI_HARNESS_PROFILE: undefined, BEN_PI_AMBIENT_ORCHESTRATION: undefined }, async () => {
 			const fromSettings = harnessProfile.harnessRuntimeConfig(join(settingsRoot, "subdir"));
-			assert(fromSettings.profile === "lean" && !fromSettings.asyncInbox && fromSettings.controlPlaneSurfaces && fromSettings.ambientOrchestration, "project .pi/settings.json should configure harness profile feature overrides");
+			assert(fromSettings.profile === "lean" && fromSettings.ambientOrchestration, "project .pi/settings.json should configure ambient orchestration override");
 		});
 	} finally {
 		rmSync(settingsRoot, { recursive: true, force: true });

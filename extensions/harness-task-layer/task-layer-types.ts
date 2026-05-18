@@ -86,10 +86,7 @@ export type TaskActivity = {
 
 export type OrchestrationTrackingState = {
 	recommendedTopology?: string;
-	chosenTopology?: string;
-	decisionId?: string;
 	gateIds?: string[];
-	mismatch?: boolean;
 };
 
 export type TaskLayerState = {

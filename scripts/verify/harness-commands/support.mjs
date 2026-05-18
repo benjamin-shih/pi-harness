@@ -71,59 +71,6 @@ export const controlPlaneDecisionPayload = (overrides = {}) => {
 		...overrides,
 	};
 };
-export const controlPlaneDashboardPayload = (overrides = {}) => ({
-	control_plane_api_version: 1,
-	kind: "dashboard",
-	generated_at: "2026-05-08T00:00:00Z",
-	cwd: root,
-	read_only: true,
-	project: { name: "project", root, type: "repo", registry_id: "project", match_type: "cwd", steward: "project-steward", default_checks: ["make verify"], write_policy: "single_writer", coursework_policy: "none" },
-	projects: { count: 1, matched: { id: "project", name: "project", root, type: "repo", match_type: "cwd" } },
-	route: null,
-	orchestration_decision: null,
-	tasks: { available: true, scope: "project", project_scoped: true, summary: { task_packages_scoped: 3, active_tasks: 1, terminal_tasks: 2, stale_tasks: 0, blocked_tasks: 0, live_leases: 1, expired_leases: 0, stale_candidates: 0, artifact_records: 7, event_records: 12 }, active_task: { status: "in_progress", active: true, terminal: false, scope_match: true, lease_state: "live", events_count: 3, blockers_count: 0, recent_events: [{ timestamp: "2026-05-08T00:00:00Z", type: "checkpoint", summary: "checkpoint" }, { timestamp: "2026-05-08T00:01:00Z", type: "orchestration_chosen", summary: "chosen single_agent_standard" }], orchestration: { available: true, status: "mismatch", mismatch: true, explanation: "explicit choice differs from the paired recommendation; explain why before relying on it", recommended_action: "reconfirm topology or record a new choice", events: 2, recommended: { topology: "parallel_recon", gate_ids: ["repo_clean_preflight"] }, chosen: { topology: "single_agent_standard" } } }, orchestration: { available: true, status: "mismatch", mismatch: true, explanation: "explicit choice differs from the paired recommendation; explain why before relying on it", recommended_action: "reconfirm topology or record a new choice", events: 2, recommended: { topology: "parallel_recon", gate_ids: ["repo_clean_preflight"] }, chosen: { topology: "single_agent_standard" } }, warnings: [] },
-	async_inbox: { available: true, scope: "project", count: 2, active_items: 1, summary: { by_status: { running: 1, queued: 1 }, by_project: { project: 2 }, active_by_project: { project: 1 }, queued_by_project: { project: 1 } }, warnings: [] },
-	html_artifacts: { available: true, scope: "project", project_scoped: true, policy: { cleanup_strategy: "manifest_and_marker", marker: "agents-html-artifact", delete_on_task_status: ["completed", "stale"], destructive_actions: false }, summary: { task_packages_scanned: 3, tracked_html_artifacts: 2, managed_html_artifacts: 2, unmanaged_html_artifacts: 0, cleanup_candidates: 1, kept_active_or_blocked: 1, skipped_missing: 0, skipped_unmarked: 0, skipped_unsafe_path: 0, errors: 0 }, warnings: [] },
-	memory: { available: true, count: 2, counts_by_state: { approved: 1, candidate: 1, deprecated: 0 }, skipped: 0, scope: { project: true, task: true, global: false, all: false }, warnings: [] },
-	package_policy: { available: true, health: "ok", summary: { configured_packages: 4, approved_packages: 4, unapproved_packages: 0, unpinned_packages: 0, unknown_package_entries: 0, approved_manifest_entries: 4 }, policy: { default_action: "deny", requires_exact_pins: true, runtime_network_checks: false }, warnings: [] },
-	project_instructions: { available: true, health: "ok", summary: { instruction_files_found: 2, thin_style_files: 2, dispatch_mentions: 0 }, warnings: [] },
-	attention: ["memory candidates pending explicit review"],
-	warnings: [],
-	...overrides,
-});
-export const orchestrationPlanPayload = (overrides = {}) => ({
-	orchestration_plan_api_version: 1,
-	kind: "orchestration_plan",
-	generated_at: "2026-05-13T00:00:00Z",
-	read_only: true,
-	mutating_actions: false,
-	auto_launch: false,
-	plan_id: "plan123",
-	source: { prompt_recorded: true, prompt_digest: "digest", prompt_bytes: 42, raw_prompt_in_output: false, cwd_recorded: true, cwd_digest: "cwddigest", raw_cwd_in_output: false },
-	project: { id: "project", name: "Project", type: "repo", registered: true, match_type: "cwd", bindable: true, write_policy: "single_writer", default_checks: ["make verify"], root_recorded: true, root_digest: "rootdigest", workspace: { matched: false } },
-	task: { shape: "coding", complexity: "standard", risk: "low" },
-	execution: { execution_intent: true, execution_intent_forced: false, profile: "software", overlays: [], summary: "profile software; overlays none", reasons: ["explicit execution intent detected"] },
-	topology: { recommended: "single_agent_standard", name: "Single-agent standard", reason: "standard", pattern: "single_writer_optional_review", advisory_only: true },
-	autonomy: { mode: "confirm", read_only_auto_run_eligible: false, confirmation_required: true, execute_low_risk_policy: "future adapter may auto-run only read-only role specs when explicitly configured", dashboard_mutations: false },
-	private_input_policy: { request_text: "private_prompt_file_or_stdin_only", raw_argv_text_allowed: false, role_prompts: "compose from task_template plus private request context at launch time", worker_summaries: "private_to_parent_until_bounded_synthesis" },
-	stages: [{ id: "parallel_recon", kind: "subagent_group", read_only: true, role_ids: ["code_context"] }, { id: "bounded_implementation", kind: "subagent_group", read_only: false, role_ids: ["bounded_implementation"] }, { id: "review", kind: "subagent_group", read_only: true, role_ids: ["implementation_review"] }],
-	role_launch_plan: [
-		{ id: "code_context", source: "execution_profile_template", phase: "parallel_recon", parallel_group: "recon", agent: "scout", role: "engineering_scout", profile: "software", overlays: [], mode: "read_only", may_write: false, requires_confirmation: false, cwd_policy: { source: "selected_project_root", project_id: "project", path_recorded: true, path_digest: "rootdigest", raw_path_in_output: false }, prompt_policy: "parent supplies request through private prompt file/stdin; do not echo raw request text", task_template: "Inspect code context.", expected_output: "findings", constraints: ["read-only unless a later explicit work order changes scope"] },
-		{ id: "bounded_implementation", source: "execution_profile_template", phase: "implementation", parallel_group: "implementation", agent: "worker", role: "implementation_worker", profile: "software", overlays: [], mode: "bounded_write", may_write: true, requires_confirmation: true, cwd_policy: { source: "selected_project_root", project_id: "project", path_recorded: true, path_digest: "rootdigest", raw_path_in_output: false }, prompt_policy: "parent supplies request through private prompt file/stdin; do not echo raw request text", task_template: "Implement bounded code changes.", expected_output: "summary and verification", constraints: ["requires explicit bounded scope and main-agent verification before launch"] },
-		{ id: "implementation_review", source: "execution_profile_template", phase: "review", parallel_group: "review", agent: "reviewer", role: "engineering_reviewer", profile: "software", overlays: [], mode: "read_only", may_write: false, requires_confirmation: false, cwd_policy: { source: "selected_project_root", project_id: "project", path_recorded: true, path_digest: "rootdigest", raw_path_in_output: false }, prompt_policy: "parent supplies request through private prompt file/stdin; do not echo raw request text", task_template: "Review implementation plan.", expected_output: "blockers", constraints: ["read-only unless a later explicit work order changes scope"] },
-	],
-	gates: { ids: ["repo_clean_preflight", "narrow_verification"] },
-	checks: ["make verify"],
-	evidence_required: ["commands/checks run"],
-	human_decisions: [],
-	stop_conditions: ["stop if local instructions conflict with the request"],
-	next_actions: ["render this plan for the front-door operator"],
-	warnings: [],
-	notices: [],
-	reasons: ["orchestration plan is read-only"],
-	guidance: "## Orchestration Plan",
-	...overrides,
-});
 export const executionRoutePayload = (overrides = {}) => ({ execution_route_api_version: 1, execution_intent: true, profile: "software", overlays: [], summary: "profile software; overlays none", guidance: "## Ambient Execution Protocol\nExecution intent was detected.", ...overrides });
 export const taskLifecyclePayload = (overrides = {}) => ({
 	task_api_version: 1,
@@ -189,27 +136,6 @@ export const piPackagePolicyPayload = (overrides = {}) => ({
 	],
 	...overrides,
 });
-
-function inboxLaunchSpecPayload() {
-	return { backend: "pi_subagents_async", worker_run_id: "iw_submit", params: { agent: "worker", task: "Private request file: /tmp/request", cwd: root, async: true, context: "fresh" } };
-}
-
-function inboxTickPayload(args) {
-	const executing = args.includes("--execute");
-	const launchSpecs = executing ? [inboxLaunchSpecPayload()] : [];
-	return {
-		inbox_api_version: 1,
-		kind: "inbox_tick",
-		dry_run: args.includes("--dry-run"),
-		mutating_actions: executing,
-		worker_launches: false,
-		reconcile: executing ? { updated: 0, warnings: [] } : { executed: false, reason: "dry_run" },
-		summary: { checked: 1, launchable_count: 1, launch_spec_count: launchSpecs.length, queued_count: 0, needs_user_count: 0, noop_count: 0 },
-		schedule: { inbox_api_version: 1, kind: "inbox_schedule", action: "launch", items: [{ action: "launch", reason: "project lane is available", item: { id: "inq_submit", status: executing ? "launching" : "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" } } }], launch_specs: launchSpecs, warnings: [] },
-		launch_specs: launchSpecs,
-		warnings: [],
-	};
-}
 
 export const taskRetentionPayload = (overrides = {}) => ({
 	task_api_version: 1,
@@ -362,7 +288,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, controlPlaneDashboardPayload: dashboardPayload, orchestrationPlanPayload: planPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook, harnessProfile } = {}) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook, harnessProfile } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
 	const tools = new Map();
@@ -409,7 +335,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				const overridden = scriptResult(scriptName, { cmd, args, options });
 				if (overridden !== undefined) return overridden;
 			}
-			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_close", "task_retention_diagnostics", "task_archive", "html_artifact_cleanup", "project_route", "async_inbox"] }), stderr: "" };
+			if (cmd === "bash" && script.endsWith("task-api.sh")) return { code: 0, stdout: JSON.stringify({ task_api_version: 1, agents_shared_root: agentsRoot, tasks_root: agentsTasksRoot, scripts_dir: join(agentsRoot, "scripts"), capabilities: ["candidate_root_policy", "task_artifacts", "task_lifecycle", "task_close", "task_retention_diagnostics", "task_archive", "html_artifact_cleanup"] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-classify.sh")) {
 				if (classifyResult) return classifyResult;
 				const promptFileIndex = args.indexOf("--prompt-file");
@@ -423,18 +349,11 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
 				return { code: 0, stdout: JSON.stringify(executionPayload ?? { execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "", reasons: ["no explicit execution intent"] }), stderr: "" };
 			}
-			if (cmd === "bash" && script.endsWith("orchestration-plan.sh")) {
-				const promptFileIndex = args.indexOf("--prompt-file");
-				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
-				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
-				return { code: 0, stdout: JSON.stringify(planPayload ?? orchestrationPlanPayload()), stderr: "" };
-			}
 			if (cmd === "bash" && (script.endsWith("control-plane.sh") || script.endsWith("orchestration-decision.sh"))) {
 				const promptFileIndex = args.indexOf("--prompt-file");
 				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
 				if (script.endsWith("orchestration-decision.sh") || args.includes("decision")) return { code: 0, stdout: JSON.stringify(decisionPayload ?? controlPlaneDecisionPayload()), stderr: "" };
-				if (args.includes("dashboard")) return { code: 0, stdout: args.includes("--html") ? "<!doctype html><title>Agent Control Center v0</title>" : JSON.stringify(dashboardPayload ?? controlPlaneDashboardPayload()), stderr: "" };
 				return { code: 0, stdout: JSON.stringify(controlPlanePayload ?? controlPlaneRoutePayload()), stderr: "" };
 			}
 			if (cmd === "bash" && script.endsWith("task-candidate-root.sh")) {
@@ -452,11 +371,6 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 			if (cmd === "bash" && script.endsWith("memory-stats.sh")) return { code: 0, stdout: JSON.stringify(memoryStatsPayload ?? { memory_api_version: 1, counts_by_state: { candidate: 0, approved: 0, deprecated: 0 }, skipped: 0 }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-review.sh")) return { code: 0, stdout: JSON.stringify(reviewPayload ?? memoryReviewPayload()), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-add.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, recorded: true, record: { id: "mem_candidate_1", state: "candidate", title: "Memory candidate", scope: { type: args.includes("--scope") ? args[args.indexOf("--scope") + 1] : "project" } } }), stderr: "" };
-			if (cmd === "bash" && script.endsWith("inbox-list.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_list", count: 1, returned: 1, summary: { by_status: { queued: 1 }, by_project: { kalshi: 1 }, active_by_project: {}, queued_by_project: { kalshi: 1 } }, items: [{ id: "inq_test", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" }, relation: { kind: "new_task" } }] }), stderr: "" };
-			if (cmd === "bash" && script.endsWith("inbox-enqueue.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_enqueue", enqueued: true, item: { id: "inq_submit", status: "queued", safe_title: "Build Kalshi tool", project: { id: "kalshi", name: "Kalshi" }, relation: { kind: "new_parallel_candidate", target_item_id: "inq_existing" } }, warnings: [] }), stderr: "" };
-			if (cmd === "bash" && script.endsWith("inbox-tick.sh")) return { code: 0, stdout: JSON.stringify(inboxTickPayload(args)), stderr: "" };
-			if (cmd === "bash" && script.endsWith("inbox-worker-start.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_worker_update", updated: true, item: { id: "inq_submit", status: "running", safe_title: "Build Kalshi tool" }, warnings: [] }), stderr: "" };
-			if (cmd === "bash" && script.endsWith("inbox-worker-complete.sh")) return { code: 0, stdout: JSON.stringify({ inbox_api_version: 1, kind: "inbox_worker_update", updated: true, item: { id: "inq_submit", status: "completed", safe_title: "Build Kalshi tool" }, warnings: [] }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-promote.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, promoted: true, record: { id: args[1], state: "approved", title: "Promoted memory", scope: { type: "task" } } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("memory-forget.sh")) return { code: 0, stdout: JSON.stringify({ memory_api_version: 1, forgotten: true, record: { id: args[1], state: "deprecated", title: "Forgotten memory", scope: { type: "task" } } }), stderr: "" };
 			if (cmd === "bash" && script.endsWith("task-lifecycle.sh")) return { code: 0, stdout: JSON.stringify(taskLifecyclePayload({ task_id: args[1], ...(lifecyclePayload ?? {}) })), stderr: "" };

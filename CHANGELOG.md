@@ -5,21 +5,20 @@ All notable changes to this personal pi harness package are tracked here.
 ## Unreleased
 
 ### Added
-- `/inbox` and `/inbox submit <request>` expose the shared `.agents` async inbox MVP as a queue/status surface.
-- `/inbox tick` previews the shared `.agents` scheduler tick in dry-run mode.
-- `/inbox schedule` and `/inbox submit <request>` now bridge explicit `.agents` tick launch specs into Pi subagent async workers and record lifecycle metadata.
-- `/orchestrate <request>` previews the shared `.agents` natural-language orchestration plan, `/orchestrate run <request>` launches read-only plan roles through `pi-subagents`, and `/orchestrate run --workers <request>` explicitly includes bounded write-capable worker roles.
 - `/orchestrator [label|off]` tags the current session name with `[ORCHESTRATOR]` so it is easy to identify in `pi -r` selectors.
 - `harness.compactToolOutput` can override built-in read/write/edit/bash tool renderers with terse status rows.
 - Markdown-heavy standard/complex turns now get short qmd search-first retrieval guidance so agents search indexed skills/docs/artifacts before opening full files.
-- `harness.profile` supports `lean` and `full`; the default lean profile keeps task binding, memory, HTML, safety, compact tools, continuity, qmd guidance, and manual `/orchestrate` while disabling optional control-plane surfaces.
+- `harness.profile` supports `lean` and `full`; the default lean profile keeps task binding, memory, HTML, safety, compact tools, continuity, qmd guidance, and normal diagnostics while disabling ambient orchestration-decision injection.
 
 ### Changed
-- The async inbox commands, Control Center/run-card/topology commands, and ambient orchestration-decision injection are disabled by default in the lean harness profile; use `harness.profile: "full"` or fine-grained overrides to restore them.
-- `/control-center web` localhost dashboard mode was removed; use `/control-center` or `/control-center html` for full-profile diagnostics.
+- `harness.profile: "full"` now only restores ambient orchestration-decision diagnostics; removed slash command surfaces no longer come back in full profile.
 - Large bash tool results are compacted for model context when `harness.compactToolOutput` is enabled: full output is saved to a private local temp file, while the inline result keeps bounded metadata and a tail for debugging.
 - CI now also runs on version tag pushes.
 - Local package compatibility now targets `pi-subagents@0.24.2`, which includes the `jiti` async loader dependency and `@earendil-works/*` Pi peer namespace.
+
+### Removed
+- Removed unused `/inbox`, `/run-card`, `/choose-topology`, `/control-center`, and `/orchestrate` slash-command surfaces, their Pi adapter modules, and their dedicated verification fixtures.
+- Removed the now-unused `harness.asyncInbox` and `harness.controlPlaneSurfaces` overrides.
 
 ### Fixed
 - Compact tool wrappers now explicitly use Pi's default highlighted shell, so edit/write completion rows keep the same green/red completion background as read/bash rows.
@@ -28,7 +27,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Release verification and lifecycle smoke checks now clear inherited `PI_SUBAGENT_CHILD` so parent-mode tests remain deterministic when dogfooded from subagent contexts.
 
 ### Breaking
-- None.
+- `/inbox`, `/run-card`, `/choose-topology`, `/control-center`, and `/orchestrate` are no longer registered commands.
 
 ## 0.5.0 - 2026-05-10
 

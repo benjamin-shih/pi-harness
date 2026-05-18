@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { Box } from "@earendil-works/pi-tui";
 import { loadExtensionModule } from "../harness.mjs";
-import { agentsRoot, assert, controlPlaneDashboardPayload, controlPlaneDecisionPayload, createTaskHarness, harnessCommands, homeRoot, join, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
+import { agentsRoot, assert, controlPlaneDecisionPayload, createTaskHarness, harnessCommands, homeRoot, join, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
 
 function renderToolBox(theme, isError, width, ...components) {
 	const box = new Box(1, 1, (text) => theme.bg(isError ? "toolErrorBg" : "toolSuccessBg", text));
@@ -191,8 +191,8 @@ export async function runAmbientContextTests() {
 
 	const leanHarness = createTaskHarness({ bindPayload: taskBindPayload(), memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep task binding and memory hot." } });
 	assert(!leanHarness.commands.has("inbox"), "lean harness profile should not register async inbox commands by default");
-	assert(!leanHarness.commands.has("control-center") && !leanHarness.commands.has("run-card") && !leanHarness.commands.has("choose-topology"), "lean harness profile should not register control-plane diagnostic surfaces by default");
-	assert(leanHarness.commands.has("memory") && leanHarness.commands.has("orchestrate") && leanHarness.commands.has("orchestrator"), "lean harness profile should keep memory, manual orchestration, and session tagging commands");
+	assert(!leanHarness.commands.has("control-center") && !leanHarness.commands.has("run-card") && !leanHarness.commands.has("choose-topology") && !leanHarness.commands.has("orchestrate"), "removed orchestration/control-plane slash surfaces should not be registered");
+	assert(leanHarness.commands.has("memory") && leanHarness.commands.has("orchestrator"), "lean harness profile should keep memory and session tagging commands");
 	await leanHarness.handlers.get("session_start")({ reason: "startup" }, leanHarness.ctx);
 	const leanResult = await leanHarness.handlers.get("before_agent_start")({ prompt: "Implement a focused docs token optimization", systemPrompt: "base" }, leanHarness.ctx);
 	assert(!leanResult.systemPrompt.includes("## Orchestration Decision"), "lean harness profile should not inject ambient orchestration decisions");
@@ -291,25 +291,6 @@ export async function runAmbientContextTests() {
 	await boundTask.commands.get("doctor").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Ambient context"), "/doctor should include ambient context diagnostics");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");
-	await boundTask.commands.get("run-card").handler("", boundTask.ctx);
-	assert(boundTask.sentMessages.at(-1).customType === "harness-run-card", "/run-card should send a run-card message");
-	assert(boundTask.sentMessages.at(-1).content.includes("## Run card"), "/run-card should render latest orchestration decision details");
-	assert(boundTask.sentMessages.at(-1).content.includes("topology: single_agent_standard"), "/run-card should include the recommended topology");
-	assert(boundTask.sentMessages.at(-1).content.includes("run shape: main_agent"), "/run-card should include the recommended run shape");
-	assert(boundTask.sentMessages.at(-1).content.includes("registry: project via cwd"), "/run-card should include project registry match metadata");
-	assert(boundTask.sentMessages.at(-1).content.includes("default checks: make verify"), "/run-card should include project registry default checks");
-	assert(boundTask.sentMessages.at(-1).content.includes("gate ids: repo_clean_preflight"), "/run-card should include decision gate ids");
-	assert(boundTask.sentMessages.at(-1).content.includes("html artifacts: html_report"), "/run-card should include HTML artifact recommendations");
-	assert(boundTask.sentMessages.at(-1).content.includes("benjamin-local-template.html"), "/run-card should show the reusable HTML artifact template");
-	assert(boundTask.sentMessages.at(-1).content.includes("html templates: benjamin_local_v1; benjamin_report_v1; benjamin_dashboard_v1"), "/run-card should show the reusable HTML template catalog");
-	assert(boundTask.sentMessages.at(-1).content.includes("range_sliders"), "/run-card should show template component capabilities");
-	assert(boundTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/run-card should show HTML artifact auto-open policy");
-	assert(boundTask.sentMessages.at(-1).content.includes("html long responses: concise_summary_plus_local_artifact_path_and_next_action"), "/run-card should show long-response HTML policy");
-	assert(boundTask.sentMessages.at(-1).content.includes("html structure: content_first_flexible"), "/run-card should show flexible HTML structure policy");
-	assert(boundTask.sentMessages.at(-1).content.includes("html title style: compact_first_screen_readable"), "/run-card should show compact title policy");
-	assert(boundTask.sentMessages.at(-1).content.includes("html retention: manifest_and_marker"), "/run-card should show HTML artifact retention policy");
-	assert(boundTask.sentMessages.at(-1).content.includes("delegation launch: manual_main_agent_only; auto-launch no"), "/run-card should show manual-only delegation launch policy");
-	assert(boundTask.sentMessages.at(-1).content.includes("delegation pattern: single_writer_optional_review"), "/run-card should show delegation workflow pattern");
 	const htmlOpenTemp = mkdtempSync(join(tmpdir(), "pi-html-open-"));
 	try {
 		const htmlPlan = join(htmlOpenTemp, "implementation-plan.html");
@@ -340,86 +321,6 @@ export async function runAmbientContextTests() {
 	} finally {
 		rmSync(htmlOpenDisabledTemp, { recursive: true, force: true });
 	}
-	await boundTask.commands.get("choose-topology").handler("single_agent_standard simple surgical task", boundTask.ctx);
-	assert(boundTask.sentMessages.at(-1).content.includes("## Orchestration choice"), "/choose-topology should render explicit choice tracking output");
-	const chosenCall = boundTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_chosen"));
-	assert(chosenCall?.args.some((arg) => String(arg).startsWith("chosen_topology=")), "/choose-topology should record a bounded chosen-topology task event");
-	assert(chosenCall?.args.some((arg) => String(arg).startsWith("decision_id=")), "/choose-topology should pair the choice with the latest recommendation id without displaying it");
-	assert(!chosenCall?.args.some((arg) => String(arg).startsWith("reason=")), "/choose-topology should not persist free-form reason text in task events");
-	await boundTask.commands.get("run-card").handler("", boundTask.ctx);
-	assert(boundTask.sentMessages.at(-1).content.includes("## Chosen vs recommended"), "/run-card should include chosen-vs-recommended tracking");
-	assert(boundTask.sentMessages.at(-1).content.includes("chosen single_agent_standard"), "/run-card should show explicitly chosen topology");
-	assert(boundTask.sentMessages.at(-1).content.includes("orchestration explanation: explicit choice matches"), "/run-card should explain session-local chosen-vs-recommended status");
-	assert(boundTask.sentMessages.at(-1).content.includes("use /control-center for decision-id stale-choice checks"), "/run-card should point stale-choice diagnostics to control-center");
-	await boundTask.commands.get("control-center").handler("", boundTask.ctx);
-	assert(boundTask.sentMessages.at(-1).customType === "harness-control-center", "/control-center should send a control-center message");
-	assert(boundTask.sentMessages.at(-1).content.includes("## Agent Control Center v0"), "/control-center should render the local dashboard card");
-	assert(boundTask.sentMessages.at(-1).content.includes("mode: read-only diagnostics"), "/control-center should state it is read-only");
-	assert(boundTask.sentMessages.at(-1).content.includes("topology: no orchestration decision requested"), "/control-center without prompt should show that no orchestration decision was requested");
-	assert(boundTask.sentMessages.at(-1).content.includes("active task: status in_progress; lease live"), "/control-center should summarize active task lifecycle without exposing task ids");
-	assert(boundTask.sentMessages.at(-1).content.includes("recent events: 2026-05-08T00:00:00Z checkpoint"), "/control-center should show a sanitized recent event timeline");
-	assert(boundTask.sentMessages.at(-1).content.includes("orchestration tracking: recommended parallel_recon; chosen single_agent_standard; status mismatch; mismatch true"), "/control-center should summarize chosen-vs-recommended tracking from the dashboard API");
-	assert(boundTask.sentMessages.at(-1).content.includes("orchestration tracking explanation: explicit choice differs"), "/control-center should explain chosen-vs-recommended mismatches");
-	assert(boundTask.sentMessages.at(-1).content.includes("## Async inbox"), "/control-center should include bounded async inbox diagnostics");
-	assert(boundTask.sentMessages.at(-1).content.includes("queued lanes: project=1"), "/control-center should summarize async inbox lanes without listing raw requests");
-	assert(boundTask.sentMessages.at(-1).content.includes("## HTML artifact retention"), "/control-center should include HTML retention diagnostics");
-	assert(boundTask.sentMessages.at(-1).content.includes("cleanup candidates"), "/control-center should summarize HTML cleanup candidates");
-	assert(boundTask.sentMessages.at(-1).content.includes("candidates: 1"), "/control-center should include scoped memory candidate counts");
-	assert(!boundTask.sentMessages.at(-1).content.includes("pi-task"), "/control-center should not display private task ids");
-	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard")), "/control-center should call the shared dashboard API");
-
-	const explicitControlCenterTask = createTaskHarness({
-		harnessProfile: "full",
-		bindPayload: taskBindPayload(),
-		controlPlaneDashboardPayload: controlPlaneDashboardPayload({ route: { task: { shape: "coursework", complexity: "complex", risk: "medium" }, run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" } }, orchestration_decision: controlPlaneDecisionPayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "explicit_project", steward: "course-steward", description: "Course project", tags: ["course"], default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" }, route: { run: { shape: "parallel_recon", summary: "coursework assist/explain/verify" }, reasons: [] }, topology: { recommended: "parallel_recon", reason: "coursework needs recon", advisory_only: true, subagents: [] } }), project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", registry_id: "STATS300C", match_type: "explicit_project", steward: "course-steward", description: "Course project", tags: ["course"], default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify" } }),
-	});
-	await explicitControlCenterTask.handlers.get("session_start")({ reason: "startup" }, explicitControlCenterTask.ctx);
-	await explicitControlCenterTask.commands.get("control-center").handler("--project STATS300C Finish HW3", explicitControlCenterTask.ctx);
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("task: coursework; complexity complex; risk medium"), "/control-center with prompt text should show route summary");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("topology: parallel_recon"), "/control-center with prompt text should show orchestration topology");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("topology rationale: coursework needs recon"), "/control-center should show why the topology was recommended");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("project defaults: checks make check-homework; write assist_explain_verify; coursework assist_explain_verify"), "/control-center should show project defaults beside the decision");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html artifact modes: html_report"), "/control-center should summarize HTML artifact modes from decision payloads");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html template: "), "/control-center should summarize the reusable HTML artifact template");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html templates: benjamin_local_v1; benjamin_report_v1; benjamin_dashboard_v1"), "/control-center should summarize the reusable HTML template catalog");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html components: cards; tabs; range_sliders; sortable_tables"), "/control-center should summarize reusable HTML component capabilities");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html auto-open: enabled"), "/control-center should summarize HTML artifact auto-open policy");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html long responses: concise_summary_plus_local_artifact_path_and_next_action"), "/control-center should summarize long-response HTML policy");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html structure: content_first_flexible"), "/control-center should summarize flexible HTML structure policy");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html title style: compact_first_screen_readable"), "/control-center should summarize compact title policy");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("html retention: manifest_and_marker"), "/control-center should summarize HTML artifact retention policy");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("delegation launch: manual_main_agent_only; auto-launch no"), "/control-center should summarize manual-only delegation policy");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("registry: STATS300C via explicit_project"), "/control-center should pass explicit project selectors to the shared dashboard API");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/control-center should expose coursework policy read-only");
-	const dashboardCall = explicitControlCenterTask.execCalls.find((call) => String(call.args?.[0] || "").endsWith("control-plane.sh") && call.args.includes("dashboard"));
-	assert(dashboardCall?.args.includes("--project") && dashboardCall.args.includes("STATS300C"), "/control-center should forward --project to control-plane dashboard");
-	await explicitControlCenterTask.commands.get("control-center").handler("web --project STATS300C", explicitControlCenterTask.ctx);
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("status: removed"), "/control-center web should report that local web mode was removed");
-	assert(explicitControlCenterTask.sentMessages.at(-1).content.includes("/control-center html"), "/control-center web removal message should point at static HTML dashboard mode");
-	assert(!explicitControlCenterTask.execCalls.some((call) => call.cmd === "open" && String(call.args?.[0] || "").startsWith("http://127.0.0.1:")), "/control-center web should not start or open a localhost server");
-	const controlCenterSource = readFileSync(join(root, "extensions/shared/control-center.ts"), "utf8");
-	assert(!controlCenterSource.includes("node:http") && !controlCenterSource.includes("startControlCenterWeb"), "control-center implementation should not retain local web server code");
-
-	const fallbackRunCardTask = createTaskHarness({
-		harnessProfile: "full",
-		controlPlaneDecisionPayload: controlPlaneDecisionPayload({ notices: ["project not bindable: home_root"], warnings: [] }),
-	});
-	await fallbackRunCardTask.handlers.get("session_start")({ reason: "startup" }, fallbackRunCardTask.ctx);
-	await fallbackRunCardTask.commands.get("run-card").handler("", fallbackRunCardTask.ctx);
-	assert(!fallbackRunCardTask.sentMessages.at(-1).content.includes("not assembled yet"), "/run-card without cached decision should build a fallback current-project decision");
-	assert(fallbackRunCardTask.sentMessages.at(-1).content.includes("source: generated current-project fallback"), "/run-card fallback should label its source");
-	assert(fallbackRunCardTask.sentMessages.at(-1).content.includes("notices: project not bindable: home_root"), "/run-card should render decision notices separately from warnings");
-	const explicitRunCardTask = createTaskHarness({
-		harnessProfile: "full",
-		bindPayload: taskBindPayload(),
-		controlPlaneDecisionPayload: controlPlaneDecisionPayload({ task: { shape: "coursework", complexity: "complex", risk: "medium" }, project: { name: "STATS300C", root: "/Users/benjaminshih/Desktop/Stanford/STATS300C", type: "coursework", bindable: true, reason: "project_path", registry_id: "STATS300C", registered: true, match_type: "prompt_alias", steward: "course-steward", default_checks: ["make check-homework"], write_policy: "assist_explain_verify", coursework_policy: "assist_explain_verify", local_instructions_required: true }, route: { run: { shape: "parallel_recon", summary: "front-door main agent remains accountable; coursework assist/explain/verify" }, reasons: [] }, topology: { recommended: "parallel_recon", reason: "coursework assist/explain/verify", advisory_only: true, subagents: [] }, guidance: "## Orchestration Decision\n- task: coursework; complexity complex; risk medium" }),
-	});
-	await explicitRunCardTask.handlers.get("session_start")({ reason: "startup" }, explicitRunCardTask.ctx);
-	await explicitRunCardTask.commands.get("run-card").handler("Finish HW3 for STATS300C", explicitRunCardTask.ctx);
-	assert(explicitRunCardTask.sentMessages.at(-1).content.includes("project: STATS300C (coursework)"), "/run-card with prompt text should route explicit coursework prompts");
-	assert(explicitRunCardTask.sentMessages.at(-1).content.includes("policy: write assist_explain_verify; coursework assist_explain_verify"), "/run-card should expose coursework policy from the registry");
-	assert(explicitRunCardTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "/run-card should call the shared orchestration decision API");
-
 	const slashOnlyMemoryTask = createTaskHarness({
 		cwd: homeRoot,
 		gitRoot: false,

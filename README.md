@@ -65,13 +65,9 @@ Task closure is explicit. Use `/close-task completed [reason]` or `/close-task b
 
 Use `/orchestrator [label]` to tag the current session name as `[ORCHESTRATOR] <label>` so it is easy to identify in `pi -r` selectors and terminal titles. Use `/orchestrator off` to clear only that prefix.
 
-Async inbox support is a thin `.agents` adapter, but it is disabled in the default `lean` harness profile because ordinary `pi-subagents` chains/swarms are the preferred delegation path. Set `harness.profile: "full"` or `harness.asyncInbox: true` to register `/inbox`. When enabled, `/inbox submit <request>` stores the request through `.agents/scripts/inbox-enqueue.sh`, calls the shared `.agents` tick API, and launches only explicit tick-provided worker specs through the Pi subagent bridge. `/inbox tick` previews the next eligible item in dry-run mode; `/inbox schedule` asks `.agents` to execute one supervised tick and then starts only the returned worker spec. The harness does not invent scheduling policy, run a daemon, or hide worker launch rules.
-
-Natural-language orchestration planning is also a thin `.agents` adapter. `/orchestrate <request>` calls `.agents/scripts/orchestration-plan.sh` with a private prompt file and renders the bounded role/stage plan without launching anything. `/orchestrate run <request>` launches only read-only/advisory roles from the plan through `pi-subagents`; `/orchestrate run --workers <request>` is the explicit confirmation required to include bounded write-capable worker roles. The plan compiler remains read-only; task-capable workers run only as supervised subagent launches with parent synthesis and verification still required.
-
 ## Harness profiles
 
-The default profile is `lean`: it keeps safety, compact tool output, task binding, memory, HTML guidance, session continuity, qmd guidance, manual `/orchestrate`, and normal `/status`/`/doctor` diagnostics. It does not register async inbox commands, Control Center/run-card/topology commands, or ambient orchestration-decision injection.
+The default profile is `lean`: it keeps safety, compact tool output, task binding, memory, HTML guidance, session continuity, qmd guidance, and normal `/status`/`/doctor` diagnostics. It does not run ambient orchestration-decision injection.
 
 Use `full` when actively developing/debugging the `.agents` control plane:
 
@@ -83,14 +79,12 @@ Use `full` when actively developing/debugging the `.agents` control plane:
 }
 ```
 
-Fine-grained overrides are also supported:
+Fine-grained ambient orchestration override is also supported:
 
 ```json
 {
   "harness": {
     "profile": "lean",
-    "asyncInbox": true,
-    "controlPlaneSurfaces": true,
     "ambientOrchestration": true
   }
 }
@@ -121,18 +115,8 @@ After loading this package in pi, these commands provide explicit overrides and 
 /status            # visual bounded snapshot with task/ambient init hints; avoids heavy audit/untracked filename scans
 /doctor            # heavier diagnostics/audit; /doct alias also works
 /memory
-/inbox                         # full profile or harness.asyncInbox=true only
-/inbox tick                    # full profile or harness.asyncInbox=true only
-/inbox schedule                # full profile or harness.asyncInbox=true only
-/inbox submit <request>        # full profile or harness.asyncInbox=true only
-/orchestrate <request>         # preview a .agents natural-language orchestration plan
-/orchestrate run <request>     # launch read-only/advisory plan roles through pi-subagents
-/orchestrate run --workers <request>  # explicitly include bounded write-capable worker roles
 /orchestrator [label|off]      # tag/untag this session as [ORCHESTRATOR] for pi -r selectors
 /checkpoint [note]
-/run-card                      # full profile or harness.controlPlaneSurfaces=true only
-/control-center                # full profile or harness.controlPlaneSurfaces=true only
-/choose-topology <topology>     # full profile or harness.controlPlaneSurfaces=true only
 /close-task completed|blocked [reason]  # explicit terminal task close via .agents task-close.sh
 /skills-audit [skills-root]
 /simplify [scope]

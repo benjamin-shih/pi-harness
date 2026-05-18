@@ -16,7 +16,7 @@ const STALE_PATTERNS = [
 	{ pattern: /aesthetic-polish\.ts|catppuccin-footer\.ts/g, label: "stale folded UI extension filename" },
 	{ pattern: /extensions\/session-continuity\.ts/g, label: "stale session-continuity file path" },
 ];
-const FULL_ONLY_IMPORT_PATTERNS = ["inbox-command", "control-center", "control-center-command", "orchestration-commands", "orchestration-guidance"];
+const FULL_ONLY_IMPORT_PATTERNS = ["orchestration-guidance"];
 const INTERNAL_SUPPORT_DIRS = ["harness-task-layer", "harness-tool-output"];
 
 function posix(path) {

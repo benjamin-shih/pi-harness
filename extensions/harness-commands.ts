@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AmbientContextSnapshot } from "./shared/ambient-context";
 import { buildAmbientTurn } from "./harness-commands/ambient-turn";
-import { commandDescription, enabledProfileGatedCommandCapabilities, type CommandCapability } from "./harness-commands/capability-registry";
+import { commandDescription } from "./harness-commands/capability-registry";
 import { registerCheckpointCommand } from "./harness-commands/checkpoint-command";
 import {
 	CLEANUP_GUARD_MARKER,
@@ -35,15 +35,6 @@ import { createAgentsTaskLayer } from "./harness-task-layer/task-layer";
 import { compactToolResultForContext, registerCompactToolOutput } from "./harness-tool-output/compact-tool-output";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-
-type RegisteredCommand = { handler: (args: string, ctx: ExtensionContext) => unknown; description?: string };
-
-function captureCommand(pi: ExtensionAPI, name: string, register: (capturingPi: ExtensionAPI) => void): RegisteredCommand {
-	let command: RegisteredCommand | undefined;
-	register({ ...pi, registerCommand: (candidate, registered) => { if (candidate === name) command = registered as RegisteredCommand; } } as ExtensionAPI);
-	if (!command) throw new Error(`lazy command registration failed: ${name}`);
-	return command;
-}
 
 export default function harnessCommands(pi: ExtensionAPI) {
 	if (isPiSubagentChild()) return;
@@ -115,63 +106,6 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		},
 	});
 	registerMemoryAdminCommands(pi, taskLayer);
-	const registerProfileGatedCommand = (capability: CommandCapability) => {
-		if (capability.name === "run-card") {
-			pi.registerCommand(capability.name, {
-				description: capability.description,
-				handler: async (args, ctx) => {
-					const mod = await import("./shared/orchestration-commands");
-					const command = captureCommand(pi, capability.name, (capturingPi) => mod.registerRunCardCommand(capturingPi, taskLayer, () => lastOrchestrationDecision));
-					await command.handler(args, ctx);
-				},
-			});
-			return;
-		}
-		if (capability.name === "choose-topology") {
-			pi.registerCommand(capability.name, {
-				description: capability.description,
-				handler: async (args, ctx) => {
-					const mod = await import("./shared/orchestration-commands");
-					const command = captureCommand(pi, capability.name, (capturingPi) => mod.registerChooseTopologyCommand(capturingPi, taskLayer));
-					await command.handler(args, ctx);
-				},
-			});
-			return;
-		}
-		if (capability.name === "control-center") {
-			pi.registerCommand(capability.name, {
-				description: capability.description,
-				handler: async (args, ctx) => {
-					const mod = await import("./shared/control-center-command");
-					const command = captureCommand(pi, capability.name, (capturingPi) => mod.registerControlCenterCommand(capturingPi, taskLayer));
-					await command.handler(args, ctx);
-				},
-			});
-			return;
-		}
-		if (capability.name === "inbox") {
-			pi.registerCommand(capability.name, {
-				description: capability.description,
-				handler: async (args, ctx) => {
-					const mod = await import("./harness-commands/inbox-command");
-					const command = captureCommand(pi, capability.name, (capturingPi) => mod.registerInboxCommand(capturingPi));
-					await command.handler(args, ctx);
-				},
-			});
-			return;
-		}
-		throw new Error(`unhandled profile-gated harness command capability: ${capability.name}`);
-	};
-	for (const capability of enabledProfileGatedCommandCapabilities(runtimeConfig)) registerProfileGatedCommand(capability);
-	pi.registerCommand("orchestrate", {
-		description: "Plan or run a supervised natural-language subagent workflow",
-		getArgumentCompletions: (prefix: string) => ["plan", "run", "run --workers"].filter((item) => item.startsWith(prefix.trim().toLowerCase())).map((value) => ({ value, label: value })),
-		handler: async (args, ctx) => {
-			const mod = await import("./harness-commands/orchestrate-command");
-			const command = captureCommand(pi, "orchestrate", (capturingPi) => mod.registerOrchestrateCommand(capturingPi));
-			await command.handler(args, ctx);
-		},
-	});
 	registerOrchestratorCommand(pi);
 	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
 	registerTaskCloseCommand(pi, taskLayer);

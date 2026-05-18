@@ -7,8 +7,6 @@ export type HarnessProfile = "lean" | "full";
 
 export type HarnessRuntimeConfig = {
 	profile: HarnessProfile;
-	asyncInbox: boolean;
-	controlPlaneSurfaces: boolean;
 	ambientOrchestration: boolean;
 };
 
@@ -94,8 +92,6 @@ export function harnessRuntimeConfig(cwd = process.cwd()): HarnessRuntimeConfig 
 	const fullDefault = profile === "full";
 	return {
 		profile,
-		asyncInbox: configuredBool(settings, "BEN_PI_ASYNC_INBOX", ["asyncInbox", "enableInbox"], fullDefault),
-		controlPlaneSurfaces: configuredBool(settings, "BEN_PI_CONTROL_PLANE_SURFACES", ["controlPlaneSurfaces", "enableControlPlaneSurfaces"], fullDefault),
 		ambientOrchestration: configuredBool(settings, "BEN_PI_AMBIENT_ORCHESTRATION", ["ambientOrchestration", "enableAmbientOrchestration"], fullDefault),
 	};
 }

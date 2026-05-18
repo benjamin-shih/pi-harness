@@ -20,7 +20,6 @@ const tempRoot = mkdtempSync(join(tmpdir(), "pi-cross-repo-compat-"));
 try {
 	const project = join(tempRoot, "project");
 	const tasksRoot = join(tempRoot, "tasks");
-	const inboxRoot = join(tempRoot, "inbox");
 	const memoryRoot = join(tempRoot, "memory");
 	const settings = join(tempRoot, "pi-settings.json");
 	const approvals = join(tempRoot, "pi-approvals.json");
@@ -28,13 +27,11 @@ try {
 	writeFileSync(join(project, "AGENTS.md"), "# compat project\n");
 	writeFileSync(settings, JSON.stringify({ packages: [] }) + "\n");
 	writeFileSync(approvals, JSON.stringify({ version: 1, policy: { default_action: "deny", requires_exact_pins: true, runtime_network_checks: false }, approved: [] }) + "\n");
-	const env = { ...process.env, AGENTS_SHARED_ROOT: agentsRoot, TASKS_ROOT: tasksRoot, AGENTS_TASKS_ROOT: tasksRoot, AGENTS_INBOX_ROOT: inboxRoot, AGENTS_MEMORY_ROOT: memoryRoot, PI_SETTINGS_PATH: settings, AGENTS_PI_PACKAGE_APPROVALS: approvals };
+	const env = { ...process.env, AGENTS_SHARED_ROOT: agentsRoot, TASKS_ROOT: tasksRoot, AGENTS_TASKS_ROOT: tasksRoot, AGENTS_MEMORY_ROOT: memoryRoot, PI_SETTINGS_PATH: settings, AGENTS_PI_PACKAGE_APPROVALS: approvals };
 
 	const info = runJson("bash", [join(scripts, "task-api.sh"), "info"], { env, cwd: project });
 	assert(info.task_api_version === 1, "task API version should be v1");
 	assert(info.capabilities?.includes("task_close"), "task API should advertise task_close");
-	assert(info.capabilities?.includes("async_inbox"), "task API should advertise async_inbox");
-	assert(info.capabilities?.includes("project_route"), "task API should advertise project_route");
 
 	execFileSync("bash", [join(scripts, "task-init.sh"), "compat-task", "--runtime", "pi", "--owner", "tester", "--cwd", project], { env, cwd: project, stdio: "ignore" });
 	const reasonFile = join(tempRoot, "close-reason.txt");
@@ -47,21 +44,6 @@ try {
 	const decision = runJson("bash", [join(scripts, "orchestration-decision.sh"), "--prompt-file", promptFile, "--cwd", project, "--json"], { env, cwd: project });
 	assert(decision.orchestration_api_version === 1 && decision.read_only === true, "orchestration decision should be read-only v1");
 	assert(decision.artifacts?.html?.long_response?.enabled === true, "orchestration decision should expose long-response HTML policy");
-	const plan = runJson("bash", [join(scripts, "orchestration-plan.sh"), "--prompt-file", promptFile, "--cwd", project, "--json"], { env, cwd: project });
-	assert(plan.orchestration_plan_api_version === 1 && plan.read_only === true && plan.auto_launch === false, "orchestration plan should be read-only v1 without auto-launch");
-	assert(Array.isArray(plan.role_launch_plan), "orchestration plan should expose bounded role metadata");
-
-	const route = runJson("bash", [join(scripts, "project-route.sh"), "--request-file", promptFile, "--cwd", project, "--project-root", project, "--json"], { env, cwd: project });
-	assert(route.project_route_api_version === 1 && route.matched === true, "project route should resolve explicit project root");
-	const inbox = runJson("bash", [join(scripts, "inbox-enqueue.sh"), "--request-file", promptFile, "--cwd", project, "--project-root", project, "--json"], { env, cwd: project });
-	assert(inbox.inbox_api_version === 1 && inbox.enqueued === true && inbox.item?.status === "queued", "inbox enqueue should record queued item");
-	const inboxList = runJson("bash", [join(scripts, "inbox-list.sh"), "--json"], { env, cwd: project });
-	assert(inboxList.inbox_api_version === 1 && inboxList.count === 1, "inbox list should return queued item metadata");
-	const tickPreview = runJson("bash", [join(scripts, "inbox-tick.sh"), "--item-id", inbox.item.id, "--runtime", "pi", "--session", "compat-session", "--cwd", project, "--dry-run", "--json"], { env, cwd: project });
-	assert(tickPreview.kind === "inbox_tick" && tickPreview.dry_run === true && tickPreview.worker_launches === false, "inbox tick dry-run should preview without worker launches");
-	const tickExecute = runJson("bash", [join(scripts, "inbox-tick.sh"), "--item-id", inbox.item.id, "--runtime", "pi", "--session", "compat-session", "--cwd", project, "--execute", "--json"], { env, cwd: project });
-	assert(tickExecute.kind === "inbox_tick" && tickExecute.mutating_actions === true && tickExecute.worker_launches === false, "inbox tick execute should schedule specs without launching workers");
-
 	const htmlPolicy = runJson("bash", [join(scripts, "html-artifact-policy.sh"), "--shape", "general", "--complexity", "standard", "--risk", "low", "--project-type", "repo", "--json"], { env, cwd: project });
 	assert(htmlPolicy.decision?.long_response?.enabled === true, "HTML policy should expose long-response guidance");
 	assert(htmlPolicy.decision?.recommended?.some((item) => item.mode === "html_report"), "HTML policy should recommend reports for long standard responses");

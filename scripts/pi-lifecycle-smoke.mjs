@@ -40,8 +40,8 @@ try {
 	assert(extensionResult.extensions.length === 4, `pi package smoke: expected 4 extensions, got ${extensionResult.extensions.length}`);
 
 	assertExtension(extensionResult.extensions, "extensions/harness-commands.ts", {
-		commands: ["mode", "status", "doctor", "doct", "memory", "orchestrate", "orchestrator", "checkpoint", "close-task", "task-close", "skills-audit"],
-		absentCommands: ["inbox", "run-card", "control-center", "choose-topology"],
+		commands: ["mode", "status", "doctor", "doct", "memory", "orchestrator", "checkpoint", "close-task", "task-close", "skills-audit"],
+		absentCommands: ["inbox", "run-card", "control-center", "choose-topology", "orchestrate"],
 		handlers: ["session_start", "before_agent_start", "tool_call", "tool_result", "agent_end", "session_shutdown"],
 	});
 	assertExtension(extensionResult.extensions, "extensions/safety-gate.ts", {
