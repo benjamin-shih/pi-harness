@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { parseJson } from "../shared/json";
 import { withPrivateTempTextFile } from "../shared/private-temp";
-import { runScript } from "./task-layer-api";
+import { runScript } from "../harness-task-layer/task-layer-api";
 
 const SLASH_SUBAGENT_REQUEST_EVENT = "subagent:slash:request";
 const SLASH_SUBAGENT_RESPONSE_EVENT = "subagent:slash:response";

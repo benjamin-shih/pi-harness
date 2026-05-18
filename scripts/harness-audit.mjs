@@ -17,6 +17,7 @@ const STALE_PATTERNS = [
 	{ pattern: /extensions\/session-continuity\.ts/g, label: "stale session-continuity file path" },
 ];
 const FULL_ONLY_IMPORT_PATTERNS = ["inbox-command", "control-center", "control-center-command", "orchestration-commands", "orchestration-guidance"];
+const INTERNAL_SUPPORT_DIRS = ["harness-task-layer", "harness-tool-output"];
 
 function posix(path) {
 	return path.split("\\").join("/");
@@ -129,7 +130,14 @@ const entries = extensionEntrypoints();
 const extensionGroups = entries.map((entry) => ({ path: posix(relative(root, entry)), ...groupedExtensionStats(entry) }));
 const sharedSupportFiles = walk(join(root, "extensions", "shared")).filter((file) => [".ts", ".js"].includes(extname(file)));
 const sharedSupportLoc = sharedSupportFiles.reduce((total, file) => total + linesOf(file), 0);
-const extensionLoc = extensionGroups.reduce((total, entry) => total + entry.loc, 0) + sharedSupportLoc;
+const internalSupportGroups = INTERNAL_SUPPORT_DIRS
+	.map((name) => {
+		const files = walk(join(root, "extensions", name)).filter((file) => [".ts", ".js"].includes(extname(file)));
+		return { path: posix(join("extensions", name)), loc: files.reduce((total, file) => total + linesOf(file), 0), fileCount: files.length };
+	})
+	.filter((group) => group.fileCount > 0);
+const internalSupportLoc = internalSupportGroups.reduce((total, group) => total + group.loc, 0);
+const extensionLoc = extensionGroups.reduce((total, entry) => total + entry.loc, 0) + sharedSupportLoc + internalSupportLoc;
 const sourceFiles = walk(root).filter((file) => !posix(relative(root, file)).startsWith("package-lock.json"));
 const staleMatches = scanStaleReferences(sourceFiles);
 
@@ -161,9 +169,11 @@ const result = {
 		extensionLoc,
 		optionalLatexLoc,
 		sharedSupportLoc,
+		internalSupportLoc,
 		leanHotPath: leanHotPathMetrics(),
 	},
 	extensions: extensionGroups,
+	internalSupport: internalSupportGroups,
 	issues,
 	warnings,
 };

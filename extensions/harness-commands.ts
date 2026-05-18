@@ -31,8 +31,8 @@ import { registerTaskCloseCommand } from "./harness-commands/task-close-command"
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
 import { registerMemoryAdminCommands } from "./shared/memory-admin-command";
 import type { OrchestrationDecisionState } from "./shared/orchestration-guidance";
-import { createAgentsTaskLayer } from "./harness-commands/task-layer";
-import { compactToolResultForContext, registerCompactToolOutput } from "./harness-commands/compact-tool-output";
+import { createAgentsTaskLayer } from "./harness-task-layer/task-layer";
+import { compactToolResultForContext, registerCompactToolOutput } from "./harness-tool-output/compact-tool-output";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 

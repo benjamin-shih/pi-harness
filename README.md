@@ -17,6 +17,8 @@ Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and ses
 extensions/
   ui-polish/            Rounded prompt boxes and responsive Catppuccin footer
   harness-commands.ts   /mode, /status, /checkpoint, /skills-audit, ambient task binding, skill routing, and cleanup guards
+  harness-task-layer/   Internal .agents task API adapter support for harness-commands
+  harness-tool-output/  Internal compact tool-output support for harness-commands
   safety-gate.ts        Secret/private-file egress guardrails and git finalization checks
   session-continuity/   Automatic checkpoints and custom compaction summaries and diagnostics
 prompts/
