@@ -11,7 +11,12 @@ import { buildMemorySpineDiagnostics, formatMemorySpineDiagnostics, type MemoryS
 
 type HarnessAudit = {
 	packageVersion: string;
-	metrics?: { runtimeExtensionEntrypoints?: number; extensionLoc?: number; optionalLatexLoc?: number };
+	metrics?: {
+		runtimeExtensionEntrypoints?: number;
+		extensionLoc?: number;
+		optionalLatexLoc?: number;
+		leanHotPath?: { fullOnlyStaticImportCount?: number; beforeAgentStartExecSites?: number; deferredCleanupSnapshot?: boolean };
+	};
 	issues?: unknown[];
 	warnings?: unknown[];
 };
@@ -81,6 +86,7 @@ function formatHarnessAuditLines(result: HarnessAuditResult): string[] {
 		`- runtime extensions: ${audit.metrics?.runtimeExtensionEntrypoints ?? "unknown"}`,
 		`- core extension LOC: ${audit.metrics?.extensionLoc ?? "unknown"}`,
 		`- optional LaTeX LOC: ${audit.metrics?.optionalLatexLoc ?? "unknown"}`,
+		`- lean hot path: ${audit.metrics?.leanHotPath ? `${audit.metrics.leanHotPath.fullOnlyStaticImportCount ?? "unknown"} full-only static import(s), before-agent exec sites ${audit.metrics.leanHotPath.beforeAgentStartExecSites ?? "unknown"}, deferred cleanup snapshot ${audit.metrics.leanHotPath.deferredCleanupSnapshot ? "yes" : "no"}` : "unknown"}`,
 	];
 }
 

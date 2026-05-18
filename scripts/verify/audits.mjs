@@ -14,6 +14,9 @@ function runHarnessAuditTest() {
 	const audit = JSON.parse(stdout);
 	assert(audit.issues.length === 0, `harness audit has ${audit.issues.length} issue(s)`);
 	assert(audit.metrics.runtimeExtensionEntrypoints <= 4, "harness audit should enforce compact runtime extension count");
+	assert(audit.metrics.leanHotPath?.profile === "lean", "harness audit should expose lean hot-path metrics");
+	assert(typeof audit.metrics.leanHotPath.fullOnlyStaticImportCount === "number", "lean hot-path metrics should count full-only static imports");
+	assert(audit.metrics.leanHotPath.deferredCleanupSnapshot === true, "lean hot-path metrics should observe deferred cleanup snapshots");
 	assert(audit.extensions.some((extension) => extension.path === "extensions/session-continuity/index.ts"), "harness audit should discover directory-style session-continuity extension");
 }
 
