@@ -18,8 +18,8 @@ All notable changes to this personal pi harness package are tracked here.
 - Local package compatibility now targets `pi-subagents@0.24.2`, which includes the `jiti` async loader dependency and `@earendil-works/*` Pi peer namespace.
 
 ### Removed
-- Removed unused `/inbox`, `/run-card`, `/choose-topology`, `/control-center`, and `/orchestrate` slash-command surfaces, their Pi adapter modules, and their dedicated verification fixtures.
-- Removed the now-unused `harness.asyncInbox` and `harness.controlPlaneSurfaces` overrides.
+- Removed unused legacy slash-command surfaces, their Pi adapter modules, and their dedicated verification fixtures.
+- Removed now-unused legacy harness surface overrides.
 
 ### Fixed
 - Compact bash-output compaction now blocks credential-bearing output instead of saving raw content to a local compaction file before the safety gate can redact it.
@@ -35,7 +35,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Release verification and lifecycle smoke checks now clear inherited `PI_SUBAGENT_CHILD` so parent-mode tests remain deterministic when dogfooded from subagent contexts.
 
 ### Breaking
-- `/inbox`, `/run-card`, `/choose-topology`, `/control-center`, and `/orchestrate` are no longer registered commands.
+- Legacy orchestration/control-plane command surfaces are no longer registered commands.
 
 ## 0.5.0 - 2026-05-10
 
