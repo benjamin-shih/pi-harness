@@ -82,6 +82,19 @@ export async function buildExecutionRouteState(pi: ExtensionAPI, cwd: string, pr
 	}
 }
 
+export function formatExecutionFactCard(state: ExecutionRouteState | undefined): string | undefined {
+	const route = state?.route;
+	if (!route) return undefined;
+	return [
+		"## Ambient Execution Route",
+		`- profile: ${route.profile}`,
+		`- overlays: ${route.overlays.length ? route.overlays.join(", ") : "none"}`,
+		`- summary: ${route.summary}`,
+		"- main agent remains accountable for implementation, verification, commits, pushes, and final synthesis",
+		"- use targeted subagents only when they materially improve planning, review, or independent context",
+	].join("\n");
+}
+
 export async function buildExecutionGuidance(pi: ExtensionAPI, cwd: string, prompt: string): Promise<ExecutionRoute | undefined> {
 	return (await buildExecutionRouteState(pi, cwd, prompt)).route;
 }

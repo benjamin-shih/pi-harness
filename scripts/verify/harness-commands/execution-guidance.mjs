@@ -57,7 +57,9 @@ export async function runExecutionGuidanceTests() {
 	assert(!harness.commands.has("execute"), "ambient execution protocol should not add an /execute command yet");
 	await harness.handlers.get("session_start")({ reason: "startup" }, harness.ctx);
 	const result = await harness.handlers.get("before_agent_start")({ prompt: "Simplify the recently changed code. Preserve observable behavior.", systemPrompt: "base" }, harness.ctx);
-	assert(result.systemPrompt.includes("## Ambient Execution Protocol"), "execution prompts should include ambient execution protocol guidance");
+	assert(result.systemPrompt.includes("## Ambient Execution Route"), "execution prompts should include compact ambient execution route facts");
+	assert(result.systemPrompt.includes("profile: software") && result.systemPrompt.includes("overlays: repo_cleanup"), "execution fact card should include structured profile and overlays");
+	assert(!result.systemPrompt.includes("Subagent topology contract") && !result.systemPrompt.includes("Automatically commit and push"), "execution fact card should avoid injecting the full execution protocol wall");
 	assert(result.systemPrompt.includes("execution: included"), "ambient receipt should expose execution protocol inclusion");
 	assert(result.systemPrompt.includes("profile software; overlays repo_cleanup"), "ambient receipt should include safe execution route summary");
 	await harness.commands.get("status").handler("", harness.ctx);

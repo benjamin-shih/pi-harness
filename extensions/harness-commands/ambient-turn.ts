@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assembleAmbientContext, type AmbientContextAssembly, type AmbientContextLane } from "../shared/ambient-context";
 import { decideAmbientPolicy, shouldIncludeMemoryContext, shouldIncludeRepoContext } from "../shared/ambient-policy";
-import { buildExecutionRouteState, type ExecutionRouteState } from "../shared/execution-guidance";
+import { buildExecutionRouteState, formatExecutionFactCard, type ExecutionRouteState } from "../shared/execution-guidance";
 import { largeResponseHtmlGuidance } from "../shared/large-response-html";
 import { buildMemoryContext, memoryAdminGuidance, memoryCandidateReminder, type MemoryContextResult } from "../shared/memory-context";
 import { buildOrchestrationDecisionState, type OrchestrationDecisionState } from "../shared/orchestration-guidance";
@@ -75,9 +75,9 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 		{ id: "memory_admin", title: "Explicit memory admin", priority: 67, content: memoryAdminGuidance(input.prompt), reason: "no explicit memory admin request" },
 		{
 			id: "execution",
-			title: "Ambient execution protocol",
+			title: "Ambient execution route",
 			priority: 68,
-			content: input.executionRoute?.route?.guidance,
+			content: formatExecutionFactCard(input.executionRoute),
 			publicSummary: input.executionRoute?.route?.summary,
 			reason: executionLaneReason(input.executionRoute),
 			executionRouteState: input.executionRoute,
