@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
-import { GIT_FINALIZATION_MARKER, getGitFinalizationState, gitFinalizationStateChanged, needsGitFinalization, summarizeGitFinalizationState, type GitFinalizationState } from "./safety-gate-lib/finalization";
+import { GIT_FINALIZATION_MARKER, getGitFinalizationState, needsGitFinalization, summarizeGitFinalizationState, type GitFinalizationState } from "./safety-gate-lib/finalization";
 import { createPathSafetyChecker, type PathSafetyCheck, type PolicyOperation } from "./safety-gate-lib/policy";
 import { BLOCKED_OUTPUT, HIDDEN_SENSITIVE_RESULT, contentMentionsSensitivePath, redactToolContent } from "./safety-gate-lib/redaction";
 import { extractCopyMoveSourcePathTokens, extractInputPathTokens, extractOutputPathTokens, extractPathTokens, extractRecursiveEgressSourcePathTokens, extractWritePathTokens, looksMutatingBash, looksRecursiveTraversalCommand, parseGitCommands } from "./safety-gate-lib/shell";
@@ -306,8 +306,7 @@ export default function safetyGate(pi: ExtensionAPI) {
 		if (!sawPotentialMutation) return;
 		const currentState = await getGitFinalizationState(pi, ctx.cwd);
 		if (!currentState) return;
-		const modifiedThisPrompt = sawPotentialMutation || gitFinalizationStateChanged(initialGitState, currentState);
-		if (!modifiedThisPrompt || !needsGitFinalization(currentState, initialGitState)) return;
+		if (!needsGitFinalization(currentState, initialGitState)) return;
 		if (currentPromptIsGuardBounce) {
 			if (ctx.hasUI) ctx.ui.notify(`Git finalization still incomplete: ${summarizeGitFinalizationState(currentState)}`, "warning");
 			return;

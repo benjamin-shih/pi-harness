@@ -3,7 +3,7 @@ import { agentsScriptPath } from "./config";
 import { parseJson } from "./json";
 import { withPrivateTempTextFile } from "./private-temp";
 
-export type ExecutionProfile = "software" | "devops" | "research_ai_ml" | "empirical_data" | "documentation" | "general_execution";
+export type ExecutionProfile = "software" | "devops" | "research_ai_ml" | "empirical_data" | "portfolio_manager" | "quantitative_researcher" | "documentation" | "general_execution";
 export type ExecutionOverlay = "math_latex" | "release_changelog" | "python_uv" | "plotting" | "security_privacy" | "repo_cleanup" | "package_hygiene" | "subagent_orchestration";
 
 export type ExecutionRoute = {
@@ -93,8 +93,4 @@ export function formatExecutionFactCard(state: ExecutionRouteState | undefined):
 		"- main agent remains accountable for implementation, verification, commits, pushes, and final synthesis",
 		"- use targeted subagents only when they materially improve planning, review, or independent context",
 	].join("\n");
-}
-
-export async function buildExecutionGuidance(pi: ExtensionAPI, cwd: string, prompt: string): Promise<ExecutionRoute | undefined> {
-	return (await buildExecutionRouteState(pi, cwd, prompt)).route;
 }

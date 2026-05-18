@@ -42,18 +42,6 @@ export async function getGitFinalizationState(pi: ExtensionAPI, cwd: string): Pr
 	};
 }
 
-export function gitFinalizationStateChanged(before: GitFinalizationState | undefined, after: GitFinalizationState): boolean {
-	if (!before) return true;
-	return (
-		before.root !== after.root ||
-		before.statusText !== after.statusText ||
-		before.head !== after.head ||
-		before.hasUpstream !== after.hasUpstream ||
-		before.behind !== after.behind ||
-		before.ahead !== after.ahead
-	);
-}
-
 export function needsGitFinalization(state: GitFinalizationState, before: GitFinalizationState | undefined): boolean {
 	if (state.dirtyLines.length > 0) return true;
 	if (state.ahead > 0) return true;

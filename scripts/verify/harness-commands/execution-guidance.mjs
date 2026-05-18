@@ -22,8 +22,10 @@ export async function runExecutionGuidanceTests() {
 	assert(routed.health === "ok" && routed.status === "routed" && routed.apiVersion === 1, "routed execution state should expose route API health");
 	assert(execCalls.at(-1).args[0].endsWith("execution-route.sh"), "execution guidance should call the .agents execution-route script");
 	assert(execCalls.at(-1).args.includes("--cwd"), "execution guidance should pass cwd to shared route script");
-	const route = await execution.buildExecutionGuidance(pi, "/tmp/project", "Go ahead and implement the plan");
-	assert(route?.summary === "profile software; overlays repo_cleanup", "legacy guidance helper should return the route from structured state");
+	const portfolioRoute = await execution.buildExecutionRouteState({ exec: async () => ({ code: 0, stdout: JSON.stringify(executionRoutePayload({ profile: "portfolio_manager", summary: "profile portfolio_manager; overlays none" })), stderr: "" }) }, "/tmp/project", "Review portfolio risk");
+	assert(portfolioRoute.route?.profile === "portfolio_manager", "execution guidance should accept portfolio-manager profile payloads from the shared route API");
+	const quantRoute = await execution.buildExecutionRouteState({ exec: async () => ({ code: 0, stdout: JSON.stringify(executionRoutePayload({ profile: "quantitative_researcher", summary: "profile quantitative_researcher; overlays none" })), stderr: "" }) }, "/tmp/project", "Research a market anomaly");
+	assert(quantRoute.route?.profile === "quantitative_researcher", "execution guidance should accept quantitative-researcher profile payloads from the shared route API");
 
 	const noIntent = await execution.buildExecutionRouteState({ exec: async () => ({ code: 0, stdout: JSON.stringify({ execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "" }), stderr: "" }) }, "/tmp/project", "Review whether this does anything");
 	assert(noIntent.health === "inactive" && noIntent.status === "no_intent" && !noIntent.route, "non-execution script results should be observable as inactive");
@@ -46,8 +48,8 @@ export async function runExecutionGuidanceTests() {
 				}
 			},
 		};
-		const realRoute = await execution.buildExecutionGuidance(realPi, root, "Task: Simplify the recently changed code");
-		assert(realRoute?.summary === "profile software; overlays repo_cleanup", "real .agents execution-route script should support wrapped execution prompts");
+		const realRoute = await execution.buildExecutionRouteState(realPi, root, "Task: Simplify the recently changed code");
+		assert(realRoute.route?.summary === "profile software; overlays repo_cleanup", "real .agents execution-route script should support wrapped execution prompts");
 	}
 
 	const harness = createTaskHarness({

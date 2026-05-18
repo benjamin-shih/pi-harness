@@ -26,7 +26,9 @@ All notable changes to this personal pi harness package are tracked here.
 - Large-response HTML guidance now derives policy/template paths from `AGENTS_SHARED_ROOT` instead of hard-coding the default `.agents` checkout.
 - Harness profile resolution refreshes from the active turn cwd so project-local `.pi/settings.json` controls ambient orchestration as documented.
 - Explicit read-only/no-subagent prompts now suppress contradictory cleanup, git-push, and subagent-topology ambient guidance.
+- Execution-route TypeScript/test coverage now includes the shared `portfolio_manager` and `quantitative_researcher` profiles.
 - Remote-CI final visibility now starts only after a bash `git push` tool result succeeds, not merely when a push command is attempted.
+- Safety-gate finalization removed a dead state-change branch that was unreachable after the mutation precheck.
 - Compact tool wrappers now explicitly use Pi's default highlighted shell, so edit/write completion rows keep the same green/red completion background as read/bash rows.
 - Compact tool rows now include useful call summaries such as bash commands, read ranges, write line counts, and edit replacement counts while preserving green/red result backgrounds and parsed bash exit codes.
 - Restored compact edit rendering when `harness.compactToolOutput` is enabled, instead of showing full edit diffs.
