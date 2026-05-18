@@ -241,15 +241,19 @@ export default function safetyGate(pi: ExtensionAPI) {
 	let initialGitState: GitFinalizationState | undefined;
 	let sawPotentialMutation = false;
 	let currentPromptIsGuardBounce = false;
-	pi.on("before_agent_start", async (event, ctx) => {
+	const captureInitialGitState = async (cwd: string) => {
+		if (!initialGitState) initialGitState = await getGitFinalizationState(pi, cwd);
+	};
+	pi.on("before_agent_start", async (event) => {
 		clearPathSafetyCache();
-		initialGitState = await getGitFinalizationState(pi, ctx.cwd);
+		initialGitState = undefined;
 		sawPotentialMutation = false;
 		currentPromptIsGuardBounce = event.prompt.includes(GIT_FINALIZATION_MARKER);
 	});
 	on("tool_call", async (event, ctx) => {
 		const input = event.input as Record<string, unknown>;
 		if (event.toolName === "edit" || event.toolName === "write") {
+			await captureInitialGitState(ctx.cwd);
 			sawPotentialMutation = true;
 			const writeDecision = await pathSafety(input.path as string | undefined, ctx.cwd, "write");
 			if (writeDecision?.action === "block") return blockedTool(BLOCKED_OUTPUT);
@@ -272,7 +276,10 @@ export default function safetyGate(pi: ExtensionAPI) {
 		}
 		if (event.toolName === "bash") {
 			const command = String(input.command ?? "");
-			if (looksMutatingBash(command)) sawPotentialMutation = true;
+			if (looksMutatingBash(command)) {
+				await captureInitialGitState(ctx.cwd);
+				sawPotentialMutation = true;
+			}
 			return guardShellCommand(pi, pathSafety, ctx.cwd, command, false);
 		}
 		return undefined;
@@ -296,6 +303,7 @@ export default function safetyGate(pi: ExtensionAPI) {
 	});
 	on("user_bash", async (event) => guardShellCommand(pi, pathSafety, event.cwd, event.command, true));
 	pi.on("agent_end", async (_event, ctx) => {
+		if (!sawPotentialMutation) return;
 		const currentState = await getGitFinalizationState(pi, ctx.cwd);
 		if (!currentState) return;
 		const modifiedThisPrompt = sawPotentialMutation || gitFinalizationStateChanged(initialGitState, currentState);

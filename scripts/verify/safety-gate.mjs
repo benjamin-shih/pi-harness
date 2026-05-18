@@ -244,6 +244,7 @@ export async function runSafetyGateBehaviorTests() {
 		},
 	});
 	await finalizationHandlers.get("before_agent_start")({ prompt: "Fix code" }, ctx);
+	await finalizationHandlers.get("tool_call")({ toolName: "write", input: { path: "src/app.ts" } }, ctx);
 	await finalizationHandlers.get("agent_end")({}, ctx);
 	assert(sentFinalizationFollowUps.length === 0, "safety-gate should not send finalization follow-up synchronously from agent_end");
 	await flushDeferredFollowUps();
@@ -252,6 +253,24 @@ export async function runSafetyGateBehaviorTests() {
 	assert(sentFinalizationFollowUps[0].message.includes("push with `git push`"), "safety-gate finalization follow-up should prefer plain git push");
 	assert(sentFinalizationFollowUps[0].message.includes("Do not use `git push origin main`"), "safety-gate finalization follow-up should discourage origin/main pushes by default");
 	assert(sentFinalizationFollowUps[0].options?.deliverAs === "followUp", "safety-gate finalization follow-up should use followUp delivery");
+
+	{
+		const noMutationHandlers = new Map();
+		let gitFinalizationCalls = 0;
+		safetyGate({
+			on(event, handler) {
+				noMutationHandlers.set(event, handler);
+			},
+			exec: async (cmd, args) => {
+				const key = args.join(" ");
+				if (cmd === "git" && (key === "rev-parse --show-toplevel" || key === "status --porcelain=v1 --branch" || key === "rev-parse HEAD" || key === "rev-list --left-right --count @{u}...HEAD")) gitFinalizationCalls++;
+				return { code: 1, stdout: "", stderr: "" };
+			},
+		});
+		await noMutationHandlers.get("before_agent_start")({ prompt: "Review code" }, ctx);
+		await noMutationHandlers.get("agent_end")({}, ctx);
+		assert(gitFinalizationCalls === 0, "safety-gate should skip git finalization snapshots when no potential mutation occurred");
+	}
 
 	for (const [label, policyResult] of [
 		["unavailable", { code: 1, stdout: "", stderr: "policy down" }],

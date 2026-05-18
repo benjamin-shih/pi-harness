@@ -131,7 +131,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		currentPromptIsCleanupGuard = event.prompt.includes(CLEANUP_GUARD_MARKER);
 		currentPromptNeedsCleanup = isCodingOrFilePrompt(event.prompt);
 		pendingHtmlArtifacts = new Set<string>();
-		initialChangeSnapshot = currentPromptNeedsCleanup ? await gitChangeSnapshot(pi, ctx.cwd) : undefined;
+		initialChangeSnapshot = undefined;
 		const taskContext = await taskLayer.beforeAgentStart(pi, event.prompt, fallbackWeight, ctx);
 		const weight = taskLayer.currentPromptWeight();
 		currentPromptWasMajor = promptSuggestsMajorCleanup(event.prompt, weight);
@@ -151,14 +151,18 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		refreshFinalVisibility();
 		return ambient.systemPrompt === event.systemPrompt ? undefined : { systemPrompt: ambient.systemPrompt };
 	});
-	pi.on("tool_call", async (event) => {
-		if (event.toolName === "edit" || event.toolName === "write") {
+	pi.on("tool_call", async (event, ctx) => {
+		const markFileMutation = async () => {
+			if (!sawFileMutation && currentPromptNeedsCleanup) initialChangeSnapshot = await gitChangeSnapshot(pi, ctx.cwd);
 			sawFileMutation = true;
+		};
+		if (event.toolName === "edit" || event.toolName === "write") {
+			await markFileMutation();
 			return;
 		}
 		if (event.toolName === "bash") {
 			const command = String((event.input as { command?: unknown }).command ?? "");
-			if (looksFileMutatingCommand(command)) sawFileMutation = true;
+			if (looksFileMutatingCommand(command)) await markFileMutation();
 			if (isGitPushCommand(command)) sawGitPush = true;
 		}
 	});

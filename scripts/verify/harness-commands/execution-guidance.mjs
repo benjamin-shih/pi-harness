@@ -25,7 +25,7 @@ export async function runExecutionGuidanceTests() {
 	const route = await execution.buildExecutionGuidance(pi, "/tmp/project", "Go ahead and implement the plan");
 	assert(route?.summary === "profile software; overlays repo_cleanup", "legacy guidance helper should return the route from structured state");
 
-	const noIntent = await execution.buildExecutionRouteState({ exec: async () => ({ code: 0, stdout: JSON.stringify({ execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "" }), stderr: "" }) }, "/tmp/project", "What does this do?");
+	const noIntent = await execution.buildExecutionRouteState({ exec: async () => ({ code: 0, stdout: JSON.stringify({ execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "" }), stderr: "" }) }, "/tmp/project", "Review whether this does anything");
 	assert(noIntent.health === "inactive" && noIntent.status === "no_intent" && !noIntent.route, "non-execution script results should be observable as inactive");
 	const incompatible = await execution.buildExecutionRouteState({ exec: async () => ({ code: 0, stdout: JSON.stringify({ execution_route_api_version: 999, execution_intent: true }), stderr: "" }) }, "/tmp/project", "Go ahead");
 	assert(incompatible.health === "degraded" && incompatible.status === "unsupported_api" && incompatible.apiVersion === 999, "incompatible execution-route API versions should degrade without blocking");

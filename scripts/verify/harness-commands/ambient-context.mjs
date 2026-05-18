@@ -196,6 +196,34 @@ export async function runAmbientContextTests() {
 	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "lean harness profile should not call ambient orchestration decision API");
 	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_recommended")), "lean harness profile should not record orchestration_recommended task events");
 	assert(leanResult.systemPrompt.includes("## Approved Scoped Memory") && leanResult.systemPrompt.includes("## Active AGENTS Task Context"), "lean harness profile should keep memory and task binding hot-path lanes");
+	const discussionHarness = createTaskHarness({ bindPayload: taskBindPayload() });
+	await discussionHarness.handlers.get("session_start")({ reason: "startup" }, discussionHarness.ctx);
+	await discussionHarness.handlers.get("before_agent_start")({ prompt: "What is the current harness control plane shape?", systemPrompt: "base" }, discussionHarness.ctx);
+	assert(!discussionHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("execution-route.sh")), "obvious discussion prompts should skip the execution-route script");
+	const executionHarness = createTaskHarness({ bindPayload: taskBindPayload() });
+	await executionHarness.handlers.get("session_start")({ reason: "startup" }, executionHarness.ctx);
+	await executionHarness.handlers.get("before_agent_start")({ prompt: "Go ahead and implement the next harness slice", systemPrompt: "base" }, executionHarness.ctx);
+	assert(executionHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("execution-route.sh")), "execution prompts should still call the execution-route script");
+	let repoRootPending = false;
+	let memoryDuringRepoRoot = false;
+	const parallelMemoryHarness = createTaskHarness({
+		bindPayload: taskBindPayload(),
+		execHook: async (cmd, args) => {
+			const key = args.join(" ");
+			const script = String(args[0] || "");
+			if (cmd === "git" && key === "rev-parse --show-toplevel") {
+				repoRootPending = true;
+				await new Promise((resolve) => setTimeout(resolve, 20));
+				repoRootPending = false;
+				return { code: 0, stdout: `${root}\n`, stderr: "" };
+			}
+			if (cmd === "bash" && script.endsWith("memory-context.sh") && repoRootPending) memoryDuringRepoRoot = true;
+			return undefined;
+		},
+	});
+	await parallelMemoryHarness.handlers.get("session_start")({ reason: "startup" }, parallelMemoryHarness.ctx);
+	await parallelMemoryHarness.handlers.get("before_agent_start")({ prompt: "Implement parallel memory lookup", systemPrompt: "base" }, parallelMemoryHarness.ctx);
+	assert(memoryDuringRepoRoot, "ambient memory lookup should start without waiting for repo summary when task project root is already known");
 	const htmlGuidanceTask = createTaskHarness({ bindPayload: taskBindPayload() });
 	await htmlGuidanceTask.handlers.get("session_start")({ reason: "startup" }, htmlGuidanceTask.ctx);
 	const htmlGuidance = await htmlGuidanceTask.handlers.get("before_agent_start")({ prompt: "Write a comprehensive implementation status report with diagrams and next steps", systemPrompt: "base" }, htmlGuidanceTask.ctx);

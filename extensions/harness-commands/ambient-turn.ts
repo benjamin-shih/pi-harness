@@ -88,13 +88,18 @@ function buildAmbientLanes(input: AmbientLaneInput): AmbientContextLane[] {
 
 export async function buildAmbientTurn(pi: ExtensionAPI, ctx: ExtensionContext, input: AmbientTurnInput): Promise<AmbientTurnResult> {
 	const policy = decideAmbientPolicy(input.weight);
-	const repoSummaryPromise = shouldIncludeRepoContext(policy) ? buildRepoContextSummary(pi, ctx.cwd) : Promise.resolve(undefined);
+	const includeRepo = shouldIncludeRepoContext(policy);
+	const includeMemory = shouldIncludeMemoryContext(policy);
+	const repoSummaryPromise = includeRepo ? buildRepoContextSummary(pi, ctx.cwd) : Promise.resolve(undefined);
 	const orchestrationPromise = input.weight === "trivial" || !input.ambientOrchestration ? Promise.resolve(undefined) : buildOrchestrationDecisionState(pi, ctx.cwd, input.prompt);
 	const executionPromise = buildExecutionRouteState(pi, ctx.cwd, input.prompt);
-	const repoSummary = await repoSummaryPromise;
-	const memoryProjectRoot = input.taskScope.projectRoot || repoSummary?.root;
-	const memoryPromise = shouldIncludeMemoryContext(policy) ? buildMemoryContext(pi, ctx.cwd, { projectRoot: memoryProjectRoot, taskId: input.taskScope.taskId }) : Promise.resolve(undefined);
-	const [memoryContext, orchestrationDecision, executionRoute] = await Promise.all([memoryPromise, orchestrationPromise, executionPromise]);
+	const memoryPromise = includeMemory && input.taskScope.projectRoot
+		? buildMemoryContext(pi, ctx.cwd, { projectRoot: input.taskScope.projectRoot, taskId: input.taskScope.taskId })
+		: repoSummaryPromise.then((repoSummary) => {
+			const memoryProjectRoot = input.taskScope.projectRoot || repoSummary?.root;
+			return includeMemory ? buildMemoryContext(pi, ctx.cwd, { projectRoot: memoryProjectRoot, taskId: input.taskScope.taskId }) : undefined;
+		});
+	const [repoSummary, memoryContext, orchestrationDecision, executionRoute] = await Promise.all([repoSummaryPromise, memoryPromise, orchestrationPromise, executionPromise]);
 	const assembly = assembleAmbientContext(input.baseSystemPrompt, input.weight, buildAmbientLanes({
 		...input,
 		memoryContext,
