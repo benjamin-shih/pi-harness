@@ -162,6 +162,10 @@ export async function runAmbientContextTests() {
 		assert(truncatedResult.content[0].text.includes("complete output saved by bash tool at:"), "compacted bash results should point to built-in full output when available");
 		assert(truncatedResult.details?.harnessCompaction?.outputFile === builtInFullOutputPath, "compaction metadata should preserve built-in full output path");
 		rmSync(builtInFullOutputPath, { force: true });
+		const credentialOutput = [`api_key=abc123456789def`, ...Array.from({ length: 180 }, (_, index) => `safe tail line ${index} ${"x".repeat(70)}`)].join("\n");
+		const secretResult = await compactToolDisplay.handlers.get("tool_result")({ toolName: "bash", input: { command: "python secret.py" }, content: [{ type: "text", text: credentialOutput }], details: {}, isError: false }, compactToolDisplay.ctx);
+		assert(secretResult.content[0].text.includes("Blocked output"), "credential-bearing bash output should be blocked instead of compacted");
+		assert(secretResult.details?.harnessCompaction?.redacted === true && !secretResult.details?.harnessCompaction?.outputFile, "credential-bearing bash output should not be saved to a compaction file");
 		const smallResult = await compactToolDisplay.handlers.get("tool_result")({ toolName: "bash", input: { command: "echo ok" }, content: [{ type: "text", text: "ok" }], details: {}, isError: false }, compactToolDisplay.ctx);
 		assert(!smallResult, "small bash results should remain inline and unmodified");
 		const editResult = compactToolDisplay.tools.get("edit").renderResult({ content: [{ type: "text", text: "ok" }], details: { diff: "diff --git" } }, { expanded: true, isPartial: false }, theme, { isError: false });
@@ -200,6 +204,10 @@ export async function runAmbientContextTests() {
 	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "lean harness profile should not call ambient orchestration decision API");
 	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_recommended")), "lean harness profile should not record orchestration_recommended task events");
 	assert(leanResult.systemPrompt.includes("## Approved Scoped Memory") && leanResult.systemPrompt.includes("## Active AGENTS Task Context"), "lean harness profile should keep memory and task binding hot-path lanes");
+	const readOnlyHarness = createTaskHarness({ bindPayload: taskBindPayload() });
+	await readOnlyHarness.handlers.get("session_start")({ reason: "startup" }, readOnlyHarness.ctx);
+	const readOnlyResult = await readOnlyHarness.handlers.get("before_agent_start")({ prompt: "Read-only audit this repo; no edits, no commits, no subagents.", systemPrompt: "base" }, readOnlyHarness.ctx);
+	assert(!readOnlyResult.systemPrompt.includes("## Post-Change Cleanup Gate") && !readOnlyResult.systemPrompt.includes("## Git Push Default") && !readOnlyResult.systemPrompt.includes("## Subagent Topology Reminder"), "explicit read-only/no-subagent prompts should suppress contradictory cleanup, push, and subagent guidance");
 	const discussionHarness = createTaskHarness({ bindPayload: taskBindPayload() });
 	await discussionHarness.handlers.get("session_start")({ reason: "startup" }, discussionHarness.ctx);
 	await discussionHarness.handlers.get("before_agent_start")({ prompt: "What is the current harness control plane shape?", systemPrompt: "base" }, discussionHarness.ctx);
@@ -252,6 +260,7 @@ export async function runAmbientContextTests() {
 			await htmlContinuityTask.handlers.get("session_compact")({ compactionEntry: { summary: "compact" }, fromExtension: false }, htmlContinuityTask.ctx);
 			const continuity = htmlContinuityTask.sentMessages.find((message) => message.customType === "harness-html-artifact-continuity");
 			assert(continuity?.content.includes(htmlPath), "compaction continuity should preserve known local HTML artifact paths");
+			assert(continuity?.content.includes(policyRoot), "HTML continuity guidance should honor AGENTS_SHARED_ROOT");
 			await htmlContinuityTask.handlers.get("agent_end")({}, htmlContinuityTask.ctx);
 			assert(htmlContinuityTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPath), "lean profile should preserve HTML artifact auto-open from shared policy without ambient orchestration");
 		});
@@ -265,6 +274,7 @@ export async function runAmbientContextTests() {
 		bindPayload: taskBindPayload(),
 		memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep ambient behavior command-light." },
 	});
+	assert(!boundTask.commands.has("control-center") && !boundTask.commands.has("run-card") && !boundTask.commands.has("choose-topology") && !boundTask.commands.has("orchestrate") && !boundTask.commands.has("inbox"), "full harness profile should not restore removed slash surfaces");
 	await boundTask.handlers.get("session_start")({ reason: "startup" }, boundTask.ctx);
 	const result = await boundTask.handlers.get("before_agent_start")({ prompt: "Implement ambient context receipts", systemPrompt: "base" }, boundTask.ctx);
 	assert(result.systemPrompt.includes("## Ambient Context Receipt"), "standard prompts should include compact ambient context receipt");

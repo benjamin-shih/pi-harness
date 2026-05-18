@@ -113,7 +113,11 @@ export async function runFinalVisibilityTests() {
 	await ciHarness.handlers.get("session_start")({ reason: "startup" }, ciHarness.ctx);
 	await ciHarness.handlers.get("before_agent_start")({ prompt: "Implement and push the final visibility guard", systemPrompt: "base" }, ciHarness.ctx);
 	await ciHarness.handlers.get("tool_call")({ toolName: "bash", input: { command: "git push" } }, ciHarness.ctx);
-	const ciFinal = await ciHarness.handlers.get("message_end")({ message: assistantMessage() }, ciHarness.ctx);
-	const ciFinalText = ciFinal?.message?.content.map((block) => block.text ?? "").join("\n") ?? "";
+	let ciFinal = await ciHarness.handlers.get("message_end")({ message: assistantMessage() }, ciHarness.ctx);
+	let ciFinalText = ciFinal?.message?.content.map((block) => block.text ?? "").join("\n") ?? "";
+	assert(!ciFinalText.includes("remote CI passed"), "harness final guard should not check remote CI before git push succeeds");
+	await ciHarness.handlers.get("tool_result")({ toolName: "bash", input: { command: "git push" }, content: [{ type: "text", text: "pushed" }], details: {}, isError: false }, ciHarness.ctx);
+	ciFinal = await ciHarness.handlers.get("message_end")({ message: assistantMessage() }, ciHarness.ctx);
+	ciFinalText = ciFinal?.message?.content.map((block) => block.text ?? "").join("\n") ?? "";
 	assert(ciFinalText.includes("ci       remote passed · remote CI passed for run 404"), "harness final guard should wait for and report remote CI success after git push");
 }

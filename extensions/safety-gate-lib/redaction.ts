@@ -25,7 +25,7 @@ function looksLikeRealSecretValue(value: string): boolean {
 	return /[a-z]/i.test(value) && /[0-9]/.test(value);
 }
 
-function containsCredentialMaterial(text: string): boolean {
+export function containsCredentialMaterial(text: string): boolean {
 	if (DEFINITE_SECRET_PATTERNS.some((pattern) => pattern.test(text))) return true;
 	GENERIC_SECRET_ASSIGNMENT_RE.lastIndex = 0;
 	let match: RegExpExecArray | null;

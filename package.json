@@ -11,7 +11,7 @@
     "verify": "npm run verify:integration",
     "verify:mock": "npm run typecheck && node scripts/verify.mjs",
     "verify:integration": "npm run verify:mock && npm run smoke:pi",
-    "verify:full-local": "npm run verify:integration && npm run harness:audit && npm run skills:audit && npm run verify:cross-repo",
+    "verify:full-local": "npm run verify:integration && npm run harness:audit && npm run skills:audit && npm run verify:cross-repo && npm run smoke:user-packages && npm run safe-pi:check",
     "smoke:pi": "node scripts/pi-lifecycle-smoke.mjs",
     "smoke:user-packages": "node scripts/pi-user-package-smoke.mjs",
     "harness:audit": "node scripts/harness-audit.mjs",

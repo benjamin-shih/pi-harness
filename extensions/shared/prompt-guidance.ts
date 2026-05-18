@@ -48,6 +48,18 @@ export function skillRoutingReminder(weight: TaskWeight): string | undefined {
 function isExecutionContinuationPrompt(prompt: string): boolean {
 	return /^(?:go ahead(?: and do (?:it|this))?|continue|proceed|do it|do this|yes|yep|ok(?:ay)?)[\s.!]*$/i.test(prompt.trim());
 }
+
+export function promptForbidsFileModification(prompt: string): boolean {
+	return /\b(read[- ]only|review[- ]only|audit[- ]only|no edits?|do not edit|don't edit|no writes?|do not write|don't write|no changes?|do not change|don't change|no modifications?|do not modify|don't modify)\b/i.test(prompt);
+}
+
+export function promptForbidsCommitOrPush(prompt: string): boolean {
+	return promptForbidsFileModification(prompt) || /\b(no commits?|do not commit|don't commit|no push(?:es)?|do not push|don't push)\b/i.test(prompt);
+}
+
+export function promptForbidsSubagents(prompt: string): boolean {
+	return /\bno sub[- ]?agents?\b/i.test(prompt) || /\b(?:do not|don't)\b[^.!?\n]{0,120}\b(?:use|launch|run)\s+sub[- ]?agents?\b/i.test(prompt);
+}
 export function isCodingOrFilePrompt(prompt: string): boolean {
 	const lower = prompt.toLowerCase();
 	return (
@@ -88,7 +100,7 @@ export function qmdRetrievalGuidance(prompt: string, weight: TaskWeight): string
 }
 
 export function gitPushReminder(prompt: string, weight: TaskWeight): string | undefined {
-	if (weight === "trivial" || !isCodingOrFilePrompt(prompt)) return undefined;
+	if (weight === "trivial" || promptForbidsCommitOrPush(prompt) || !isCodingOrFilePrompt(prompt)) return undefined;
 	return [
 		"## Git Push Default",
 		"When pushing committed work for the current branch, use `git push` so Git uses the configured upstream/tracking branch.",
@@ -97,7 +109,7 @@ export function gitPushReminder(prompt: string, weight: TaskWeight): string | un
 }
 
 export function cleanupReminder(prompt: string, weight: TaskWeight): string | undefined {
-	if (!isCodingOrFilePrompt(prompt)) return undefined;
+	if (promptForbidsFileModification(prompt) || !isCodingOrFilePrompt(prompt)) return undefined;
 	const lines = [
 		"## Post-Change Cleanup Gate",
 		"For coding or file-modification work, before the final response always inspect the current diff/touched files and remove code made obsolete by this change.",

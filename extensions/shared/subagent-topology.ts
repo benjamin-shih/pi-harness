@@ -1,9 +1,9 @@
-import type { TaskWeight } from "./prompt-guidance";
+import { promptForbidsSubagents, type TaskWeight } from "./prompt-guidance";
 
 const DETAILED_TASK_PATTERN = /\b(?:complex|detailed|risky|risk|architecture|architectural|multi-step|high-stakes|migration|release|research|audit|security|deployment|post-implementation|implementation review|independent scout|scout|planner|oracle|reviewer)\b/i;
 
 export function shouldIncludeSubagentTopologyGuidance(prompt: string, weight: TaskWeight): boolean {
-	if (weight === "trivial") return false;
+	if (weight === "trivial" || promptForbidsSubagents(prompt)) return false;
 	return weight === "complex" || DETAILED_TASK_PATTERN.test(prompt);
 }
 

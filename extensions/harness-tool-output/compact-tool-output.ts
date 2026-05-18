@@ -1,12 +1,13 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { dirname, join, parse } from "node:path";
+import { join } from "node:path";
 import type { AgentToolResult, BashToolDetails, BashToolInput, EditToolDetails, EditToolInput, ExtensionAPI, ReadToolDetails, ReadToolInput, Theme, WriteToolInput } from "@earendil-works/pi-coding-agent";
 import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { BLOCKED_OUTPUT, containsCredentialMaterial } from "../safety-gate-lib/redaction";
+import { harnessSettings, mergedPiSettings, type JsonObject } from "../shared/settings";
 
-type JsonObject = Record<string, unknown>;
 type SettingValue = boolean | "on" | "off" | "compact" | "summary" | "minimal" | "default";
 
 const toolCache = new Map<string, ReturnType<typeof createBuiltInTools>>();
@@ -29,53 +30,28 @@ function getBuiltInTools(cwd: string) {
 	return tools;
 }
 
-function readJson(path: string): JsonObject {
-	try {
-		if (!existsSync(path)) return {};
-		const parsed = JSON.parse(readFileSync(path, "utf8"));
-		return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as JsonObject : {};
-	} catch {
-		return {};
-	}
-}
-
-function mergeSettings(base: JsonObject, override: JsonObject): JsonObject {
-	const result: JsonObject = { ...base };
-	for (const [key, value] of Object.entries(override)) {
-		if (value && typeof value === "object" && !Array.isArray(value) && result[key] && typeof result[key] === "object" && !Array.isArray(result[key])) {
-			result[key] = mergeSettings(result[key] as JsonObject, value as JsonObject);
-		} else {
-			result[key] = value;
-		}
-	}
-	return result;
-}
-
-function nearestProjectSettings(cwd: string): JsonObject {
-	let current = cwd;
-	const root = parse(cwd).root;
-	while (true) {
-		const settings = join(current, ".pi", "settings.json");
-		if (existsSync(settings)) return readJson(settings);
-		if (current === root) return {};
-		current = dirname(current);
-	}
-}
+const compactToolOutputEnabledCache = new Map<string, boolean>();
 
 function compactSettingValue(settings: JsonObject): SettingValue | undefined {
-	const harness = settings.harness;
-	if (harness && typeof harness === "object" && !Array.isArray(harness) && "compactToolOutput" in harness) return (harness as JsonObject).compactToolOutput as SettingValue;
+	const harness = harnessSettings(settings);
+	if ("compactToolOutput" in harness) return harness.compactToolOutput as SettingValue;
 	if ("compactToolOutput" in settings) return settings.compactToolOutput as SettingValue;
 	return undefined;
 }
 
 export function compactToolOutputEnabled(cwd = process.cwd()): boolean {
-	const env = process.env.BEN_PI_COMPACT_TOOL_OUTPUT?.trim().toLowerCase();
-	if (env) return ["1", "true", "yes", "on", "compact", "summary", "minimal"].includes(env);
-	const global = readJson(join(homedir(), ".pi", "agent", "settings.json"));
-	const merged = mergeSettings(global, nearestProjectSettings(cwd));
-	const value = compactSettingValue(merged);
-	return value === true || value === "on" || value === "compact" || value === "summary" || value === "minimal";
+	const env = process.env.BEN_PI_COMPACT_TOOL_OUTPUT?.trim().toLowerCase() ?? "";
+	const cacheKey = `${cwd}\0${env}`;
+	const cached = compactToolOutputEnabledCache.get(cacheKey);
+	if (cached !== undefined) return cached;
+	const enabled = env
+		? ["1", "true", "yes", "on", "compact", "summary", "minimal"].includes(env)
+		: (() => {
+			const value = compactSettingValue(mergedPiSettings(cwd));
+			return value === true || value === "on" || value === "compact" || value === "summary" || value === "minimal";
+		})();
+	compactToolOutputEnabledCache.set(cacheKey, enabled);
+	return enabled;
 }
 
 const MAX_SUMMARY_CHARS = 140;
@@ -256,11 +232,17 @@ function compactedBashContent(event: ToolResultEventLike, text: string, outputFi
 }
 
 export function compactToolResultForContext(event: ToolResultEventLike, cwd = process.cwd()): { content: Array<{ type: "text"; text: string }>; details?: unknown } | undefined {
-	if (!compactToolOutputEnabled(cwd)) return undefined;
 	if (event.toolName !== "bash") return undefined;
+	if (!compactToolOutputEnabled(cwd)) return undefined;
 	const text = textContentFromEvent(event);
 	if (!text || !shouldCompactBashResult(text)) return undefined;
 	const details = detailsRecord(event.details);
+	if (containsCredentialMaterial(text)) {
+		return {
+			content: [{ type: "text", text: BLOCKED_OUTPUT }],
+			details: { ...details, harnessCompaction: { redacted: true, originalChars: text.length, originalLines: lineCount(text), truncated: isBuiltInTruncated(details) } },
+		};
+	}
 	const truncated = isBuiltInTruncated(details);
 	const fullOutputPath = builtInFullOutputPath(details);
 	const outputFile = fullOutputPath ?? compactedOutputPath();

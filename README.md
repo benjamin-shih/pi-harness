@@ -114,7 +114,10 @@ After loading this package in pi, these commands provide explicit overrides and 
 /mode [fast|default|deep|readonly|full]
 /status            # visual bounded snapshot with task/ambient init hints; avoids heavy audit/untracked filename scans
 /doctor            # heavier diagnostics/audit; /doct alias also works
-/memory
+/memory [review|review global|help]
+/remember <text>               # create explicit durable-memory candidate
+/promote-memory <id>           # approve an explicit candidate
+/forget-memory <id>            # forget/deprecate an explicit candidate
 /orchestrator [label|off]      # tag/untag this session as [ORCHESTRATOR] for pi -r selectors
 /checkpoint [note]
 /close-task completed|blocked [reason]  # explicit terminal task close via .agents task-close.sh
@@ -165,7 +168,7 @@ npm run hooks:install
 
 `npm run smoke:pi` performs a local, no-agent-turn Pi package lifecycle smoke check: it loads this package through Pi's `DefaultResourceLoader`, verifies extension registration, and confirms prompt/theme discovery without requiring API keys.
 
-The tracked pre-push hook runs `npm run verify` and `npm run harness:audit`. `npm run verify:full-local` also checks the live local `.agents` API compatibility path; keep it local-only because it depends on this machine's shared control-plane checkout.
+The tracked pre-push hook runs `npm run verify` and `npm run harness:audit`. `npm run verify:full-local` also checks the live local `.agents` API compatibility path, user-package smoke test, and package-admission pre-launch gate; keep it local-only because it depends on this machine's shared control-plane checkout.
 
 Cross-runtime task-script changes live in your `.agents` checkout; validate them with:
 
@@ -209,7 +212,7 @@ Current release target: `v0.5.0`.
 
 Validated with:
 
-- `@earendil-works/pi-coding-agent@0.74.0`
+- `@earendil-works/pi-coding-agent@0.75.1`
 - `pi-subagents@0.24.2`
 - `pi-intercom@0.6.0`
 - shared `.agents` task, package-policy, memory, and project-instruction diagnostics APIs as of the release tag

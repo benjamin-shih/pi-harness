@@ -1,9 +1,17 @@
+import { join } from "node:path";
+import { agentsRoot } from "./config";
 import type { TaskWeight } from "./prompt-guidance";
 
-const POLICY_PATH = "/Users/benjaminshih/.agents/policy/html-artifacts.json";
-const TEMPLATE_README_PATH = "/Users/benjaminshih/.agents/shared/templates/html-artifacts/README.md";
-const REPORT_TEMPLATE_PATH = "/Users/benjaminshih/.agents/shared/templates/html-artifacts/benjamin-report-template.html";
-const DASHBOARD_TEMPLATE_PATH = "/Users/benjaminshih/.agents/shared/templates/html-artifacts/benjamin-dashboard-template.html";
+function htmlArtifactSourcePaths() {
+	const root = agentsRoot();
+	const templatesRoot = join(root, "shared", "templates", "html-artifacts");
+	return {
+		policy: join(root, "policy", "html-artifacts.json"),
+		templateReadme: join(templatesRoot, "README.md"),
+		reportTemplate: join(templatesRoot, "benjamin-report-template.html"),
+		dashboardTemplate: join(templatesRoot, "benjamin-dashboard-template.html"),
+	};
+}
 
 function cleanInline(value: string): string {
 	return value.replace(/\s+/g, " ").trim().toLowerCase();
@@ -41,11 +49,12 @@ export function shouldUseLargeResponseHtmlGuidance(prompt: string, weight: TaskW
 
 export function largeResponseHtmlGuidance(prompt: string, weight: TaskWeight, taskContext?: string): string | undefined {
 	if (!shouldUseLargeResponseHtmlGuidance(prompt, weight, taskContext)) return undefined;
+	const paths = htmlArtifactSourcePaths();
 	return [
 		"## Large Response HTML Medium",
 		"When the substantive answer would become a lengthy report, plan, status update, review, dashboard, explainer, or other visually structured deliverable, use a local HTML artifact as the medium instead of a long chat wall.",
 		"Keep the chat response concise: conclusion/current state, local artifact path, what changed, and recommended next action.",
-		`Before creating or substantially editing an artifact, read ${POLICY_PATH} and ${TEMPLATE_README_PATH}. Use the Benjamin-themed report/dashboard/article templates such as ${REPORT_TEMPLATE_PATH} or ${DASHBOARD_TEMPLATE_PATH} unless explicitly told otherwise.`,
+		`Before creating or substantially editing an artifact, read ${paths.policy} and ${paths.templateReadme}. Use the Benjamin-themed report/dashboard/article templates such as ${paths.reportTemplate} or ${paths.dashboardTemplate} unless explicitly told otherwise.`,
 		"Do not force required sections; choose the sections, tables, timelines, or SVG diagrams that best communicate the actual content. Preserve any existing artifact's presentation contract before editing it.",
 		"Keep artifacts local/static and exclude raw prompts, transcripts, private IDs, credentials, raw stdout/stderr, raw worker summaries, and private artifact/lane paths unless explicitly safe and requested.",
 	].join("\n");
@@ -54,10 +63,11 @@ export function largeResponseHtmlGuidance(prompt: string, weight: TaskWeight, ta
 export function largeResponseHtmlCompactionReminder(artifactPaths: Iterable<string>, guidanceActive: boolean): string | undefined {
 	const paths = [...new Set([...artifactPaths].filter(Boolean))].slice(0, 8);
 	if (!guidanceActive && paths.length === 0) return undefined;
+	const sources = htmlArtifactSourcePaths();
 	return [
 		"## Large Response HTML Artifact Continuity",
 		"For lengthy reports, plans, implementation status updates, reviews, dashboards, or explainers, continue using a local HTML artifact as the primary medium with a concise chat summary.",
-		`Policy/template source files to reread after compaction: ${POLICY_PATH}; ${TEMPLATE_README_PATH}.`,
+		`Policy/template source files to reread after compaction: ${sources.policy}; ${sources.templateReadme}.`,
 		"Use the Benjamin-themed report/dashboard/article visual system unless explicitly told otherwise. Do not replace a rich artifact with an ad hoc simplified layout; inspect the current artifact and preserve its presentation contract before editing.",
 		"Do not force fixed required sections; choose content-specific tables, timelines, SVG diagrams, and next-action sections only when they clarify the report.",
 		...(paths.length ? ["Known local HTML artifact paths from this session:", ...paths.map((path) => `- ${path}`)] : []),

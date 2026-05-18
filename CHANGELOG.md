@@ -12,6 +12,7 @@ All notable changes to this personal pi harness package are tracked here.
 
 ### Changed
 - `harness.profile: "full"` now only restores ambient orchestration-decision diagnostics; removed slash command surfaces no longer come back in full profile.
+- `npm run verify:full-local` now includes user-package smoke and safe-pi package-admission checks in addition to integration, audit, skills, and cross-repo compatibility checks.
 - Large bash tool results are compacted for model context when `harness.compactToolOutput` is enabled: full output is saved to a private local temp file, while the inline result keeps bounded metadata and a tail for debugging.
 - CI now also runs on version tag pushes.
 - Local package compatibility now targets `pi-subagents@0.24.2`, which includes the `jiti` async loader dependency and `@earendil-works/*` Pi peer namespace.
@@ -21,6 +22,11 @@ All notable changes to this personal pi harness package are tracked here.
 - Removed the now-unused `harness.asyncInbox` and `harness.controlPlaneSurfaces` overrides.
 
 ### Fixed
+- Compact bash-output compaction now blocks credential-bearing output instead of saving raw content to a local compaction file before the safety gate can redact it.
+- Large-response HTML guidance now derives policy/template paths from `AGENTS_SHARED_ROOT` instead of hard-coding the default `.agents` checkout.
+- Harness profile resolution refreshes from the active turn cwd so project-local `.pi/settings.json` controls ambient orchestration as documented.
+- Explicit read-only/no-subagent prompts now suppress contradictory cleanup, git-push, and subagent-topology ambient guidance.
+- Remote-CI final visibility now starts only after a bash `git push` tool result succeeds, not merely when a push command is attempted.
 - Compact tool wrappers now explicitly use Pi's default highlighted shell, so edit/write completion rows keep the same green/red completion background as read/bash rows.
 - Compact tool rows now include useful call summaries such as bash commands, read ranges, write line counts, and edit replacement counts while preserving green/red result backgrounds and parsed bash exit codes.
 - Restored compact edit rendering when `harness.compactToolOutput` is enabled, instead of showing full edit diffs.

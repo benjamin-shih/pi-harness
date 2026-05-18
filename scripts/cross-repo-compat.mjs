@@ -44,6 +44,10 @@ try {
 	const decision = runJson("bash", [join(scripts, "orchestration-decision.sh"), "--prompt-file", promptFile, "--cwd", project, "--json"], { env, cwd: project });
 	assert(decision.orchestration_api_version === 1 && decision.read_only === true, "orchestration decision should be read-only v1");
 	assert(decision.artifacts?.html?.long_response?.enabled === true, "orchestration decision should expose long-response HTML policy");
+	const safePath = runJson("bash", [join(scripts, "path-safety.sh"), "--path", "AGENTS.md", "--cwd", project, "--operation", "read"], { env, cwd: project });
+	assert(safePath.policy_api_version === 1 && safePath.action === "allow", "path safety should allow normal project files");
+	const protectedPath = runJson("bash", [join(scripts, "path-safety.sh"), "--path", "~/.ssh", "--cwd", project, "--operation", "egress", "--recursive"], { env, cwd: project });
+	assert(protectedPath.policy_api_version === 1 && protectedPath.allowed === false && protectedPath.action === "block", "path safety should block protected recursive egress paths");
 	const htmlPolicy = runJson("bash", [join(scripts, "html-artifact-policy.sh"), "--shape", "general", "--complexity", "standard", "--risk", "low", "--project-type", "repo", "--json"], { env, cwd: project });
 	assert(htmlPolicy.decision?.long_response?.enabled === true, "HTML policy should expose long-response guidance");
 	assert(htmlPolicy.decision?.recommended?.some((item) => item.mode === "html_report"), "HTML policy should recommend reports for long standard responses");

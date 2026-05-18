@@ -27,24 +27,11 @@ function withTemporaryHarnessProfile(profile, fn) {
 export const taskBindPayload = (overrides = {}) => ({ action: "created", bound: true, blocked: false, reason: "", task_id: "pi-task", project_root: root, ...overrides });
 export const taskDiscoverPayload = (overrides = {}) => ({ task_api_version: 1, found: true, task_id: "pi-task", project_root: root, task_project_root: root, blocked: false, reason: "", ...overrides });
 export const memoryReviewPayload = (overrides = {}) => ({ memory_api_version: 1, count: 0, skipped: 0, candidates: [], omitted: [], scope: { project: true, task: true, global: false, all: false }, warnings: [], ...overrides });
-export const controlPlaneRoutePayload = (overrides = {}) => ({
-	control_plane_api_version: 1,
-	kind: "route",
-	task: { shape: "coding", complexity: "standard", risk: "low" },
-	project: { name: "project", root, type: "repo", bindable: true, reason: "project_path", registry_id: "project", registered: true, match_type: "cwd", steward: "project-steward", default_checks: ["make verify"], write_policy: "single_writer", coursework_policy: "none", local_instructions_required: true },
-	run: { shape: "main_agent", summary: "front-door main agent remains accountable; recommended main agent" },
-	delegation: [],
-	gates: ["inspect repo/project state before edits", "verify with the narrowest meaningful local check"],
-	evidence_required: ["commands/checks run", "files changed or confirmed unchanged"],
-	human_decisions: [],
-	stop_rules: ["stop if local instructions conflict with the request"],
-	guidance: "## Orchestration Guidance\n- shape: coding; complexity: standard; risk: low\n- project: project (repo)\n- run: main_agent; front-door main agent remains accountable",
-	reasons: ["deterministic heuristic route"],
-	warnings: [],
-	...overrides,
-});
 export const controlPlaneDecisionPayload = (overrides = {}) => {
-	const baseRoute = controlPlaneRoutePayload();
+	const task = { shape: "coding", complexity: "standard", risk: "low" };
+	const project = { name: "project", root, type: "repo", bindable: true, reason: "project_path", registry_id: "project", registered: true, match_type: "cwd", steward: "project-steward", default_checks: ["make verify"], write_policy: "single_writer", coursework_policy: "none", local_instructions_required: true };
+	const run = { shape: "main_agent", summary: "front-door main agent remains accountable; recommended main agent" };
+	const reasons = ["deterministic heuristic route"];
 	return {
 		orchestration_api_version: 1,
 		kind: "orchestration_decision",
@@ -52,9 +39,9 @@ export const controlPlaneDecisionPayload = (overrides = {}) => {
 		cwd: root,
 		read_only: true,
 		decision_id: "decision123",
-		task: baseRoute.task,
-		project: baseRoute.project,
-		route: { run: baseRoute.run, reasons: baseRoute.reasons },
+		task,
+		project,
+		route: { run, reasons },
 		topology: { recommended: "single_agent_standard", name: "Single-agent standard", reason: "standard task fits main-agent execution with normal gates", description: "Main agent handles the work with normal verification gates.", advisory_only: true, allowed_roles: ["reviewer"], subagents: [] },
 		gates: { ids: ["repo_clean_preflight", "narrow_verification", "diff_inspection", "no_hidden_memory_writes", "final_evidence_report"], preflight: [{ id: "repo_clean_preflight", description: "Inspect repository/project state before edits" }], execution: [{ id: "no_hidden_memory_writes", description: "Do not mutate durable memory without explicit request" }], verification: [{ id: "narrow_verification", description: "Run narrow verification" }, { id: "diff_inspection", description: "Inspect the final diff" }], final: [{ id: "final_evidence_report", description: "Report final evidence" }] },
 		memory: { ambient_reads: "allowed", durable_writes: "explicit_only", reason: "bindable scoped project" },
@@ -65,7 +52,7 @@ export const controlPlaneDecisionPayload = (overrides = {}) => {
 		evidence_required: ["commands/checks run", "files changed or confirmed unchanged"],
 		human_decisions: [],
 		guidance: "## Orchestration Decision\n- mode: read-only recommendation; main/front-door agent remains accountable\n- task: coding; complexity standard; risk low\n- topology: single_agent_standard; standard task fits main-agent execution with normal gates",
-		reasons: ["deterministic heuristic route", "topology=single_agent_standard"],
+		reasons: [...reasons, "topology=single_agent_standard"],
 		warnings: [],
 		notices: [],
 		...overrides,
@@ -288,7 +275,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlanePayload, controlPlaneDecisionPayload: decisionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook, harnessProfile } = {}) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlaneDecisionPayload: decisionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook, harnessProfile } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
 	const tools = new Map();
@@ -311,9 +298,10 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 		const result = Array.isArray(value) ? value.shift() : value;
 		return typeof result === "function" ? result(call) : result;
 	};
+	const withHarnessProfile = (fn) => (...args) => withTemporaryHarnessProfile(harnessProfile, () => fn(...args));
 	withTemporaryHarnessProfile(harnessProfile, () => harnessCommands({
-		on: (event, handler) => handlers.set(event, handler),
-		registerCommand: (name, command) => commands.set(name, command),
+		on: (event, handler) => handlers.set(event, withHarnessProfile(handler)),
+		registerCommand: (name, command) => commands.set(name, { ...command, handler: withHarnessProfile(command.handler) }),
 		registerTool: (tool) => tools.set(tool.name, tool),
 		getAllTools: () => [],
 		getActiveTools: () => ["read"],
@@ -349,12 +337,11 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
 				return { code: 0, stdout: JSON.stringify(executionPayload ?? { execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "", reasons: ["no explicit execution intent"] }), stderr: "" };
 			}
-			if (cmd === "bash" && (script.endsWith("control-plane.sh") || script.endsWith("orchestration-decision.sh"))) {
+			if (cmd === "bash" && script.endsWith("orchestration-decision.sh")) {
 				const promptFileIndex = args.indexOf("--prompt-file");
 				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
-				if (script.endsWith("orchestration-decision.sh") || args.includes("decision")) return { code: 0, stdout: JSON.stringify(decisionPayload ?? controlPlaneDecisionPayload()), stderr: "" };
-				return { code: 0, stdout: JSON.stringify(controlPlanePayload ?? controlPlaneRoutePayload()), stderr: "" };
+				return { code: 0, stdout: JSON.stringify(decisionPayload ?? controlPlaneDecisionPayload()), stderr: "" };
 			}
 			if (cmd === "bash" && script.endsWith("task-candidate-root.sh")) {
 				const candidate = args[args.indexOf("--candidate") + 1] || cwd;

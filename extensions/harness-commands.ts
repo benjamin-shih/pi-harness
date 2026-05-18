@@ -23,7 +23,7 @@ import { htmlArtifactPathFromTool, localHtmlArtifactPathFromTool, openHtmlArtifa
 import { harnessRuntimeConfig } from "./shared/harness-profile";
 import { largeResponseHtmlCompactionReminder } from "./shared/large-response-html";
 import { applyMode, modeDescription, modeNames } from "./harness-commands/modes";
-import { classifyPrompt, isCodingOrFilePrompt, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
+import { classifyPrompt, isCodingOrFilePrompt, promptForbidsFileModification, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
 import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { registerOrchestratorCommand } from "./harness-commands/orchestrator-command";
@@ -40,7 +40,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	if (isPiSubagentChild()) return;
 
 	registerCompactToolOutput(pi);
-	const runtimeConfig = harnessRuntimeConfig();
+	let runtimeConfig = harnessRuntimeConfig();
 	const taskLayer = createAgentsTaskLayer();
 	let activeMode: string | undefined;
 	let sawFileMutation = false;
@@ -111,16 +111,18 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	registerTaskCloseCommand(pi, taskLayer);
 	registerSkillsAuditCommand(pi, PACKAGE_ROOT);
 	pi.on("session_start", async (_event, ctx) => {
+		runtimeConfig = harnessRuntimeConfig(ctx.cwd);
 		await taskLayer.sessionStart(pi, ctx);
 	});
 	pi.on("before_agent_start", async (event, ctx) => {
+		runtimeConfig = harnessRuntimeConfig(ctx.cwd);
 		finalVisibility = undefined;
 		const fallbackWeight = classifyPrompt(event.prompt);
 		sawFileMutation = false;
 		sawGitPush = false;
 		remoteCiStatus = undefined;
 		currentPromptIsCleanupGuard = event.prompt.includes(CLEANUP_GUARD_MARKER);
-		currentPromptNeedsCleanup = isCodingOrFilePrompt(event.prompt);
+		currentPromptNeedsCleanup = isCodingOrFilePrompt(event.prompt) && !promptForbidsFileModification(event.prompt);
 		pendingHtmlArtifacts = new Set<string>();
 		initialChangeSnapshot = undefined;
 		const taskContext = await taskLayer.beforeAgentStart(pi, event.prompt, fallbackWeight, ctx);
@@ -154,10 +156,10 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		if (event.toolName === "bash") {
 			const command = String((event.input as { command?: unknown }).command ?? "");
 			if (looksFileMutatingCommand(command)) await markFileMutation();
-			if (isGitPushCommand(command)) sawGitPush = true;
 		}
 	});
 	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName === "bash" && event.isError !== true && isGitPushCommand(String((event.input as { command?: unknown } | undefined)?.command ?? ""))) sawGitPush = true;
 		await taskLayer.toolResult(pi, event, ctx);
 		const localHtmlArtifact = localHtmlArtifactPathFromTool(event, ctx.cwd);
 		if (localHtmlArtifact) htmlArtifactsSeenThisSession.add(localHtmlArtifact);

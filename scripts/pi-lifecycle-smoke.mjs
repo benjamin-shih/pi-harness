@@ -21,6 +21,11 @@ function assertExtension(extensions, relativePath, options = {}) {
 	assert(extension, `pi package smoke: missing extension ${relativePath}`);
 	for (const command of options.commands ?? []) assert(extension.commands.has(command), `pi package smoke: ${relativePath} did not register /${command}`);
 	for (const command of options.absentCommands ?? []) assert(!extension.commands.has(command), `pi package smoke: ${relativePath} unexpectedly registered /${command}`);
+	if (options.exactCommands) {
+		const actual = [...extension.commands.keys()].sort();
+		const expected = [...options.exactCommands].sort();
+		assert(JSON.stringify(actual) === JSON.stringify(expected), `pi package smoke: ${relativePath} command set mismatch; expected ${expected.join(", ")} got ${actual.join(", ")}`);
+	}
 	for (const event of options.handlers ?? []) assert(extension.handlers.has(event), `pi package smoke: ${relativePath} did not subscribe to ${event}`);
 }
 
@@ -39,8 +44,10 @@ try {
 	assert(extensionResult.errors.length === 0, `pi package smoke: extension load errors: ${extensionResult.errors.map((error) => `${error.path}: ${error.error}`).join("; ")}`);
 	assert(extensionResult.extensions.length === 4, `pi package smoke: expected 4 extensions, got ${extensionResult.extensions.length}`);
 
+	const harnessCommandSet = ["mode", "status", "doctor", "doct", "memory", "remember", "promote-memory", "forget-memory", "orchestrator", "checkpoint", "close-task", "task-close", "skills-audit"];
 	assertExtension(extensionResult.extensions, "extensions/harness-commands.ts", {
-		commands: ["mode", "status", "doctor", "doct", "memory", "orchestrator", "checkpoint", "close-task", "task-close", "skills-audit"],
+		commands: harnessCommandSet,
+		exactCommands: harnessCommandSet,
 		absentCommands: ["inbox", "run-card", "control-center", "choose-topology", "orchestrate"],
 		handlers: ["session_start", "before_agent_start", "tool_call", "tool_result", "agent_end", "session_shutdown"],
 	});
