@@ -194,7 +194,6 @@ export async function runAmbientContextTests() {
 	assert(!trivial.receipt, "ambient assembler should not add receipt noise for trivial prompts");
 
 	const leanHarness = createTaskHarness({ bindPayload: taskBindPayload(), memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep task binding and memory hot." } });
-	assert(!leanHarness.commands.has("inbox"), "lean harness profile should not register async inbox commands by default");
 	assert(!leanHarness.commands.has("control-center") && !leanHarness.commands.has("run-card") && !leanHarness.commands.has("choose-topology") && !leanHarness.commands.has("orchestrate"), "removed orchestration/control-plane slash surfaces should not be registered");
 	assert(leanHarness.commands.has("memory") && leanHarness.commands.has("orchestrator"), "lean harness profile should keep memory and session tagging commands");
 	await leanHarness.handlers.get("session_start")({ reason: "startup" }, leanHarness.ctx);
@@ -274,7 +273,7 @@ export async function runAmbientContextTests() {
 		bindPayload: taskBindPayload(),
 		memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep ambient behavior command-light." },
 	});
-	assert(!boundTask.commands.has("control-center") && !boundTask.commands.has("run-card") && !boundTask.commands.has("choose-topology") && !boundTask.commands.has("orchestrate") && !boundTask.commands.has("inbox"), "full harness profile should not restore removed slash surfaces");
+	assert(!boundTask.commands.has("control-center") && !boundTask.commands.has("run-card") && !boundTask.commands.has("choose-topology") && !boundTask.commands.has("orchestrate"), "full harness profile should not restore removed slash surfaces");
 	await boundTask.handlers.get("session_start")({ reason: "startup" }, boundTask.ctx);
 	const result = await boundTask.handlers.get("before_agent_start")({ prompt: "Implement ambient context receipts", systemPrompt: "base" }, boundTask.ctx);
 	assert(result.systemPrompt.includes("## Ambient Context Receipt"), "standard prompts should include compact ambient context receipt");

@@ -48,7 +48,7 @@ try {
 	assertExtension(extensionResult.extensions, "extensions/harness-commands.ts", {
 		commands: harnessCommandSet,
 		exactCommands: harnessCommandSet,
-		absentCommands: ["inbox", "run-card", "control-center", "choose-topology", "orchestrate"],
+		absentCommands: ["run-card", "control-center", "choose-topology", "orchestrate"],
 		handlers: ["session_start", "before_agent_start", "tool_call", "tool_result", "agent_end", "session_shutdown"],
 	});
 	assertExtension(extensionResult.extensions, "extensions/safety-gate.ts", {

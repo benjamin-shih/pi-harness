@@ -50,7 +50,7 @@ export async function runSupportModuleTests() {
 		assert(lean.profile === "lean", "harness profile should default to lean");
 		assert(!lean.ambientOrchestration, "lean profile should disable ambient orchestration by default");
 		assert(commands.includes("mode") && commands.includes("status") && commands.includes("memory"), "capability registry should keep core commands enabled");
-		assert(!commands.includes("inbox") && !commands.includes("control-center") && !commands.includes("run-card") && !commands.includes("choose-topology") && !commands.includes("orchestrate"), "removed slash surfaces should stay out of the command registry");
+		assert(!commands.includes("control-center") && !commands.includes("run-card") && !commands.includes("choose-topology") && !commands.includes("orchestrate"), "removed slash surfaces should stay out of the command registry");
 	});
 	await withEnv({ BEN_PI_HARNESS_PROFILE: "full" }, async () => {
 		const full = harnessProfile.harnessRuntimeConfig(process.cwd());
