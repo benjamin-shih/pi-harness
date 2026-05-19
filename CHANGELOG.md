@@ -16,6 +16,7 @@ All notable changes to this personal pi harness package are tracked here.
 - Large bash tool results are compacted for model context when `harness.compactToolOutput` is enabled: full output is saved to a private local temp file, while the inline result keeps bounded metadata and a tail for debugging.
 - CI now also runs on version tag pushes.
 - Local package compatibility now targets `pi-subagents@0.24.2`, which includes the `jiti` async loader dependency and `@earendil-works/*` Pi peer namespace.
+- Local development and verification now target `@earendil-works/pi-coding-agent@0.75.3`.
 
 ### Removed
 - Removed unused legacy slash-command surfaces, their Pi adapter modules, and their dedicated verification fixtures.
