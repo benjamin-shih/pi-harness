@@ -41,9 +41,9 @@ try {
 
 	const promptFile = join(tempRoot, "prompt.txt");
 	writeFileSync(promptFile, "Prepare a source-backed implementation brief\n", { mode: 0o600 });
-	const decision = runJson("bash", [join(scripts, "orchestration-decision.sh"), "--prompt-file", promptFile, "--cwd", project, "--json"], { env, cwd: project });
-	assert(decision.orchestration_api_version === 1 && decision.read_only === true, "orchestration decision should be read-only v1");
-	assert(decision.artifacts?.html?.long_response?.enabled === true, "orchestration decision should expose long-response HTML policy");
+	const route = runJson("bash", [join(scripts, "control-plane.sh"), "route", "--prompt-file", promptFile, "--cwd", project, "--json"], { env, cwd: project });
+	assert(route.control_plane_api_version === 1 && route.kind === "route", "control-plane route should return v1 route payload");
+	assert(route.guidance?.includes("Orchestration Guidance"), "control-plane route should expose compact orchestration guidance");
 	const safePath = runJson("bash", [join(scripts, "path-safety.sh"), "--path", "AGENTS.md", "--cwd", project, "--operation", "read"], { env, cwd: project });
 	assert(safePath.policy_api_version === 1 && safePath.action === "allow", "path safety should allow normal project files");
 	const protectedPath = runJson("bash", [join(scripts, "path-safety.sh"), "--path", "~/.ssh", "--cwd", project, "--operation", "egress", "--recursive"], { env, cwd: project });
