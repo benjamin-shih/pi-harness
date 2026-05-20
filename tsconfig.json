@@ -16,6 +16,6 @@
   },
   "include": [
     "extensions/**/*.ts",
-    "packages/**/*.ts"
+    "packages/ben-pi-latex-preview/**/*.ts"
   ]
 }
