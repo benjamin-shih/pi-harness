@@ -212,8 +212,8 @@ Current release target: `v0.5.0`.
 
 Validated with:
 
-- `@earendil-works/pi-coding-agent@0.75.1`
-- `pi-subagents@0.24.2`
+- `@earendil-works/pi-coding-agent@0.75.3`
+- local `pi-subagents@0.24.3-ben.1`
 - `pi-intercom@0.6.0`
 - shared `.agents` task, package-policy, memory, and project-instruction diagnostics APIs as of the release tag
 
