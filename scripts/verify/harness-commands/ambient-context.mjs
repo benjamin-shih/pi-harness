@@ -296,15 +296,21 @@ export async function runAmbientContextTests() {
 	await boundTask.commands.get("doctor").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Ambient context"), "/doctor should include ambient context diagnostics");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");
+	const htmlOpenPolicyRoot = mkdtempSync(join(tmpdir(), "pi-html-open-policy-"));
 	const htmlOpenTemp = mkdtempSync(join(tmpdir(), "pi-html-open-"));
 	try {
-		const htmlPlan = join(htmlOpenTemp, "implementation-plan.html");
-		writeFileSync(htmlPlan, "<!doctype html><title>Plan</title>");
-		await boundTask.handlers.get("tool_result")({ toolName: "write", input: { path: htmlPlan }, isError: false }, boundTask.ctx);
-		assert(!boundTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPlan), "HTML artifacts should open after the turn, not before the final file settles");
-		await boundTask.handlers.get("agent_end")({}, boundTask.ctx);
-		assert(boundTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPlan), "harness should auto-open newly written local HTML plan artifacts");
+		mkdirSync(join(htmlOpenPolicyRoot, "policy"));
+		writeFileSync(join(htmlOpenPolicyRoot, "policy", "html-artifacts.json"), JSON.stringify({ auto_open: { enabled: true, modes: ["html_report"] }, modes: [{ id: "html_report" }] }));
+		await withEnv({ AGENTS_SHARED_ROOT: htmlOpenPolicyRoot }, async () => {
+			const htmlPlan = join(htmlOpenTemp, "implementation-plan.html");
+			writeFileSync(htmlPlan, "<!doctype html><title>Plan</title>");
+			await boundTask.handlers.get("tool_result")({ toolName: "write", input: { path: htmlPlan }, isError: false }, boundTask.ctx);
+			assert(!boundTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPlan), "HTML artifacts should open after the turn, not before the final file settles");
+			await boundTask.handlers.get("agent_end")({}, boundTask.ctx);
+			assert(boundTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPlan), "harness should auto-open newly written local HTML plan artifacts");
+		});
 	} finally {
+		rmSync(htmlOpenPolicyRoot, { recursive: true, force: true });
 		rmSync(htmlOpenTemp, { recursive: true, force: true });
 	}
 	const disabledPolicyRoot = mkdtempSync(join(tmpdir(), "pi-html-open-disabled-policy-"));
