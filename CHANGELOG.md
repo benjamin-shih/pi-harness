@@ -15,7 +15,7 @@ All notable changes to this personal pi harness package are tracked here.
 - `npm run verify:full-local` now includes user-package smoke and safe-pi package-admission checks in addition to integration, audit, skills, and cross-repo compatibility checks.
 - Large bash tool results are compacted for model context when `harness.compactToolOutput` is enabled: full output is saved to a private local temp file, while the inline result keeps bounded metadata and a tail for debugging.
 - CI now also runs on version tag pushes.
-- Local package compatibility now targets a local `pi-subagents@0.24.3-ben.2` package with settings-based config migration, local `pi-intercom` package detection, and `output: false` handling.
+- Local package compatibility now targets upstream `pi-subagents@0.24.3`; local-only subagents patches are no longer part of the active Pi package set.
 - Local package compatibility now targets a local `pi-intercom@0.6.0-ben.1` package with `@earendil-works/*` Pi imports/peers.
 - Local development and verification now target `@earendil-works/pi-coding-agent@0.75.3`.
 
