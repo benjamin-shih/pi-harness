@@ -16,7 +16,7 @@ Machine-local pi state such as `settings.json`, `AGENTS.md`, auth files, and ses
 ```text
 extensions/
   ui-polish/            Rounded prompt boxes and responsive Catppuccin footer
-  harness-commands.ts   /mode, /status, /checkpoint, /skills-audit, ambient task binding, skill routing, and cleanup guards
+  harness-commands.ts   /mode, /status, /checkpoint, ambient task binding, skill routing, and cleanup guards
   harness-task-layer/   Internal .agents task API adapter support for harness-commands
   harness-tool-output/  Internal compact tool-output support for harness-commands
   safety-gate.ts        Secret/private-file egress guardrails and git finalization checks
@@ -53,7 +53,7 @@ To enable it globally while keeping it outside the core harness package:
 
 ## Ambient-first context
 
-The normal workflow is to ask naturally; slash commands are inspect/override/admin/debug surfaces, not the primary UX. On each agent turn, the harness runs a deterministic ambient context assembler over ordered lanes such as rendering guidance, active mode, skill routing, qmd search-first retrieval guidance for Markdown-heavy work, cleanup guidance, subagent topology guidance for detailed work, active `.agents` task context, memory, HTML guidance, execution-route guidance, and bounded repo metadata. Standard/complex turns include a compact Ambient Context Receipt so the inferred context remains visible without requiring a command. Natural-language execution prompts such as “go ahead and implement” or “ship this end-to-end” activate an ambient execution protocol routed by the shared `.agents` `execution-route.sh` contract. The injected guidance asks the agent to use the selected primary execution profile, capability overlays, profile-aware subagents when useful, verification, simplification, and automatic commit/push of task-relevant verified changes with incremental commits for larger tasks. `/status` and `/doctor` expose the last route state as active, inactive, or safely degraded without exposing raw prompts or script-output details. Subagent topology remains guidance-only: the harness does not spawn subagents or track subagent usage in `/status` or final footers. The default `lean` harness profile does not run ambient orchestration-decision routing or record recommended-topology task events; use `harness.profile: "full"` to restore those control-plane diagnostics. Final assistant responses for nontrivial turns also get a terminal-width-aware compact visual harness footer covering ambient weight, safe execution route metadata when detected, task operational state, artifact metadata capture, and durable-memory write posture without exposing raw prompts, paths, or memory content. ANSI color rendering is supported for explicit display-only callers, but persisted assistant footers stay plain by default to keep transcripts and logs clean.
+The normal workflow is to ask naturally; slash commands are inspect/override/admin/debug surfaces, not the primary UX. On each agent turn, the harness runs a deterministic ambient context assembler over ordered lanes such as rendering guidance, active mode, skill routing, qmd search-first retrieval guidance for Markdown-heavy work, cleanup guidance, subagent topology guidance for detailed work, active `.agents` task context, memory, HTML guidance, execution-route guidance, and bounded repo metadata. Standard/complex turns include a compact Ambient Context Receipt so the inferred context remains visible without requiring a command. Natural-language execution prompts such as “go ahead and implement” or “ship this end-to-end” activate an ambient execution protocol routed by the shared `.agents` `execution-route.sh` contract. The injected guidance asks the agent to use the selected primary execution profile, capability overlays, profile-aware subagents when useful, verification, simplification, and automatic commit/push of task-relevant verified changes with incremental commits for larger tasks. `/status` and `/doctor` expose the last route state as active, inactive, or safely degraded without exposing raw prompts or script-output details. Subagent topology remains guidance-only: the harness does not spawn subagents or track subagent usage in `/status` or final footers. Final assistant responses for nontrivial turns also get a terminal-width-aware compact visual harness footer covering ambient weight, safe execution route metadata when detected, task operational state, artifact metadata capture, and durable-memory write posture without exposing raw prompts, paths, or memory content. ANSI color rendering is supported for explicit display-only callers, but persisted assistant footers stay plain by default to keep transcripts and logs clean.
 
 Pi reuses the shared `.agents/tasks` control plane through the versioned `.agents` task API. By default the harness looks under `$HOME/.agents`; set `AGENTS_SHARED_ROOT` when using a different checkout. For standard/complex prompts it attempts to bind or reuse an active task, inject compact task context, heartbeat during tool activity, checkpoint meaningful turns, capture safe typed task-artifact metadata, and release current-session leases on shutdown. `/doctor` also surfaces bounded lifecycle diagnostics from `.agents` such as active/terminal status, lease state, route metadata, event counts, blocker count, and next action without reading task files directly. It additionally shows read-only task retention, artifact-hygiene, archive, and archived-bundle delete counts from the shared retention API so task-package buildup is visible without enabling deletion/archive execution or path/content reporting. Task classification passes prompts through a private temporary file instead of raw argv, and session compaction uses git status without scanning untracked filenames.
 
@@ -64,31 +64,6 @@ For long reports or briefs that would be hard to scan in chat, `.agents` may ste
 Task closure is explicit. Use `/close-task completed [reason]` or `/close-task blocked [reason]` when the active task should enter a terminal state. The command passes the reason through a private temporary file, calls `.agents/scripts/task-close.sh`, requests current-session lease release, and does not print raw closure text back into chat.
 
 Use `/orchestrator [label]` to tag the current session name as `[ORCHESTRATOR] <label>` so it is easy to identify in `pi -r` selectors and terminal titles. Use `/orchestrator off` to clear only that prefix.
-
-## Harness profiles
-
-The default profile is `lean`: it keeps safety, compact tool output, task binding, memory, HTML guidance, session continuity, qmd guidance, and normal `/status`/`/doctor` diagnostics. It does not run ambient orchestration-decision injection.
-
-Use `full` when actively developing/debugging the `.agents` control plane:
-
-```json
-{
-  "harness": {
-    "profile": "full"
-  }
-}
-```
-
-Fine-grained ambient orchestration override is also supported:
-
-```json
-{
-  "harness": {
-    "profile": "lean",
-    "ambientOrchestration": true
-  }
-}
-```
 
 ## UI polish
 
@@ -121,7 +96,6 @@ After loading this package in pi, these commands provide explicit overrides and 
 /orchestrator [label|off]      # tag/untag this session as [ORCHESTRATOR] for pi -r selectors
 /checkpoint [note]
 /close-task completed|blocked [reason]  # explicit terminal task close via .agents task-close.sh
-/skills-audit [skills-root]
 /simplify [scope]
 /review [scope]
 /handoff [audience or focus]

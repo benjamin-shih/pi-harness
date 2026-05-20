@@ -11,53 +11,9 @@ export const homeRoot = homedir();
 export const agentsRoot = process.env.AGENTS_SHARED_ROOT || join(homeRoot, ".agents");
 export const agentsTasksRoot = join(agentsRoot, "tasks");
 
-function withTemporaryHarnessProfile(profile, fn) {
-	const previous = process.env.BEN_PI_HARNESS_PROFILE;
-	if (profile !== undefined) process.env.BEN_PI_HARNESS_PROFILE = profile;
-	try {
-		return fn();
-	} finally {
-		if (profile !== undefined) {
-			if (previous === undefined) delete process.env.BEN_PI_HARNESS_PROFILE;
-			else process.env.BEN_PI_HARNESS_PROFILE = previous;
-		}
-	}
-}
-
 export const taskBindPayload = (overrides = {}) => ({ action: "created", bound: true, blocked: false, reason: "", task_id: "pi-task", project_root: root, ...overrides });
 export const taskDiscoverPayload = (overrides = {}) => ({ task_api_version: 1, found: true, task_id: "pi-task", project_root: root, task_project_root: root, blocked: false, reason: "", ...overrides });
 export const memoryReviewPayload = (overrides = {}) => ({ memory_api_version: 1, count: 0, skipped: 0, candidates: [], omitted: [], scope: { project: true, task: true, global: false, all: false }, warnings: [], ...overrides });
-export const controlPlaneDecisionPayload = (overrides = {}) => {
-	const task = { shape: "coding", complexity: "standard", risk: "low" };
-	const project = { name: "project", root, type: "repo", bindable: true, reason: "project_path", registry_id: "project", registered: true, match_type: "cwd", steward: "project-steward", default_checks: ["make verify"], write_policy: "single_writer", coursework_policy: "none", local_instructions_required: true };
-	const run = { shape: "main_agent", summary: "front-door main agent remains accountable; recommended main agent" };
-	const reasons = ["deterministic heuristic route"];
-	return {
-		orchestration_api_version: 1,
-		kind: "orchestration_decision",
-		generated_at: "2026-05-08T00:00:00Z",
-		cwd: root,
-		read_only: true,
-		decision_id: "decision123",
-		task,
-		project,
-		route: { run, reasons },
-		topology: { recommended: "single_agent_standard", name: "Single-agent standard", reason: "standard task fits main-agent execution with normal gates", description: "Main agent handles the work with normal verification gates.", advisory_only: true, allowed_roles: ["reviewer"], subagents: [] },
-		gates: { ids: ["repo_clean_preflight", "narrow_verification", "diff_inspection", "no_hidden_memory_writes", "final_evidence_report"], preflight: [{ id: "repo_clean_preflight", description: "Inspect repository/project state before edits" }], execution: [{ id: "no_hidden_memory_writes", description: "Do not mutate durable memory without explicit request" }], verification: [{ id: "narrow_verification", description: "Run narrow verification" }, { id: "diff_inspection", description: "Inspect the final diff" }], final: [{ id: "final_evidence_report", description: "Report final evidence" }] },
-		memory: { ambient_reads: "allowed", durable_writes: "explicit_only", reason: "bindable scoped project" },
-		delegation_workflow: { authority: "main_agent_accountable", launch_policy: "manual_main_agent_only", auto_launch: false, recommended_pattern: "single_writer_optional_review", next_action: "main agent implements; optionally use blocker-only reviewer before final", allowed_roles: ["reviewer"], subagent_contracts: [{ role: "reviewer", mode: "read_only", when: "before final", may_write: false }], deferred_contracts: [], single_writer: { default: true, writer: "main_agent", parallel_writes_allowed: false }, coordination: { intercom: "need_decision_only_by_default", progress_updates: "disabled_unless_requested_or_plan_changes", completion_handoffs: "return_results_to_parent_not_routine_intercom" }, control: { needs_attention: "surface factual no-activity signals", interrupt: "soft-interrupt only when blocked", resume: "resume explicitly" }, tracking: { pairing_key: "decision_id", mismatch_policy: "explain chosen-vs-recommended differences before relying on the choice", stale_choice_policy: "treat unpaired choices as historical" }, guardrails: ["harness and control center must not auto-launch subagents"] },
-		artifacts: { html: { publish_policy: "explicit_only", source_of_truth: "json_or_markdown", modes: [{ id: "html_report", section_policy: "suggested_not_required" }], auto_open: { enabled: true, when: "after_local_html_artifact_created", modes: ["html_report"], safety: ["local_file_only", "open_once_per_turn"] }, long_response: { enabled: true, chat_response: "concise_summary_plus_local_artifact_path_and_next_action" }, authoring: { default_voice: "professional_manager_ready", structure_policy: "content_first_flexible", title_style: "compact_first_screen_readable" }, template: { id: "benjamin_local_v1", path: `${agentsRoot}/shared/templates/html-artifacts/benjamin-local-template.html`, usage: "Use as a reusable visual system and component catalog.", theme_source: "https://benjamin-shih.github.io/", allowed_components: ["cards", "tabs", "range_sliders", "sortable_tables"] }, templates: [{ id: "benjamin_local_v1" }, { id: "benjamin_report_v1" }, { id: "benjamin_dashboard_v1" }, { id: "benjamin_article_v1" }], retention: { default_scope: "task_scoped", cleanup_strategy: "manifest_and_marker", delete_on_task_status: ["completed", "stale"], keep_on_task_status: ["created", "in_progress", "paused", "blocked"], marker: "agents-html-artifact", persistent_requires_explicit_user_request: true }, safety: ["no_raw_prompts_or_transcripts"] } },
-		checks: ["make verify"],
-		stop_conditions: ["stop if local instructions conflict with the request"],
-		evidence_required: ["commands/checks run", "files changed or confirmed unchanged"],
-		human_decisions: [],
-		guidance: "## Orchestration Decision\n- mode: read-only recommendation; main/front-door agent remains accountable\n- task: coding; complexity standard; risk low\n- topology: single_agent_standard; standard task fits main-agent execution with normal gates",
-		reasons: [...reasons, "topology=single_agent_standard"],
-		warnings: [],
-		notices: [],
-		...overrides,
-	};
-};
 export const executionRoutePayload = (overrides = {}) => ({ execution_route_api_version: 1, execution_intent: true, profile: "software", overlays: [], summary: "profile software; overlays none", guidance: "## Ambient Execution Protocol\nExecution intent was detected.", ...overrides });
 export const taskLifecyclePayload = (overrides = {}) => ({
 	task_api_version: 1,
@@ -275,7 +231,7 @@ export function createHarness(snapshots) {
 	};
 }
 
-export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, controlPlaneDecisionPayload: decisionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook, harnessProfile } = {}) {
+export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayloads, taskDiscoverPayload: discoverPayload, classifyPayload, classifyResult, executionPayload, artifactAddPayload, lifecyclePayload, retentionPayload, piPackagePolicyPayload: packagePolicyPayload, memoryContextPayload, memoryStatsPayload, memoryReviewPayload: reviewPayload, cwd = root, gitRoot = root, eventBus, execHook } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
 	const tools = new Map();
@@ -298,10 +254,9 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 		const result = Array.isArray(value) ? value.shift() : value;
 		return typeof result === "function" ? result(call) : result;
 	};
-	const withHarnessProfile = (fn) => (...args) => withTemporaryHarnessProfile(harnessProfile, () => fn(...args));
-	withTemporaryHarnessProfile(harnessProfile, () => harnessCommands({
-		on: (event, handler) => handlers.set(event, withHarnessProfile(handler)),
-		registerCommand: (name, command) => commands.set(name, { ...command, handler: withHarnessProfile(command.handler) }),
+	harnessCommands({
+		on: (event, handler) => handlers.set(event, handler),
+		registerCommand: (name, command) => commands.set(name, command),
 		registerTool: (tool) => tools.set(tool.name, tool),
 		getAllTools: () => [],
 		getActiveTools: () => ["read"],
@@ -337,12 +292,6 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
 				return { code: 0, stdout: JSON.stringify(executionPayload ?? { execution_route_api_version: 1, execution_intent: false, profile: null, overlays: [], summary: "", guidance: "", reasons: ["no explicit execution intent"] }), stderr: "" };
 			}
-			if (cmd === "bash" && script.endsWith("orchestration-decision.sh")) {
-				const promptFileIndex = args.indexOf("--prompt-file");
-				const promptFile = promptFileIndex >= 0 ? args[promptFileIndex + 1] : undefined;
-				if (promptFileIndex >= 0 && (!promptFile || !existsSync(promptFile))) return { code: 1, stdout: "", stderr: "prompt file missing" };
-				return { code: 0, stdout: JSON.stringify(decisionPayload ?? controlPlaneDecisionPayload()), stderr: "" };
-			}
 			if (cmd === "bash" && script.endsWith("task-candidate-root.sh")) {
 				const candidate = args[args.indexOf("--candidate") + 1] || cwd;
 				const candidateCwd = args[args.indexOf("--cwd") + 1] || cwd;
@@ -374,7 +323,7 @@ export function createTaskHarness({ scriptResults = {}, bindPayload, bindPayload
 		},
 		sendUserMessage: () => {},
 		sendMessage: (message) => sentMessages.push(message),
-	}));
+	});
 	const ctx = {
 		cwd,
 		model: { provider: "test", id: "model" },

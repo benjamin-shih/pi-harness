@@ -4,7 +4,6 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { agentsRoot } from "./config";
-import type { OrchestrationDecisionState } from "./orchestration-guidance";
 
 function shellUnquote(value: string): string {
 	return value.replace(/^["']|["']$/g, "");
@@ -52,8 +51,8 @@ function htmlAutoOpenEnabled(policy?: HtmlAutoOpenPolicy): boolean {
 	return Boolean(policy?.modes?.some((mode) => mode.id && allowedModes.has(mode.id)));
 }
 
-function htmlAutoOpenPolicy(decision?: OrchestrationDecisionState): HtmlAutoOpenPolicy | undefined {
-	return decision?.decision?.artifacts?.html ?? htmlPolicyFromDisk();
+function htmlAutoOpenPolicy(): HtmlAutoOpenPolicy | undefined {
+	return htmlPolicyFromDisk();
 }
 
 export function localHtmlArtifactPathFromTool(event: ToolResultEvent, cwd: string): string | undefined {
@@ -64,9 +63,9 @@ export function localHtmlArtifactPathFromTool(event: ToolResultEvent, cwd: strin
 	return filePath && isHtmlPath(filePath) ? filePath : undefined;
 }
 
-export function htmlArtifactPathFromTool(event: ToolResultEvent, cwd: string, decision?: OrchestrationDecisionState): string | undefined {
+export function htmlArtifactPathFromTool(event: ToolResultEvent, cwd: string): string | undefined {
 	const filePath = localHtmlArtifactPathFromTool(event, cwd);
-	if (!filePath || !htmlAutoOpenEnabled(htmlAutoOpenPolicy(decision))) return undefined;
+	if (!filePath || !htmlAutoOpenEnabled(htmlAutoOpenPolicy())) return undefined;
 	return filePath;
 }
 

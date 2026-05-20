@@ -44,7 +44,7 @@ try {
 	assert(extensionResult.errors.length === 0, `pi package smoke: extension load errors: ${extensionResult.errors.map((error) => `${error.path}: ${error.error}`).join("; ")}`);
 	assert(extensionResult.extensions.length === 4, `pi package smoke: expected 4 extensions, got ${extensionResult.extensions.length}`);
 
-	const harnessCommandSet = ["mode", "status", "doctor", "doct", "memory", "remember", "promote-memory", "forget-memory", "orchestrator", "checkpoint", "close-task", "task-close", "skills-audit"];
+	const harnessCommandSet = ["mode", "status", "doctor", "doct", "memory", "remember", "promote-memory", "forget-memory", "orchestrator", "checkpoint", "close-task", "task-close"];
 	assertExtension(extensionResult.extensions, "extensions/harness-commands.ts", {
 		commands: harnessCommandSet,
 		exactCommands: harnessCommandSet,

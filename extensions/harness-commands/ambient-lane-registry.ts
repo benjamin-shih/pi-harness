@@ -2,7 +2,6 @@ import type { AmbientContextLane } from "../shared/ambient-context";
 import { formatExecutionFactCard, type ExecutionRouteState } from "../shared/execution-guidance";
 import { largeResponseHtmlGuidance } from "../shared/large-response-html";
 import { memoryAdminGuidance, memoryCandidateReminder, type MemoryContextResult } from "../shared/memory-context";
-import type { OrchestrationDecisionState } from "../shared/orchestration-guidance";
 import {
 	cleanupReminder,
 	DISPLAY_MATH_RENDERING_INSTRUCTION,
@@ -21,9 +20,7 @@ export type AmbientLaneBuildInput = {
 	weight: TaskWeight;
 	activeMode?: string;
 	taskContext?: string;
-	ambientOrchestration?: boolean;
 	memoryContext?: MemoryContextResult;
-	orchestrationDecision?: OrchestrationDecisionState;
 	executionRoute?: ExecutionRouteState;
 	repoSummary?: RepoContextSummary;
 };
@@ -45,14 +42,6 @@ function executionLaneReason(route: ExecutionRouteState | undefined): string {
 	return route?.health === "degraded" ? `execution-route degraded: ${route.status}` : "no explicit execution intent";
 }
 
-function orchestrationLaneReason(decision: OrchestrationDecisionState | undefined, weight: TaskWeight, ambientOrchestration: boolean | undefined): string {
-	if (weight === "trivial") return "trivial prompt";
-	if (!ambientOrchestration) return "ambient orchestration disabled by harness profile";
-	if (!decision) return "orchestration not checked";
-	if (decision.health === "degraded") return `orchestration decision degraded: ${decision.status}`;
-	return decision.status === "trivial" ? "direct-answer decision" : "empty orchestration guidance";
-}
-
 export const AMBIENT_LANE_REGISTRY = [
 	lane("display_math", "Display math rendering", 10, () => ({ content: DISPLAY_MATH_RENDERING_INSTRUCTION })),
 	lane("markdown_heading", "Markdown heading rendering", 20, () => ({ content: MARKDOWN_HEADING_RENDERING_INSTRUCTION })),
@@ -64,11 +53,6 @@ export const AMBIENT_LANE_REGISTRY = [
 	lane("subagent_topology", "Subagent topology", 55, (input) => ({ content: buildSubagentTopologyReminder(input.prompt, input.weight), reason: "not a detailed subagent-worthy prompt" })),
 	lane("large_response_html", "Large response HTML medium", 58, (input) => ({ content: largeResponseHtmlGuidance(input.prompt, input.weight, input.taskContext), reason: "not a long/structured report-style deliverable" })),
 	lane("agents_task", "Active AGENTS task context", 60, (input) => ({ content: input.taskContext, reason: "no scoped active task context" })),
-	lane("orchestration", "Orchestration guidance", 62, (input) => ({
-		content: input.weight === "trivial" ? undefined : input.orchestrationDecision?.decision?.guidance,
-		publicSummary: input.orchestrationDecision?.summary,
-		reason: orchestrationLaneReason(input.orchestrationDecision, input.weight, input.ambientOrchestration),
-	})),
 	lane("memory", "Approved scoped memory", 65, (input) => ({ content: input.memoryContext?.content, reason: input.memoryContext?.reason ?? "memory disabled" })),
 	lane("memory_candidates", "Durable memory candidates", 66, (input) => ({ content: memoryCandidateReminder(input.weight !== "trivial"), reason: "trivial prompt" })),
 	lane("memory_admin", "Explicit memory admin", 67, (input) => ({ content: memoryAdminGuidance(input.prompt), reason: "no explicit memory admin request" })),

@@ -4,7 +4,6 @@ import { modelSummary } from "../session-continuity/context";
 import { agentsRoot } from "../shared/config";
 import { withPrivateTempTextFile } from "../shared/private-temp";
 import type { FinalTaskVisibility } from "../shared/final-visibility";
-import type { OrchestrationDecision } from "../shared/orchestration-guidance";
 import type { TaskWeight } from "../shared/prompt-guidance";
 import { candidateRoot, classifyTask, discoverTask, ensureTaskApi, runScript, scriptJsonPayload, shortError } from "./task-layer-api";
 import { activityFromTool, pathArtifactFromTool, pathFromTool, verificationArtifactFromTool } from "./task-layer-artifacts";
@@ -53,7 +52,6 @@ function resetSessionState(state: TaskLayerState): void {
 	state.artifactRecordedThisTurn = 0;
 	state.artifactSkipped = 0;
 	state.lastHeartbeatAt = 0;
-	state.orchestration = undefined;
 }
 function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): void {
 	state.active = undefined;
@@ -66,7 +64,6 @@ function resetPromptState(state: TaskLayerState, fallbackWeight: TaskWeight): vo
 	state.artifactRecordedThisTurn = 0;
 	state.artifactSkipped = 0;
 	state.meaningfulActivity = false;
-	state.orchestration = undefined;
 }
 function safeSessionId(ctx: ExtensionContext): string {
 	try {
@@ -193,40 +190,6 @@ export function createAgentsTaskLayer() {
 			state.artifactSkipped++;
 		}
 	}
-	function orchestrationStatusLine(): string | undefined {
-		const tracking = state.orchestration;
-		if (!tracking?.recommendedTopology) return undefined;
-		const gateSummary = tracking.gateIds?.length ? `; gates ${tracking.gateIds.slice(0, 3).join(", ")}` : "";
-		return `- orchestration: recommended ${tracking.recommendedTopology}${gateSummary}`;
-	}
-	function orchestrationSummaryLines(): string[] {
-		const line = orchestrationStatusLine();
-		return line ? [line, "- orchestration action: advisory only; continue through the ambient guidance"] : ["- orchestration: no session-local recommendation recorded"];
-	}
-	function orchestrationEventArgs(decision: OrchestrationDecision): string[] {
-		return [
-			`decision_id=${JSON.stringify((decision as { decision_id?: string }).decision_id || "")}`,
-			`recommended_topology=${JSON.stringify(decision.topology.recommended || "")}`,
-			`task_shape=${JSON.stringify(decision.task.shape || "")}`,
-			`complexity=${JSON.stringify(decision.task.complexity || "")}`,
-			`risk=${JSON.stringify(decision.task.risk || "")}`,
-			`gate_ids=${JSON.stringify((decision.gates.ids || []).slice(0, 12))}`,
-		];
-	}
-	async function recordTaskEvent(pi: ExtensionAPI, ctx: ExtensionContext, eventType: string, args: string[]): Promise<boolean> {
-		if (!state.active?.task_id) return false;
-		try {
-			const result = await runScript(pi, "task-event.sh", [state.active.task_id, eventType, ...args], ctx.cwd, 5_000);
-			if (result.code !== 0) {
-				state.lastError = shortError(result);
-				return false;
-			}
-			return true;
-		} catch (error) {
-			state.lastError = error instanceof Error ? error.message : String(error);
-			return false;
-		}
-	}
 	async function heartbeat(pi: ExtensionAPI, ctx: ExtensionContext, force = false): Promise<void> {
 		if (!state.active?.task_id) return;
 		const now = Date.now();
@@ -319,7 +282,6 @@ export function createAgentsTaskLayer() {
 				`- task project: ${state.active.project_root || "unknown"}`,
 				`- task runtime/session: pi / ${state.sessionId}`,
 				`- task artifacts: ${state.artifactCount} recorded${skipped}`,
-				...(orchestrationStatusLine() ? [orchestrationStatusLine() as string] : []),
 			];
 		}
 		if (state.lastAction === "skipped") return [`- active task: none (${state.lastReason || "binding skipped"})`];
@@ -380,14 +342,6 @@ export function createAgentsTaskLayer() {
 			}
 			await heartbeat(pi, ctx);
 		},
-		async recordOrchestrationRecommended(pi: ExtensionAPI, ctx: ExtensionContext, decision?: OrchestrationDecision): Promise<boolean> {
-			if (!decision) return false;
-			state.orchestration = {
-				recommendedTopology: decision.topology.recommended,
-				gateIds: decision.gates.ids,
-			};
-			return await recordTaskEvent(pi, ctx, "orchestration_recommended", orchestrationEventArgs(decision));
-		},
 		async closeTask(pi: ExtensionAPI, ctx: ExtensionContext, status: "completed" | "blocked", reason = ""): Promise<{ ok: boolean; lines: string[] }> {
 			return closeTask(pi, ctx, status, reason);
 		},
@@ -414,7 +368,6 @@ export function createAgentsTaskLayer() {
 			await runScript(pi, "task-gc.sh", ["--runtime", "pi", "--session", state.sessionId, "--cwd", ctx.cwd, "--no-sweep"], ctx.cwd, 8_000).catch((): undefined => undefined);
 		},
 		statusLines,
-		orchestrationSummaryLines,
 		currentPromptWeight(): TaskWeight {
 			return state.currentPromptWeight;
 		},
@@ -433,7 +386,6 @@ export function createAgentsTaskLayer() {
 			return [
 				"## AGENTS task binding",
 				...statusLines(),
-				...(!state.active?.task_id ? orchestrationSummaryLines() : []),
 				`- task API: ${state.apiAvailable ? `v${state.apiInfo?.task_api_version ?? "?"}` : "unavailable"}`,
 				`- agents root: ${state.apiInfo?.agents_shared_root ?? agentsRoot()}`,
 				`- prompt task mode: ${state.currentPromptWeight}/${state.currentBindingMode}`,

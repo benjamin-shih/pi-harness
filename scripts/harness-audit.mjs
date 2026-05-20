@@ -16,7 +16,6 @@ const STALE_PATTERNS = [
 	{ pattern: /aesthetic-polish\.ts|catppuccin-footer\.ts/g, label: "stale folded UI extension filename" },
 	{ pattern: /extensions\/session-continuity\.ts/g, label: "stale session-continuity file path" },
 ];
-const FULL_ONLY_IMPORT_PATTERNS = ["orchestration-guidance"];
 const INTERNAL_SUPPORT_DIRS = ["harness-task-layer", "harness-tool-output"];
 
 function posix(path) {
@@ -65,13 +64,6 @@ function isAllowedStaleReference(label, line) {
 	return label === "stale GPT-5.2 model reference" && /(?:old model|old provider\/model|stale model|call out stale)/i.test(line);
 }
 
-function topLevelImports(relativePath) {
-	const text = readFileSync(join(root, relativePath), "utf8");
-	return [...text.matchAll(/^import\s+(type\s+)?(?:[^";]+\s+from\s+)?["']([^"']+)["'];?/gm)]
-		.filter((match) => !match[1])
-		.map((match) => match[2]);
-}
-
 function countBetween(text, startPattern, endPattern, needle) {
 	const start = text.indexOf(startPattern);
 	if (start === -1) return 0;
@@ -85,18 +77,11 @@ function leanHotPathMetrics() {
 	const harnessText = readFileSync(join(root, harnessEntrypoint), "utf8");
 	const ambientFiles = ["extensions/harness-commands/ambient-turn.ts", "extensions/harness-commands/ambient-runner.ts", "extensions/harness-commands/ambient-lane-registry.ts"];
 	const ambientRunnerText = readFileSync(join(root, "extensions/harness-commands/ambient-runner.ts"), "utf8");
-	const imports = [
-		...topLevelImports(harnessEntrypoint).map((source) => ({ file: harnessEntrypoint, source })),
-		...ambientFiles.flatMap((file) => topLevelImports(file).map((source) => ({ file, source }))),
-	];
-	const fullOnlyStaticImports = imports.filter((entry) => FULL_ONLY_IMPORT_PATTERNS.some((pattern) => entry.source.includes(pattern)));
 	return {
 		profile: "lean",
-		fullOnlyStaticImportCount: fullOnlyStaticImports.length,
-		fullOnlyStaticImports,
 		harnessEntrypointLoc: linesOf(join(root, harnessEntrypoint)),
 		beforeAgentStartExecSites: countBetween(harnessText, 'pi.on("before_agent_start"', 'pi.on("tool_call"', "pi.exec"),
-		ambientTurnExecSites: countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildExecutionRouteState") + countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildRepoContextSummary") + countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildMemoryContext") + countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildOrchestrationDecisionState"),
+		ambientTurnExecSites: countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildExecutionRouteState") + countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildRepoContextSummary") + countBetween(ambientRunnerText, "export async function buildAmbientTurn", undefined, "buildMemoryContext"),
 		deferredCleanupSnapshot: !countBetween(harnessText, 'pi.on("before_agent_start"', 'pi.on("tool_call"', "gitChangeSnapshot"),
 	};
 }
@@ -187,7 +172,6 @@ if (json) {
 	console.log(`- runtime extensions: ${result.metrics.runtimeExtensionEntrypoints}`);
 	console.log(`- core extension LOC: ${result.metrics.extensionLoc}`);
 	console.log(`- optional LaTeX LOC: ${result.metrics.optionalLatexLoc}`);
-	console.log(`- lean full-only static imports: ${result.metrics.leanHotPath.fullOnlyStaticImportCount}`);
 	console.log(`- issues: ${issues.length}`);
 	console.log(`- warnings: ${warnings.length}`);
 	if (issues.length) {

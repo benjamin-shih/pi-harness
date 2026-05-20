@@ -84,11 +84,6 @@ export type TaskActivity = {
 	errors: number;
 };
 
-export type OrchestrationTrackingState = {
-	recommendedTopology?: string;
-	gateIds?: string[];
-};
-
 export type TaskLayerState = {
 	sessionId: string;
 	apiChecked: boolean;
@@ -105,7 +100,6 @@ export type TaskLayerState = {
 	active?: BindResult;
 	discovered?: { task_id: string; project_root: string };
 	context?: string;
-	orchestration?: OrchestrationTrackingState;
 	lastAction?: BindAction;
 	lastReason?: string;
 	lastError?: string;

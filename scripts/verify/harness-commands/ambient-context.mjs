@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { Box } from "@earendil-works/pi-tui";
 import { loadExtensionModule } from "../harness.mjs";
-import { agentsRoot, assert, controlPlaneDecisionPayload, createTaskHarness, harnessCommands, homeRoot, join, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
+import { assert, createTaskHarness, harnessCommands, homeRoot, join, memoryReviewPayload, root, taskBindPayload, taskDiscoverPayload, withEnv } from "./support.mjs";
 
 function renderToolBox(theme, isError, width, ...components) {
 	const box = new Box(1, 1, (text) => theme.bg(isError ? "toolErrorBg" : "toolSuccessBg", text));
@@ -29,7 +29,7 @@ export async function runAmbientContextTests() {
 	const largeHtml = loadExtensionModule("extensions/shared/large-response-html.ts");
 	const promptGuidance = loadExtensionModule("extensions/shared/prompt-guidance.ts");
 	assert(typeof ambient.assembleAmbientContext === "function", "ambient context module should export assembler");
-	assert(ambientRegistry.AMBIENT_LANE_REGISTRY.map((lane) => `${lane.id}:${lane.priority}`).join(",") === "display_math:10,markdown_heading:20,mode:30,skill_routing:40,qmd_retrieval:45,cleanup:50,git_push:52,subagent_topology:55,large_response_html:58,agents_task:60,orchestration:62,memory:65,memory_candidates:66,memory_admin:67,execution:68,repo:70", "ambient lane registry should preserve lane ids and priorities");
+	assert(ambientRegistry.AMBIENT_LANE_REGISTRY.map((lane) => `${lane.id}:${lane.priority}`).join(",") === "display_math:10,markdown_heading:20,mode:30,skill_routing:40,qmd_retrieval:45,cleanup:50,git_push:52,subagent_topology:55,large_response_html:58,agents_task:60,memory:65,memory_candidates:66,memory_admin:67,execution:68,repo:70", "ambient lane registry should preserve lane ids and priorities");
 	assert(ambientPolicy.decideAmbientPolicy("trivial").receipt === "off", "ambient policy should suppress receipts for trivial prompts");
 	assert(ambientPolicy.decideAmbientPolicy("standard").personalContext === "auto_scoped", "ambient policy should auto-consider scoped approved memory for nontrivial prompts");
 	assert(ambientPolicy.shouldIncludeRepoContext(ambientPolicy.decideAmbientPolicy("standard")), "ambient policy should include repo context for nontrivial prompts");
@@ -195,14 +195,14 @@ export async function runAmbientContextTests() {
 
 	const leanHarness = createTaskHarness({ bindPayload: taskBindPayload(), memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep task binding and memory hot." } });
 	assert(!leanHarness.commands.has("control-center") && !leanHarness.commands.has("run-card") && !leanHarness.commands.has("choose-topology") && !leanHarness.commands.has("orchestrate"), "removed orchestration/control-plane slash surfaces should not be registered");
-	assert(leanHarness.commands.has("memory") && leanHarness.commands.has("orchestrator"), "lean harness profile should keep memory and session tagging commands");
+	assert(leanHarness.commands.has("memory") && leanHarness.commands.has("orchestrator"), "harness should keep memory and session tagging commands");
 	await leanHarness.handlers.get("session_start")({ reason: "startup" }, leanHarness.ctx);
 	const leanResult = await leanHarness.handlers.get("before_agent_start")({ prompt: "Implement a focused docs token optimization", systemPrompt: "base" }, leanHarness.ctx);
-	assert(!leanResult.systemPrompt.includes("## Orchestration Decision"), "lean harness profile should not inject ambient orchestration decisions");
-	assert(leanResult.systemPrompt.includes("orchestration: skipped, ambient orchestration disabled by harness profile"), "lean ambient receipt should explain skipped orchestration");
-	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "lean harness profile should not call ambient orchestration decision API");
-	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_recommended")), "lean harness profile should not record orchestration_recommended task events");
-	assert(leanResult.systemPrompt.includes("## Approved Scoped Memory") && leanResult.systemPrompt.includes("## Active AGENTS Task Context"), "lean harness profile should keep memory and task binding hot-path lanes");
+	assert(!leanResult.systemPrompt.includes("## Orchestration Decision"), "harness should not inject retired ambient orchestration decisions");
+	assert(!leanResult.systemPrompt.includes("orchestration:"), "ambient receipt should not include retired orchestration lane state");
+	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "harness should not call retired orchestration decision API");
+	assert(!leanHarness.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_recommended")), "harness should not record retired orchestration_recommended task events");
+	assert(leanResult.systemPrompt.includes("## Approved Scoped Memory") && leanResult.systemPrompt.includes("## Active AGENTS Task Context"), "harness should keep memory and task binding hot-path lanes");
 	const readOnlyHarness = createTaskHarness({ bindPayload: taskBindPayload() });
 	await readOnlyHarness.handlers.get("session_start")({ reason: "startup" }, readOnlyHarness.ctx);
 	const readOnlyResult = await readOnlyHarness.handlers.get("before_agent_start")({ prompt: "Read-only audit this repo; no edits, no commits, no subagents.", systemPrompt: "base" }, readOnlyHarness.ctx);
@@ -261,7 +261,7 @@ export async function runAmbientContextTests() {
 			assert(continuity?.content.includes(htmlPath), "compaction continuity should preserve known local HTML artifact paths");
 			assert(continuity?.content.includes(policyRoot), "HTML continuity guidance should honor AGENTS_SHARED_ROOT");
 			await htmlContinuityTask.handlers.get("agent_end")({}, htmlContinuityTask.ctx);
-			assert(htmlContinuityTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPath), "lean profile should preserve HTML artifact auto-open from shared policy without ambient orchestration");
+			assert(htmlContinuityTask.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlPath), "harness should preserve HTML artifact auto-open from shared policy");
 		});
 	} finally {
 		rmSync(policyRoot, { recursive: true, force: true });
@@ -269,18 +269,15 @@ export async function runAmbientContextTests() {
 	}
 
 	const boundTask = createTaskHarness({
-		harnessProfile: "full",
 		bindPayload: taskBindPayload(),
 		memoryContextPayload: { memory_api_version: 1, included: [{ id: "mem-1" }], omitted: [], context: "## Approved Scoped Memory\n- Project preference: Keep ambient behavior command-light." },
 	});
-	assert(!boundTask.commands.has("control-center") && !boundTask.commands.has("run-card") && !boundTask.commands.has("choose-topology") && !boundTask.commands.has("orchestrate"), "full harness profile should not restore removed slash surfaces");
+	assert(!boundTask.commands.has("control-center") && !boundTask.commands.has("run-card") && !boundTask.commands.has("choose-topology") && !boundTask.commands.has("orchestrate"), "retired slash surfaces should not be registered");
 	await boundTask.handlers.get("session_start")({ reason: "startup" }, boundTask.ctx);
 	const result = await boundTask.handlers.get("before_agent_start")({ prompt: "Implement ambient context receipts", systemPrompt: "base" }, boundTask.ctx);
 	assert(result.systemPrompt.includes("## Ambient Context Receipt"), "standard prompts should include compact ambient context receipt");
-	assert(result.systemPrompt.includes("## Orchestration Decision"), "standard prompts should include bounded orchestration decision guidance");
-	assert(result.systemPrompt.includes("orchestration: included"), "ambient receipt should show orchestration guidance inclusion");
-	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "ambient orchestration should call the shared decision API");
-	assert(boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_recommended") && call.args.some((arg) => String(arg).startsWith("recommended_topology="))), "ambient orchestration should record a bounded recommended-topology task event");
+	assert(!boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("orchestration-decision.sh")), "standard prompts should not call retired orchestration decision API");
+	assert(!boundTask.execCalls.some((call) => String(call.args?.[0] || "").endsWith("task-event.sh") && call.args.includes("orchestration_recommended")), "standard prompts should not record retired orchestration_recommended task events");
 	assert(result.systemPrompt.includes("agents_task: included"), "ambient receipt should show task context inclusion");
 	assert(result.systemPrompt.includes("## Approved Scoped Memory"), "standard scoped prompts should include approved memory from the .agents API");
 	assert(result.systemPrompt.includes("memory: included"), "ambient receipt should show approved memory inclusion");
@@ -296,7 +293,6 @@ export async function runAmbientContextTests() {
 	await boundTask.commands.get("status").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("╭─ Ambient"), "/status should expose the last ambient context decision");
 	assert(boundTask.sentMessages.at(-1).content.includes("╭─ Memory"), "/status should expose scoped memory API diagnostics");
-	assert(boundTask.sentMessages.at(-1).content.includes("recommended single_agent_standard"), "/status should expose recommended orchestration topology");
 	await boundTask.commands.get("doctor").handler("", boundTask.ctx);
 	assert(boundTask.sentMessages.at(-1).content.includes("## Ambient context"), "/doctor should include ambient context diagnostics");
 	assert(boundTask.sentMessages.at(-1).content.includes("## Scoped memory API"), "/doctor should include scoped memory API diagnostics");
@@ -311,23 +307,23 @@ export async function runAmbientContextTests() {
 	} finally {
 		rmSync(htmlOpenTemp, { recursive: true, force: true });
 	}
-	const htmlOpenDisabled = createTaskHarness({
-		harnessProfile: "full",
-		bindPayload: taskBindPayload(),
-		controlPlaneDecisionPayload: controlPlaneDecisionPayload({
-			artifacts: { html: { publish_policy: "explicit_only", source_of_truth: "json_or_markdown", modes: [{ id: "html_report" }], auto_open: { enabled: false, when: "after_local_html_artifact_created", modes: [], safety: ["local_file_only"] }, long_response: { enabled: true, chat_response: "concise_summary_plus_local_artifact_path_and_next_action" }, authoring: { structure_policy: "content_first_flexible", title_style: "compact_first_screen_readable" }, template: { id: "benjamin_local_v1", path: `${agentsRoot}/shared/templates/html-artifacts/benjamin-local-template.html`, allowed_components: [] }, templates: [{ id: "benjamin_local_v1" }], retention: { cleanup_strategy: "manifest_and_marker", delete_on_task_status: ["completed", "stale"], marker: "agents-html-artifact" }, safety: [] } },
-		}),
-	});
-	await htmlOpenDisabled.handlers.get("session_start")({ reason: "startup" }, htmlOpenDisabled.ctx);
-	await htmlOpenDisabled.handlers.get("before_agent_start")({ prompt: "Write a long report", systemPrompt: "base" }, htmlOpenDisabled.ctx);
+	const disabledPolicyRoot = mkdtempSync(join(tmpdir(), "pi-html-open-disabled-policy-"));
 	const htmlOpenDisabledTemp = mkdtempSync(join(tmpdir(), "pi-html-open-disabled-"));
 	try {
-		const htmlReport = join(htmlOpenDisabledTemp, "very-long-report.html");
-		writeFileSync(htmlReport, "<!doctype html><title>Report</title>");
-		await htmlOpenDisabled.handlers.get("tool_result")({ toolName: "write", input: { path: htmlReport }, isError: false }, htmlOpenDisabled.ctx);
-		await htmlOpenDisabled.handlers.get("agent_end")({}, htmlOpenDisabled.ctx);
-		assert(!htmlOpenDisabled.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlReport), "harness should not auto-open name-hinted HTML when shared policy disables auto-open");
+		mkdirSync(join(disabledPolicyRoot, "policy"));
+		writeFileSync(join(disabledPolicyRoot, "policy", "html-artifacts.json"), JSON.stringify({ auto_open: { enabled: false, modes: [] }, modes: [{ id: "html_report" }] }));
+		await withEnv({ AGENTS_SHARED_ROOT: disabledPolicyRoot }, async () => {
+			const htmlOpenDisabled = createTaskHarness({ bindPayload: taskBindPayload() });
+			await htmlOpenDisabled.handlers.get("session_start")({ reason: "startup" }, htmlOpenDisabled.ctx);
+			await htmlOpenDisabled.handlers.get("before_agent_start")({ prompt: "Write a long report", systemPrompt: "base" }, htmlOpenDisabled.ctx);
+			const htmlReport = join(htmlOpenDisabledTemp, "very-long-report.html");
+			writeFileSync(htmlReport, "<!doctype html><title>Report</title>");
+			await htmlOpenDisabled.handlers.get("tool_result")({ toolName: "write", input: { path: htmlReport }, isError: false }, htmlOpenDisabled.ctx);
+			await htmlOpenDisabled.handlers.get("agent_end")({}, htmlOpenDisabled.ctx);
+			assert(!htmlOpenDisabled.execCalls.some((call) => call.cmd === "open" && call.args?.[0] === htmlReport), "harness should not auto-open name-hinted HTML when shared policy disables auto-open");
+		});
 	} finally {
+		rmSync(disabledPolicyRoot, { recursive: true, force: true });
 		rmSync(htmlOpenDisabledTemp, { recursive: true, force: true });
 	}
 	const slashOnlyMemoryTask = createTaskHarness({

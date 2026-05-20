@@ -1,5 +1,3 @@
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AmbientContextSnapshot } from "./shared/ambient-context";
 import { buildAmbientTurn } from "./harness-commands/ambient-turn";
@@ -20,27 +18,21 @@ import { queueFollowUpAfterCurrentAgent } from "./shared/deferred-user-message";
 import { appendFinalVisibilityToAssistantMessage, type FinalVisibilityState } from "./shared/final-visibility";
 import { checkRemoteCiAfterPush, isGitPushCommand, remoteCiGuardBlock, type RemoteCiGuardResult } from "./shared/remote-ci-guard";
 import { htmlArtifactPathFromTool, localHtmlArtifactPathFromTool, openHtmlArtifact } from "./shared/html-artifact-open";
-import { harnessRuntimeConfig } from "./shared/harness-profile";
 import { largeResponseHtmlCompactionReminder } from "./shared/large-response-html";
 import { applyMode, modeDescription, modeNames } from "./harness-commands/modes";
 import { classifyPrompt, isCodingOrFilePrompt, promptForbidsFileModification, promptSuggestsMajorCleanup } from "./shared/prompt-guidance";
 import { isPiSubagentChild } from "./shared/runtime";
-import { registerSkillsAuditCommand } from "./harness-commands/skills-audit-command";
 import { registerOrchestratorCommand } from "./harness-commands/orchestrator-command";
 import { registerTaskCloseCommand } from "./harness-commands/task-close-command";
 import { buildDoctor, buildMemoryReport, buildStatus } from "./shared/harness-status";
 import { registerMemoryAdminCommands } from "./shared/memory-admin-command";
-import type { OrchestrationDecisionState } from "./shared/orchestration-guidance";
 import { createAgentsTaskLayer } from "./harness-task-layer/task-layer";
 import { compactToolResultForContext, registerCompactToolOutput } from "./harness-tool-output/compact-tool-output";
-
-const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export default function harnessCommands(pi: ExtensionAPI) {
 	if (isPiSubagentChild()) return;
 
 	registerCompactToolOutput(pi);
-	let runtimeConfig = harnessRuntimeConfig();
 	const taskLayer = createAgentsTaskLayer();
 	let activeMode: string | undefined;
 	let sawFileMutation = false;
@@ -52,7 +44,6 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	let largeResponseHtmlGuidanceSeenThisSession = false;
 	let initialChangeSnapshot: GitChangeSnapshot | undefined;
 	let lastAmbientContext: AmbientContextSnapshot | undefined;
-	let lastOrchestrationDecision: OrchestrationDecisionState | undefined;
 	let finalVisibility: FinalVisibilityState | undefined;
 	let sawGitPush = false;
 	let remoteCiStatus: RemoteCiGuardResult | undefined;
@@ -109,13 +100,10 @@ export default function harnessCommands(pi: ExtensionAPI) {
 	registerOrchestratorCommand(pi);
 	registerCheckpointCommand(pi, taskLayer, () => lastAmbientContext);
 	registerTaskCloseCommand(pi, taskLayer);
-	registerSkillsAuditCommand(pi, PACKAGE_ROOT);
 	pi.on("session_start", async (_event, ctx) => {
-		runtimeConfig = harnessRuntimeConfig(ctx.cwd);
 		await taskLayer.sessionStart(pi, ctx);
 	});
 	pi.on("before_agent_start", async (event, ctx) => {
-		runtimeConfig = harnessRuntimeConfig(ctx.cwd);
 		finalVisibility = undefined;
 		const fallbackWeight = classifyPrompt(event.prompt);
 		sawFileMutation = false;
@@ -135,12 +123,9 @@ export default function harnessCommands(pi: ExtensionAPI) {
 			activeMode,
 			taskContext,
 			taskScope: taskLayer.ambientScope(),
-			ambientOrchestration: runtimeConfig.ambientOrchestration,
 		});
 		lastAmbientContext = ambient.snapshot;
 		largeResponseHtmlGuidanceSeenThisSession = largeResponseHtmlGuidanceSeenThisSession || ambient.snapshot.lanes.some((lane) => lane.id === "large_response_html" && lane.status === "included");
-		lastOrchestrationDecision = ambient.orchestrationDecision;
-		if (runtimeConfig.ambientOrchestration) await taskLayer.recordOrchestrationRecommended(pi, ctx, ambient.orchestrationDecision?.decision);
 		refreshFinalVisibility();
 		return ambient.systemPrompt === event.systemPrompt ? undefined : { systemPrompt: ambient.systemPrompt };
 	});
@@ -163,7 +148,7 @@ export default function harnessCommands(pi: ExtensionAPI) {
 		await taskLayer.toolResult(pi, event, ctx);
 		const localHtmlArtifact = localHtmlArtifactPathFromTool(event, ctx.cwd);
 		if (localHtmlArtifact) htmlArtifactsSeenThisSession.add(localHtmlArtifact);
-		const htmlArtifact = htmlArtifactPathFromTool(event, ctx.cwd, lastOrchestrationDecision);
+		const htmlArtifact = htmlArtifactPathFromTool(event, ctx.cwd);
 		if (htmlArtifact) pendingHtmlArtifacts.add(htmlArtifact);
 		refreshFinalVisibility();
 		return compactToolResultForContext(event, ctx.cwd);
